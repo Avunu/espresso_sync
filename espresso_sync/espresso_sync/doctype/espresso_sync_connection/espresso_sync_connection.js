@@ -1,6 +1,19 @@
 // Copyright (c) 2023, Avunu LLC and contributors
 // For license information, please see license.txt
 
+frappe.realtime.on("console_log", function (data) {
+	console.log(data);
+});
+
+frappe.realtime.on("import_progress", function (data) {
+	// use show_progress
+	frappe.show_progress("Importing Sync Items", data.progress, data.total);
+	// hide progress when complete
+	if (data.progress == data.total) {
+		frappe.hide_progress();
+	}
+});
+
 frappe.ui.form.on('Espresso Sync Connection', {
 	refresh: function(frm) {
 		// load css from assets/espresso_sync/css/espresso_sync_connection.css using frappe.dom.set_style()
@@ -13,6 +26,141 @@ frappe.ui.form.on('Espresso Sync Connection Import', {
 		cur_row = locals[cdt][cdn];
 		import_doctype = cur_row.import_doctype;
 		open_template_generator_dialog(frm, import_doctype);
+	},
+	render_sample: function (frm, cdt, cdn) {
+		cur_row = locals[cdt][cdn];
+		object_map = cur_row.object_map;
+		sample_object = cur_row.sample_object;
+		if (object_map && sample_object) {
+			object_map = JSON.parse(object_map);
+			sample_object = JSON.parse(sample_object);
+			frappe.call({
+				method: 'espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.render_sample',
+				args: {
+					object_map: object_map,
+					sample_object: sample_object,
+				},
+				callback: function (response) {
+					// show the sample in a frappe dialog
+					const sample = response.message || {};
+					const sample_formatted = JSON.stringify(sample, null, 2);
+					frappe.msgprint({'message': '<pre>' + sample_formatted + '</pre>', 'title': 'Sample Data'});
+				},
+			});
+		}
+	},
+	test_import: function (frm, cdt, cdn) {
+		cur_row = locals[cdt][cdn];
+		frappe.call({
+			method: 'espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.test_import',
+			args: {
+				import_step: cur_row,
+				import_object: cur_row.sample_object,
+			},
+			callback: function (response) {
+				// show the sample in a frappe dialog
+				const sample = response.message || {};
+				const sample_formatted = JSON.stringify(sample, null, 2);
+				frappe.msgprint({'message': '<pre>' + sample_formatted + '</pre>', 'title': 'Sample Import'});
+			},
+		});
+	},
+	get_samples: function (frm, cdt, cdn) {
+		frappe.show_alert("Fetching sample data");
+		var cur_row = locals[cdt][cdn];
+		const import_doctype = cur_row.import_doctype;
+		const get_uri = cur_row.get_uri;
+		frappe.call({
+			method: 'espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.get_sample_data',
+			args: {
+				connection: frm.doc.name,
+				get_uri: get_uri
+			},
+			callback: function (response) {
+				const sample_data = response.message || [];
+				const sample_data_count = sample_data.length;
+				// update the sample_object field
+				frm.set_value(cdt, cdn, "sample_objects", sample_data);
+				frm.set_value(cdt, cdn, "sample_count", sample_data_count);
+				frm.set_value(cdt, cdn, "sample_index", 0);
+				// get the first object
+				first_object = JSON.stringify(sample_data[0], null, 2);
+				frm.set_value(cdt, cdn, "sample_object", first_object);
+				// refresh the form
+				frm.refresh_field("imports");
+				frappe.show_alert("Sample data updated");
+			},
+		});
+	},
+	next_sample: function (frm, cdt, cdn) {
+		var cur_row = locals[cdt][cdn];
+		var index = cur_row.sample_index;
+		const count = cur_row.sample_count;
+		if (index < count - 1) {
+			const sample_objects = JSON.parse(cur_row.sample_objects);
+			index = index + 1;
+			cur_row.sample_index = index;
+			cur_row.sample_object = sample_objects[index];
+			frm.refresh_field('imports');
+		}
+	},
+	previous_sample: function (frm, cdt, cdn) {
+		var cur_row = locals[cdt][cdn];
+		var index = cur_row.sample_index;
+		if (index > 0) {
+			const sample_objects = JSON.parse(cur_row.sample_objects);
+			index = index - 1;
+			cur_row.sample_index = index;
+			cur_row.sample_object = sample_objects[index];
+			frm.refresh_field('imports');
+		}
+	},
+	get_references: function (frm, cdt, cdn) {
+		var cur_row = locals[cdt][cdn];
+		const import_doctype = cur_row.import_doctype;
+		frappe.call({
+			method: 'espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.get_reference_docs',
+			args: {
+				doctype: import_doctype
+			},
+			callback: function (response) {
+				const reference_docs = response.message || [];
+				const reference_docs_count = reference_docs.length;
+				// update the reference_docs field
+				frappe.model.set_value(cdt, cdn, "reference_docs", JSON.stringify(reference_docs));
+				frappe.model.set_value(cdt, cdn, "reference_count", reference_docs_count);
+				frappe.model.set_value(cdt, cdn, "reference_index", 0);
+				// get the first document
+				first_doc = JSON.stringify(reference_docs[0], null, 2);
+				frappe.model.set_value(cdt, cdn, "reference_doc", first_doc);
+				// refresh the form
+				frm.refresh_field("imports");
+				frappe.show_alert("Reference docs updated");
+			},
+		});
+	},
+	next_reference: function (frm, cdt, cdn) {
+		var cur_row = locals[cdt][cdn];
+		var index = cur_row.reference_index;
+		const count = cur_row.reference_count;
+		if (index < count - 1) {
+			index = index + 1;
+			const reference_docs = JSON.parse(cur_row.reference_docs);
+			frappe.model.set_value(cdt, cdn, "reference_index", index);
+			frappe.model.set_value(cdt, cdn, "reference_doc", reference_docs[index]);
+			frm.refresh_field('imports');
+		}
+	},
+	previous_reference: function (frm, cdt, cdn) {
+		var cur_row = locals[cdt][cdn];
+		var index = cur_row.reference_index;
+		if (index > 0) {
+			index = index - 1;
+			const reference_docs = JSON.parse(cur_row.reference_docs);
+			frappe.model.set_value(cdt, cdn, "reference_index", index);
+			frappe.model.set_value(cdt, cdn, "reference_doc", reference_docs[index]);
+			frm.refresh_field('imports');
+		}
 	}
 });
 
@@ -119,7 +267,6 @@ function get_selected_fields(dialog) {
 
 	return selected_fields;
 }
-
 
 
 function create_template_json(selected_fields) {
