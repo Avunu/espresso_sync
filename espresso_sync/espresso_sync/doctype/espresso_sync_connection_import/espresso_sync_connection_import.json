@@ -15,18 +15,41 @@
   "modified_date_field_map",
   "column_break_grno",
   "modified_date_format",
-  "section_break_zebn",
-  "template_generator",
+  "section_break_pkkc",
   "column_break_uupi",
-  "fetch_sample",
+  "generate_template",
   "column_break_wlwn",
-  "render_map",
-  "column_break_kwwh",
+  "render_sample",
+  "column_break_wscx",
+  "test_import",
+  "column_break_wjnr",
   "view_log",
   "section_break_hhmu",
   "object_map",
+  "section_break_busx",
+  "column_break_eqqk",
+  "get_samples",
+  "column_break_utzv",
+  "previous_sample",
+  "column_break_jfje",
+  "next_sample",
   "section_break_lnhu",
-  "sample_object"
+  "sample_index",
+  "sample_object",
+  "sample_count",
+  "sample_objects",
+  "section_break_ivzf",
+  "column_break_czob",
+  "get_references",
+  "column_break_jfjd",
+  "previous_reference",
+  "column_break_gajy",
+  "next_reference",
+  "section_break_pbld",
+  "reference_index",
+  "reference_doc",
+  "reference_count",
+  "reference_docs"
  ],
  "fields": [
   {
@@ -57,30 +80,18 @@
   },
   {
    "fieldname": "section_break_hhmu",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "fetch_sample",
-   "fieldtype": "Button",
-   "label": "Pull Sample"
+   "fieldtype": "Section Break",
+   "hide_border": 1
   },
   {
    "fieldname": "sample_object",
-   "fieldtype": "HTML",
+   "fieldtype": "JSON",
    "label": "Sample Object"
   },
   {
-   "fieldname": "template_generator",
-   "fieldtype": "Button",
-   "label": "Generate Template"
-  },
-  {
    "fieldname": "section_break_lnhu",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "section_break_zebn",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "hide_border": 1
   },
   {
    "fieldname": "column_break_wlwn",
@@ -94,15 +105,6 @@
   {
    "fieldname": "column_break_uupi",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_kwwh",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "render_map",
-   "fieldtype": "Button",
-   "label": "Render Template"
   },
   {
    "fieldname": "column_break_dwif",
@@ -132,12 +134,157 @@
    "fieldname": "modified_date_format",
    "fieldtype": "Data",
    "label": "Modified Datetime Format"
+  },
+  {
+   "fieldname": "section_break_busx",
+   "fieldtype": "Section Break",
+   "hide_border": 1
+  },
+  {
+   "fieldname": "column_break_eqqk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_jfje",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "sample_index",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Sample Index"
+  },
+  {
+   "fieldname": "generate_template",
+   "fieldtype": "Button",
+   "label": "Generate Template"
+  },
+  {
+   "fieldname": "render_sample",
+   "fieldtype": "Button",
+   "label": "Render Map w/ Sample"
+  },
+  {
+   "fieldname": "section_break_pkkc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_wscx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "test_import",
+   "fieldtype": "Button",
+   "label": "Test Import"
+  },
+  {
+   "fieldname": "column_break_wjnr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "sample_count",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Sample Count"
+  },
+  {
+   "fieldname": "sample_objects",
+   "fieldtype": "JSON",
+   "hidden": 1,
+   "label": "Sample Objects"
+  },
+  {
+   "fieldname": "section_break_ivzf",
+   "fieldtype": "Section Break",
+   "hide_border": 1
+  },
+  {
+   "fieldname": "column_break_czob",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_gajy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_pbld",
+   "fieldtype": "Section Break",
+   "hide_border": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "reference_index",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Reference Index"
+  },
+  {
+   "default": "0",
+   "fieldname": "reference_count",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Reference Count"
+  },
+  {
+   "fieldname": "reference_doc",
+   "fieldtype": "JSON",
+   "label": "Reference Doc"
+  },
+  {
+   "fieldname": "reference_docs",
+   "fieldtype": "JSON",
+   "hidden": 1,
+   "label": "Reference Docs"
+  },
+  {
+   "fieldname": "get_samples",
+   "fieldtype": "Button",
+   "label": "Load Sample(s)"
+  },
+  {
+   "depends_on": "eval:doc.sample_index > 0",
+   "fieldname": "previous_sample",
+   "fieldtype": "Button",
+   "label": "\u25c4 Previous Sample"
+  },
+  {
+   "depends_on": "eval:doc.sample_index < doc.sample_count",
+   "fieldname": "next_sample",
+   "fieldtype": "Button",
+   "label": "Next Sample \u25ba"
+  },
+  {
+   "fieldname": "column_break_utzv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_jfjd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "get_references",
+   "fieldtype": "Button",
+   "label": "Load Reference Doc(s)"
+  },
+  {
+   "depends_on": "eval:doc.reference_index > 0",
+   "fieldname": "previous_reference",
+   "fieldtype": "Button",
+   "label": "\u25c4 Previous Doc"
+  },
+  {
+   "depends_on": "eval:doc.reference_index < doc.reference_count",
+   "fieldname": "next_reference",
+   "fieldtype": "Button",
+   "label": "Next Doc \u25ba"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-03-25 17:10:30.252888",
+ "modified": "2023-03-28 14:21:47.135511",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection Import",

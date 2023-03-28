@@ -3,6 +3,7 @@
 
 import json
 import frappe
+import requests
 from frappe.model.document import Document
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 import espresso_sync.espresso_sync.sync_engine as sync_engine
@@ -64,3 +65,42 @@ def get_doctype_fields(doctype):
 		if df.fieldtype in ["Data", "Table", "Text", "Small Text", "Link", "Select"]
 	]
     return field_list
+
+@frappe.whitelist()
+def get_sample_data(connection, get_uri):
+	# get a list of up to 10 objects from the given API endpoint
+	connection = frappe.get_doc("Espresso Sync Connection", connection)
+	url = connection.api_url + get_uri
+	response = requests.get(url, headers=sync_engine.get_request_headers(connection))
+	# test if response is valid json, if not, throw error
+	try:
+		response_data = response.json()
+	except ValueError:
+		frappe.throw(response.text,
+					 title="Invalid JSON Response from API")
+	
+	# test if the response contains a list of objects, if not, throw error
+	if not isinstance(response_data, list):
+		frappe.throw(response.text,
+					 title="JSON Response should contain a list of objects")
+
+	return response_data[:10]
+
+@frappe.whitelist()
+def get_reference_docs(doctype):
+	# return a list of up to 10 documents of the given doctype
+	reference_docs = frappe.get_all(doctype, limit=10, fields=['*'])
+	return reference_docs
+
+@frappe.whitelist()
+def render_sample(object_map, sample_object):
+	object_map = frappe._dict(json.loads(object_map))
+	sample_object = frappe._dict(json.loads(sample_object))
+	
+	return sync_engine.parse_mapping_template(object_map, sample_object)
+
+@frappe.whitelist()
+def test_import(import_step, import_object):
+	import_step = frappe._dict(json.loads(import_step))
+	import_object = frappe._dict(json.loads(import_object))
+	return sync_engine.process_import_object(import_step, import_object)

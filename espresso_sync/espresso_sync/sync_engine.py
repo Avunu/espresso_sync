@@ -7,7 +7,6 @@ import datetime
 import requests
 import json
 import base64
-from jinja2 import Template
 from jsonpath_ng import jsonpath, parse
 
 
@@ -30,14 +29,9 @@ def process_sync_connection(connection):
 
 
 def process_imports(connection, import_step):
-    doctype = import_step.import_doctype
-    id_field = import_step.id_field_map
-    modified_date_field = import_step.modified_date_field_map
-    modified_date_format = import_step.modified_date_format
     # debug
     # frappe.throw(f"doctype: {doctype}, id_field: {id_field}, modified_date_field: {modified_date_field}, modified_date_format: {modified_date_format}")
     url = connection.api_url + import_step.get_uri
-    object_map = json.loads(import_step.object_map)
 
     response = requests.get(url, headers=get_request_headers(connection))
     # test if response is valid json, if not, throw error
@@ -46,48 +40,72 @@ def process_imports(connection, import_step):
     except ValueError:
         frappe.throw(response.text,
                      title="Invalid JSON Response from API")
-    
+
+    # test if the response contains a list of objects, if not, throw error
+    if not isinstance(response_data, list):
+        frappe.throw(response.text,
+                     title="JSON Response should contain a list of objects")
+        
+    process_import_objects(import_step, response_data)
+
+    return
+
+def process_import_objects(import_step, import_objects):
+    i = 0
+    for import_object in import_objects:
+        process_import_object(import_step, import_object)
+        # show progress on frontend
+        frappe.publish_realtime(
+            "import_progress", {"progress": i, "total": len(import_objects)}, user=frappe.session.user)
+        i += 1
+    return
+
+def process_import_object(import_step, import_object):
+    doctype = import_step.import_doctype
+    id_field = import_step.id_field_map
+    modified_date_field = import_step.modified_date_field_map
+    modified_date_format = import_step.modified_date_format
+    object_map = json.loads(import_step.object_map)
     # test if the response contains an id field, if not, throw error
     try:
-        external_id = response_data[0][id_field]
+        external_id = import_object[id_field]
     except KeyError:
         frappe.throw(f"ID field {id_field} not found in response data",
-                     title="Invalid ID Field")
-        
+                        title="Invalid ID Field")
+
     # test if the response contains a modified date field, if not, throw error
     modified_date = None
     if modified_date_field:
-        if not modified_date_field in response_data[0]:
+        modified_date = import_object[modified_date_field]
+        if not modified_date_field in import_object:
             frappe.throw(f"Modified Date field {modified_date_field} not found in response data",
-                        title="Invalid Modified Date Field")
-        if modified_date_format != '':
+                            title="Invalid Modified Date Field")
+        if not modified_date_format in ["", None]:
             try:
-                modified_date = response_data[0][modified_date_field]
                 modified_date = datetime.datetime.strptime(
                     modified_date, modified_date_format)
             except ValueError:
                 frappe.throw(f"Modified Date value {modified_date_field} does not match format {modified_date_format}",
-                            title="Invalid Modified Date Field")
+                                title="Invalid Modified Date Field")
         else:
             try:
-                modified_date = parse_date(response_data[0][modified_date_field])
+                modified_date = parse_date(modified_date)
             except ValueError:
                 frappe.throw(f"Modified Date value {modified_date_field} could not be parsed as a date",
-                            title="Invalid Modified Date Field")
-        
+                                title="Invalid Modified Date Field")
 
-    for data in response_data:
-        parsed_data = parse_mapping_template(object_map, data)
-        update_or_create_doc(connection.name, doctype, parsed_data, external_id, modified_date)
+    parsed_data = parse_mapping_template(object_map, import_object)
+    doc = update_or_create_doc(import_step, parsed_data, external_id, modified_date)
 
-    return
+    return doc
 
 
 def get_request_headers(sync_connection):
     headers = {}
 
     if sync_connection.auth_type == "Header":
-        headers[sync_connection.api_key] = sync_connection.get_password('api_secret')
+        headers[sync_connection.api_key] = sync_connection.get_password(
+            'api_secret')
     elif sync_connection.auth_type == "Basic":
         credentials = f"{sync_connection.api_key}:{sync_connection.get_password('api_secret')}"
         encoded_credentials = base64.b64encode(credentials.encode()).decode()
@@ -108,9 +126,14 @@ def parse_mapping_template(object_map, data):
                     result[key] = match[0].value
                 else:
                     result[key] = None
-            # otherwise, just treat it as a static value
+            # fetch single doc values from db if string starts with "doc:"
+            # such as "doc:Selling Settings:default_price_list"
+            elif value.startswith("doc:"):
+                result[key] = frappe.db.get_single_value(
+                    value.split(":")[1:], value.split(":")[2])
+            # otherwise process it as a jinja template
             else:
-                result[key] = value
+                result[key] = frappe.render_template(value, data)
         elif isinstance(value, dict):
             match key in value:
                 case "match":
@@ -129,17 +152,22 @@ def parse_mapping_template(object_map, data):
         elif isinstance(value, list):
             result[key] = [parse_mapping_template(
                 item, data) for item in value]
+    # debug
+    frappe.publish_realtime(
+        "console_log", f"result: {result}", user=frappe.session.user)
     return result
 
 
-def update_or_create_doc(sync_connection, doctype, parsed_data, external_id, modified_date):
+def update_or_create_doc(import_step, parsed_data, external_id, modified_date):
     doc = None
+    sync_connection = import_step.parent
+    doctype = import_step.import_doctype
 
     # Check if a document with a matching Sync ID already exists
     sync_id_list = frappe.db.get_all("Espresso Sync ID", filters={
-            "sync_connection": sync_connection, "external_id": external_id},
-            fields=["parent"])
-    
+        "sync_connection": sync_connection, "external_id": external_id},
+        fields=["parent"])
+
     # confirm that a matching document with a maching doctype exists
     if sync_id_list:
         for sync_id_entry in sync_id_list:
@@ -150,7 +178,7 @@ def update_or_create_doc(sync_connection, doctype, parsed_data, external_id, mod
 
     if doc:
         # check if the document has been modified after the external system
-        if modified_date and doc.modified > modified_date:
+        if modified_date and doc.modified > modified_date or import_step.modified > doc.modified:
             return
         doc.update(parsed_data)
     else:
@@ -165,6 +193,8 @@ def update_or_create_doc(sync_connection, doctype, parsed_data, external_id, mod
 
     doc.save()
     frappe.db.commit()
+
+    return doc
 
 
 def process_exports(connection):
