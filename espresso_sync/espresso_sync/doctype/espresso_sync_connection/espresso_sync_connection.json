@@ -1,0 +1,115 @@
+{
+ "actions": [
+  {
+   "action": "espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.sync_action",
+   "action_type": "Server Action",
+   "label": "Sync Now"
+  }
+ ],
+ "allow_rename": 1,
+ "autoname": "field:connection_name",
+ "creation": "2023-03-18 19:58:27.065401",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "pull_shot",
+  "connection_name",
+  "sync_frequency",
+  "cron_rule",
+  "column_break_bgoy",
+  "api_url",
+  "auth_type",
+  "api_key",
+  "api_secret",
+  "section_break_ebtb",
+  "imports"
+ ],
+ "fields": [
+  {
+   "fieldname": "connection_name",
+   "fieldtype": "Data",
+   "label": "Connection Name",
+   "unique": 1
+  },
+  {
+   "fieldname": "api_url",
+   "fieldtype": "Data",
+   "label": "API URL",
+   "options": "URL"
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Data",
+   "label": "API Key"
+  },
+  {
+   "fieldname": "api_secret",
+   "fieldtype": "Password",
+   "label": "API Secret"
+  },
+  {
+   "fieldname": "sync_frequency",
+   "fieldtype": "Select",
+   "label": "Sync Frequency",
+   "options": "Manual\nEvery Minute\nHourly\nDaily\nWeekly\nMonthly\nCron"
+  },
+  {
+   "fieldname": "cron_rule",
+   "fieldtype": "Data",
+   "label": "Cron Rule"
+  },
+  {
+   "fieldname": "imports",
+   "fieldtype": "Table",
+   "label": "Imports",
+   "options": "Espresso Sync Connection Import"
+  },
+  {
+   "fieldname": "auth_type",
+   "fieldtype": "Select",
+   "label": "Authentication Type",
+   "options": "Header-based\nBasic"
+  },
+  {
+   "default": "0",
+   "fieldname": "pull_shot",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "column_break_bgoy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_ebtb",
+   "fieldtype": "Section Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2023-03-25 14:50:34.431064",
+ "modified_by": "Administrator",
+ "module": "Espresso Sync",
+ "name": "Espresso Sync Connection",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

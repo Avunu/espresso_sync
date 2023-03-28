@@ -1,6 +1,6 @@
 ## Espresso Sync
 
-A General Purpose 2-Way Sync Engine for Importing and Exporting data between Frappe sites and external APIs.
+Espresso Sync is a general-purpose 2-Way Sync Engine for replicating data between Frappe sites and external services using REST APIs.
 
 #### License
 

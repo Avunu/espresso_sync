@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2023-03-18 20:00:20.011160",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sync_connection",
+  "column_break_nzxn",
+  "external_id"
+ ],
+ "fields": [
+  {
+   "fieldname": "sync_connection",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sync Connection",
+   "options": "Espresso Sync Connection",
+   "reqd": 1
+  },
+  {
+   "fieldname": "external_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "External ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_nzxn",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2023-03-25 17:22:20.182417",
+ "modified_by": "Administrator",
+ "module": "Espresso Sync",
+ "name": "Espresso Sync ID",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
