@@ -6,7 +6,7 @@ import frappe
 import requests
 from frappe.model.document import Document
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
-import espresso_sync.espresso_sync.sync_engine as sync_engine
+import espresso_sync.sync_engine as sync_engine
 
 
 class EspressoSyncConnection(Document):

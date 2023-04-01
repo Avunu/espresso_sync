@@ -5,7 +5,7 @@ import frappe
 # from croniter import croniter
 # from datetime import datetime
 from crontab import CronSlices
-from sync_engine import process_sync
+from espresso_sync.sync_engine import process_sync
 
 def sync_all():
     sync_connections = frappe.get_all("Espresso Sync Connection", filters={"enabled": 1, "sync_frequency": "all"})
