@@ -1,7 +1,7 @@
 {
  "actions": [
   {
-   "action": "espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.sync_action",
+   "action": "sync_action",
    "action_type": "Server Action",
    "label": "Sync Now"
   }
@@ -90,7 +90,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-03-28 15:52:21.739336",
+ "modified": "2023-04-01 11:47:09.464923",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection",
@@ -112,5 +112,6 @@
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "style": "espresso_sync_connection.css"
 }

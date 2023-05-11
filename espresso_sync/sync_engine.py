@@ -60,7 +60,7 @@ def process_import_objects(import_step, import_objects):
         i += 1
     return
 
-def process_import_object(import_step, import_object):
+def process_import_object(import_step, import_object, save=True):
     doctype = import_step.import_doctype
     id_field = import_step.id_field_map
     modified_date_field = import_step.modified_date_field_map
@@ -95,7 +95,7 @@ def process_import_object(import_step, import_object):
                                 title="Invalid Modified Date Field")
 
     parsed_data = parse_mapping_template(object_map, import_object)
-    doc = update_or_create_doc(import_step, parsed_data, external_id, modified_date)
+    doc = update_or_create_doc(import_step, parsed_data, external_id, modified_date, save)
 
     return doc
 
@@ -136,6 +136,7 @@ def parse_mapping_template(object_map, data):
                 result[key] = frappe.render_template(value, data)
         elif isinstance(value, dict):
             match key in value:
+                # function dicts
                 case "match":
                     match_key = value["match"]["match-on"]
                     match_value = data.get(match_key)
@@ -147,6 +148,7 @@ def parse_mapping_template(object_map, data):
                     action = value["foreach"]["map"]
                     result[key] = [parse_mapping_template(
                         action, nested_item) for nested_item in nested_items]
+                # non-function dicts
                 case _:
                     result[key] = value
         elif isinstance(value, list):
@@ -158,7 +160,7 @@ def parse_mapping_template(object_map, data):
     return result
 
 
-def update_or_create_doc(import_step, parsed_data, external_id, modified_date):
+def update_or_create_doc(import_step, parsed_data, external_id, modified_date, save=True):
     doc = None
     sync_connection = import_step.parent
     doctype = import_step.import_doctype
@@ -191,8 +193,9 @@ def update_or_create_doc(import_step, parsed_data, external_id, modified_date):
             "external_id": external_id
         })
 
-    doc.save()
-    frappe.db.commit()
+    if save:
+        doc.save()
+        frappe.db.commit()
 
     return doc
 

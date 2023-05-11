@@ -1,6 +1,7 @@
 // Copyright (c) 2023, Avunu LLC and contributors
 // For license information, please see license.txt
 
+// debug
 frappe.realtime.on("console_log", function (data) {
 	console.log(data);
 });
@@ -34,8 +35,8 @@ frappe.ui.form.on('Espresso Sync Connection Import', {
 		if (object_map && sample_object) {
 			object_map = JSON.parse(object_map);
 			sample_object = JSON.parse(sample_object);
-			frappe.call({
-				method: 'espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.render_sample',
+			frm.call({
+				method: 'render_sample',
 				args: {
 					object_map: object_map,
 					sample_object: sample_object,
@@ -51,8 +52,8 @@ frappe.ui.form.on('Espresso Sync Connection Import', {
 	},
 	test_import: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
-		frappe.call({
-			method: 'espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.test_import',
+		frm.call({
+			method: 'test_import',
 			args: {
 				import_step: cur_row,
 				import_object: cur_row.sample_object,
@@ -70,27 +71,45 @@ frappe.ui.form.on('Espresso Sync Connection Import', {
 		var cur_row = locals[cdt][cdn];
 		const import_doctype = cur_row.import_doctype;
 		const get_uri = cur_row.get_uri;
-		frappe.call({
-			method: 'espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.get_sample_data',
-			args: {
-				connection: frm.doc.name,
-				get_uri: get_uri
-			},
-			callback: function (response) {
-				const sample_data = response.message || [];
-				const sample_data_count = sample_data.length;
-				// update the sample_object field
-				frm.set_value(cdt, cdn, "sample_objects", sample_data);
-				frm.set_value(cdt, cdn, "sample_count", sample_data_count);
-				frm.set_value(cdt, cdn, "sample_index", 0);
-				// get the first object
-				first_object = JSON.stringify(sample_data[0], null, 2);
-				frm.set_value(cdt, cdn, "sample_object", first_object);
-				// refresh the form
-				frm.refresh_field("imports");
-				frappe.show_alert("Sample data updated");
-			},
-		});
+
+		// debug
+		console.log(frm.doc.name)
+
+		const args = {
+			connection: frm.doc.name,
+			get_uri: get_uri
+		};
+		try {
+
+			// debug
+			console.log('try')
+
+			frm.call({
+				method: 'get_sample_data',
+				doc: frm.doc,
+				args: {
+					connection: frm.doc.name,
+					get_uri: get_uri
+				},
+				callback: function (response) {
+					const sample_data = response.message || [];
+					const sample_data_count = sample_data.length;
+					// update the sample_object field
+					cur_row.sample_objects = JSON.stringify(sample_data, null, 2);
+					cur_row.sample_count = sample_data_count;
+					cur_row.sample_index = 0;
+					// get the first object
+					first_object = JSON.stringify(sample_data[0], null, 2);
+					cur_row.sample_object = first_object;
+					// refresh the form
+					frm.refresh_field("imports");
+					frappe.show_alert("Sample data updated");
+				},
+			});
+		} catch (error) {
+			console.error(error);
+			console.log('error')
+		}
 	},
 	next_sample: function (frm, cdt, cdn) {
 		var cur_row = locals[cdt][cdn];
@@ -100,7 +119,7 @@ frappe.ui.form.on('Espresso Sync Connection Import', {
 			const sample_objects = JSON.parse(cur_row.sample_objects);
 			index = index + 1;
 			cur_row.sample_index = index;
-			cur_row.sample_object = sample_objects[index];
+			cur_row.sample_object = JSON.stringify(sample_objects[index], null, 2);
 			frm.refresh_field('imports');
 		}
 	},
@@ -111,15 +130,16 @@ frappe.ui.form.on('Espresso Sync Connection Import', {
 			const sample_objects = JSON.parse(cur_row.sample_objects);
 			index = index - 1;
 			cur_row.sample_index = index;
-			cur_row.sample_object = sample_objects[index];
+			cur_row.sample_object = JSON.stringify(sample_objects[index]);
 			frm.refresh_field('imports');
 		}
 	},
 	get_references: function (frm, cdt, cdn) {
 		var cur_row = locals[cdt][cdn];
 		const import_doctype = cur_row.import_doctype;
-		frappe.call({
-			method: 'espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.get_reference_docs',
+		frm.call({
+			method: 'get_reference_docs',
+			doc: frm.doc,
 			args: {
 				doctype: import_doctype
 			},
@@ -165,8 +185,8 @@ frappe.ui.form.on('Espresso Sync Connection Import', {
 });
 
 function open_template_generator_dialog(frm, doctype) {
-	frappe.call({
-		method: 'espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.get_doctype_fields',
+	frm.call({
+		method: 'get_doctype_fields',
 		args: {
 			doctype: doctype,
 		},
