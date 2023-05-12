@@ -22,7 +22,7 @@ frappe.ui.form.on('Espresso Sync Connection', {
 	}
 });
 
-frappe.ui.form.on('Espresso Sync Connection Import', {
+frappe.ui.form.on('Espresso Sync Connection Shot', {
 	template_generator: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
 		import_doctype = cur_row.import_doctype;

@@ -93,7 +93,13 @@ class EspressoSyncConnection(Document):
 	@frappe.whitelist()
 	def get_reference_docs(self, doctype):
 		# return a list of up to 10 documents of the given doctype
-		reference_docs = frappe.get_all(doctype, limit=10, fields=['*'])
+		# including child field values
+		reference_docs = []
+		# get a list of up to 10 objects from the given API endpoint
+		reference_docs_names = frappe.db.get_list(doctype, pluck='name', limit=10)
+		for doc_name in reference_docs_names:
+			doc = frappe.get_doc(doctype, doc_name)
+			reference_docs.append(doc.as_dict())
 		return reference_docs
 
 	@frappe.whitelist()

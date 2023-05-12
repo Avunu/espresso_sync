@@ -1,12 +1,14 @@
 # Copyright (c) 2023, Avunu LLC and contributors
 # For license information, please see license.txt
 
-import frappe
-from dateutil.parser import parse as parse_date
-import datetime
-import requests
-import json
 import base64
+import datetime
+import itertools
+import json
+
+import frappe
+import requests
+from dateutil.parser import parse as parse_date
 from jsonpath_ng import jsonpath, parse
 
 
@@ -22,18 +24,54 @@ def process_sync_connections():
 def process_sync_connection(connection):
     if connection.imports:
         for import_step in connection.imports:
-            process_imports(connection, import_step)
+            if import_step.request_payload:
+                process_import_with_payload(connection, import_step)
+            else:
+                process_import(connection, import_step)
     # if connection.exports:
     #     for export_entry in connection.exports:
     #         process_exports(connection, export_entry)
 
 
-def process_imports(connection, import_step):
+def process_import_with_payload(connection, import_step):
+    # Parse the payload
+    payload = json.loads(import_step.request_payload)
+    payload_replacements = {}
+
+    # Find all keys that start with "docs"
+    for key in payload:
+        if isinstance(payload[key], dict) and 'ids' in payload[key] and payload[key]['ids'].startswith('docs:'):
+            doctype = payload[key]['ids'].split(':')[1]
+            # Query for the IDs
+            ids = frappe.get_list(
+                'Espresso Sync ID',
+                filters={'parenttype': doctype,
+                         'sync_connection': connection.name},
+                fields=['external_id']
+            )
+            # Store the IDs for replacement
+            payload_replacements[key] = [id['external_id'] for id in ids]
+
+    # Generate all combinations of IDs
+    combinations = list(itertools.product(*payload_replacements.values()))
+
+    # For each combination, replace the IDs in the payload and run the import step
+    for combination in combinations:
+        new_payload = payload.copy()
+        for key, value in zip(payload_replacements.keys(), combination):
+            new_payload[key]['ids'] = [value]
+
+        # process the import step
+        process_import(connection, import_step, new_payload)
+
+
+def process_import(connection, import_step, payload=None):
     # debug
     # frappe.throw(f"doctype: {doctype}, id_field: {id_field}, modified_date_field: {modified_date_field}, modified_date_format: {modified_date_format}")
     url = connection.api_url + import_step.get_uri
 
-    response = requests.get(url, headers=get_request_headers(connection))
+    response = requests.get(
+        url, headers=get_request_headers(connection), params=payload)
     # test if response is valid json, if not, throw error
     try:
         response_data = response.json()
@@ -45,10 +83,11 @@ def process_imports(connection, import_step):
     if not isinstance(response_data, list):
         frappe.throw(response.text,
                      title="JSON Response should contain a list of objects")
-        
+
     process_import_objects(import_step, response_data)
 
     return
+
 
 def process_import_objects(import_step, import_objects):
     i = 0
@@ -59,6 +98,7 @@ def process_import_objects(import_step, import_objects):
             "import_progress", {"progress": i, "total": len(import_objects)}, user=frappe.session.user)
         i += 1
     return
+
 
 def process_import_object(import_step, import_object, save=True):
     doctype = import_step.import_doctype
@@ -71,7 +111,7 @@ def process_import_object(import_step, import_object, save=True):
         external_id = import_object[id_field]
     except KeyError:
         frappe.throw(f"ID field {id_field} not found in response data",
-                        title="Invalid ID Field")
+                     title="Invalid ID Field")
 
     # test if the response contains a modified date field, if not, throw error
     modified_date = None
@@ -79,23 +119,24 @@ def process_import_object(import_step, import_object, save=True):
         modified_date = import_object[modified_date_field]
         if not modified_date_field in import_object:
             frappe.throw(f"Modified Date field {modified_date_field} not found in response data",
-                            title="Invalid Modified Date Field")
+                         title="Invalid Modified Date Field")
         if not modified_date_format in ["", None]:
             try:
                 modified_date = datetime.datetime.strptime(
                     modified_date, modified_date_format)
             except ValueError:
                 frappe.throw(f"Modified Date value {modified_date_field} does not match format {modified_date_format}",
-                                title="Invalid Modified Date Field")
+                             title="Invalid Modified Date Field")
         else:
             try:
                 modified_date = parse_date(modified_date)
             except ValueError:
                 frappe.throw(f"Modified Date value {modified_date_field} could not be parsed as a date",
-                                title="Invalid Modified Date Field")
+                             title="Invalid Modified Date Field")
 
     parsed_data = parse_mapping_template(object_map, import_object)
-    doc = update_or_create_doc(import_step, parsed_data, external_id, modified_date, save)
+    doc = update_or_create_doc(
+        import_step, parsed_data, external_id, modified_date, save)
 
     return doc
 
@@ -114,7 +155,7 @@ def get_request_headers(sync_connection):
     return headers
 
 
-def parse_mapping_template(object_map, data):
+def parse_mapping_template(object_map, data, connection=None, doc=None):
     result = {}
     for key, value in object_map.items():
         if isinstance(value, str):
@@ -131,6 +172,20 @@ def parse_mapping_template(object_map, data):
             elif value.startswith("doc:"):
                 result[key] = frappe.db.get_single_value(
                     value.split(":")[1:], value.split(":")[2])
+            # fetch external id of linked doc if string starts with "id:"
+            # such as "id:project"
+            elif value.startswith("id:"):
+                result[key] = frappe.db.get_value(doctype="Espresso Sync ID", filters={
+                                                  'sync_connection': connection.name, 'parent': doc[value.split(":")[1:]]}, fieldname="external_id")
+            # fetch linked doc name if string starts with "link:"
+            # such as "link:Customer:$.clientId"
+            elif value.startswith("link:"):
+                doctype = value.split(":")[1]
+                id = value.split(":")[2]
+                jsonpath_expr = parse(id)
+                match = jsonpath_expr.find(data)[0].value
+                result[key] = frappe.db.get_value(doctype="Espresso Sync ID", filters={
+                                                  'sync_connection': connection.name, 'parenttype': doctype, 'external_id': match}, fieldname="parent")
             # otherwise process it as a jinja template
             else:
                 result[key] = frappe.render_template(value, data)

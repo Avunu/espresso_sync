@@ -25,7 +25,7 @@
   "api_key",
   "api_secret",
   "section_break_ebtb",
-  "imports"
+  "shots"
  ],
  "fields": [
   {
@@ -62,12 +62,6 @@
    "label": "Cron Rule"
   },
   {
-   "fieldname": "imports",
-   "fieldtype": "Table",
-   "label": "Imports",
-   "options": "Espresso Sync Connection Import"
-  },
-  {
    "fieldname": "auth_type",
    "fieldtype": "Select",
    "label": "Authentication Type",
@@ -86,11 +80,17 @@
   {
    "fieldname": "section_break_ebtb",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "shots",
+   "fieldtype": "Table",
+   "label": "Shots",
+   "options": "Espresso Sync Connection Shot"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-04-01 11:47:09.464923",
+ "modified": "2023-05-12 17:16:56.020076",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection",
@@ -112,6 +112,5 @@
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": [],
- "style": "espresso_sync_connection.css"
+ "states": []
 }
