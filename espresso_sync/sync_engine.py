@@ -22,20 +22,20 @@ def process_sync_connections():
 
 
 def process_sync_connection(connection):
+    if connection.exports:
+        for export_shot in connection.exports:
+            process_export(connection, export_shot)
     if connection.imports:
-        for import_step in connection.imports:
-            if import_step.request_payload:
-                process_import_with_payload(connection, import_step)
+        for import_shot in connection.imports:
+            if import_shot.request_payload:
+                process_import_with_payload(connection, import_shot)
             else:
-                process_import(connection, import_step)
-    # if connection.exports:
-    #     for export_entry in connection.exports:
-    #         process_exports(connection, export_entry)
+                process_import(connection, import_shot)
 
 
-def process_import_with_payload(connection, import_step):
+def process_import_with_payload(connection, import_shot):
     # Parse the payload
-    payload = json.loads(import_step.request_payload)
+    payload = json.loads(import_shot.request_payload)
     payload_replacements = {}
 
     # Find all keys that start with "docs"
@@ -62,13 +62,13 @@ def process_import_with_payload(connection, import_step):
             new_payload[key]['ids'] = [value]
 
         # process the import step
-        process_import(connection, import_step, new_payload)
+        process_import(connection, import_shot, new_payload)
 
 
-def process_import(connection, import_step, payload=None):
+def process_import(connection, import_shot, payload=None):
     # debug
     # frappe.throw(f"doctype: {doctype}, id_field: {id_field}, modified_date_field: {modified_date_field}, modified_date_format: {modified_date_format}")
-    url = connection.api_url + import_step.get_uri
+    url = connection.api_url + import_shot.get_uri
 
     response = requests.get(
         url, headers=get_request_headers(connection), params=payload)
@@ -84,15 +84,15 @@ def process_import(connection, import_step, payload=None):
         frappe.throw(response.text,
                      title="JSON Response should contain a list of objects")
 
-    process_import_objects(import_step, response_data)
+    process_import_objects(import_shot, response_data)
 
     return
 
 
-def process_import_objects(import_step, import_objects):
+def process_import_objects(import_shot, import_objects):
     i = 0
     for import_object in import_objects:
-        process_import_object(import_step, import_object)
+        process_import_object(import_shot, import_object)
         # show progress on frontend
         frappe.publish_realtime(
             "import_progress", {"progress": i, "total": len(import_objects)}, user=frappe.session.user)
@@ -100,12 +100,12 @@ def process_import_objects(import_step, import_objects):
     return
 
 
-def process_import_object(import_step, import_object, save=True):
-    doctype = import_step.import_doctype
-    id_field = import_step.id_field_map
-    modified_date_field = import_step.modified_date_field_map
-    modified_date_format = import_step.modified_date_format
-    object_map = json.loads(import_step.object_map)
+def process_import_object(import_shot, import_object, save=True):
+    doctype = import_shot.import_doctype
+    id_field = import_shot.id_field_map
+    modified_date_field = import_shot.modified_date_field_map
+    modified_date_format = import_shot.modified_date_format
+    object_map = json.loads(import_shot.object_map)
     # test if the response contains an id field, if not, throw error
     try:
         external_id = import_object[id_field]
@@ -136,7 +136,7 @@ def process_import_object(import_step, import_object, save=True):
 
     parsed_data = parse_mapping_template(object_map, import_object)
     doc = update_or_create_doc(
-        import_step, parsed_data, external_id, modified_date, save)
+        import_shot, parsed_data, external_id, modified_date, save)
 
     return doc
 
@@ -215,10 +215,10 @@ def parse_mapping_template(object_map, data, connection=None, doc=None):
     return result
 
 
-def update_or_create_doc(import_step, parsed_data, external_id, modified_date, save=True):
+def update_or_create_doc(import_shot, parsed_data, external_id, modified_date, save=True):
     doc = None
-    sync_connection = import_step.parent
-    doctype = import_step.import_doctype
+    sync_connection = import_shot.parent
+    doctype = import_shot.import_doctype
 
     # Check if a document with a matching Sync ID already exists
     sync_id_list = frappe.db.get_all("Espresso Sync ID", filters={
@@ -235,7 +235,7 @@ def update_or_create_doc(import_step, parsed_data, external_id, modified_date, s
 
     if doc:
         # check if the document has been modified after the external system
-        if modified_date and doc.modified > modified_date or import_step.modified > doc.modified:
+        if modified_date and doc.modified > modified_date or import_shot.modified > doc.modified:
             return
         doc.update(parsed_data)
     else:
@@ -255,42 +255,41 @@ def update_or_create_doc(import_step, parsed_data, external_id, modified_date, s
     return doc
 
 
-def process_exports(connection):
-    for export_step in connection.exports:
-        doctype = export_step.doctype
-        create_url = export_step.create_url
-        update_url = export_step.update_url
-        mapping_template = json.loads(export_step.mapping_template)
+def process_export(connection, export_shot):
+    doctype = export_shot.doctype
+    create_url = export_shot.create_url
+    update_url = export_shot.update_url
+    mapping_template = json.loads(export_shot.mapping_template)
 
-        # Fetch documents of the specified DocType
-        docs = frappe.get_all(
-            doctype, filters={"espresso_sync_id.sync_connection": connection.name})
+    # Fetch documents of the specified DocType
+    docs = frappe.get_all(
+        doctype, filters={"espresso_sync_id.sync_connection": connection.name})
 
-        for doc in docs:
-            doc_data = frappe.get_doc(doctype, doc.name).as_dict()
-            parsed_data = parse_mapping_template(mapping_template, doc_data)
+    for doc in docs:
+        doc_data = frappe.get_doc(doctype, doc.name).as_dict()
+        parsed_data = parse_mapping_template(mapping_template, doc_data)
 
-            # Check if the document has a unique ID for the external system
-            external_id = doc_data.get("espresso_sync_id").get("external_id")
+        # Check if the document has a unique ID for the external system
+        external_id = doc_data.get("espresso_sync_id").get("external_id")
 
-            if external_id:
-                # Update the existing object in the external system
-                url = update_url.format(external_id)
-                response = requests.put(
-                    url, headers=get_request_headers(connection), json=parsed_data)
-            else:
-                # Create a new object in the external system
-                response = requests.post(
-                    create_url, headers=get_request_headers(connection), json=parsed_data)
+        if external_id:
+            # Update the existing object in the external system
+            url = update_url.format(external_id)
+            response = requests.put(
+                url, headers=get_request_headers(connection), json=parsed_data)
+        else:
+            # Create a new object in the external system
+            response = requests.post(
+                create_url, headers=get_request_headers(connection), json=parsed_data)
 
-                # If the external system returns a unique ID, store it in the espresso_sync_id field
-                if response.status_code in [200, 201]:
-                    response_data = response.json()
-                    if "id" in response_data:
-                        sync_id = frappe.new_doc("Espresso Sync ID")
-                        sync_id.sync_connection = connection.name
-                        sync_id.external_id = response_data["id"]
-                        sync_id.parent = doc.name
-                        sync_id.parenttype = doctype
-                        sync_id.parentfield = "espresso_sync_id"
-                        sync_id.save()
+            # If the external system returns a unique ID, store it in the espresso_sync_id field
+            if response.status_code in [200, 201]:
+                response_data = response.json()
+                if "id" in response_data:
+                    sync_id = frappe.new_doc("Espresso Sync ID")
+                    sync_id.sync_connection = connection.name
+                    sync_id.external_id = response_data["id"]
+                    sync_id.parent = doc.name
+                    sync_id.parenttype = doctype
+                    sync_id.parentfield = "espresso_sync_id"
+                    sync_id.save()
