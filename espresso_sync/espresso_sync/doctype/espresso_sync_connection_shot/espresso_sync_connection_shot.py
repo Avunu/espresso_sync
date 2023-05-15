@@ -5,4 +5,17 @@
 from frappe.model.document import Document
 
 class EspressoSyncConnectionShot(Document):
-	pass
+	def create_url(self):
+		pass
+
+	def url_builder(self):
+		# debug
+		frappe.publish_realtime('console.log', 'url builder', user=frappe.session.user)
+		frappe.publish_realtime('console.log', self, user=frappe.session.user)
+		pass
+
+	def update_url(self):
+		pass
+
+	def mapping_template(self):
+		pass

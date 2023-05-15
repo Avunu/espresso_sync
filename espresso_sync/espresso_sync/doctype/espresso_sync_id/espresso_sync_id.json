@@ -8,7 +8,8 @@
  "field_order": [
   "sync_connection",
   "column_break_nzxn",
-  "external_id"
+  "external_id",
+  "request_uri_as_id"
  ],
  "fields": [
   {
@@ -29,12 +30,18 @@
   {
    "fieldname": "column_break_nzxn",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "request_uri_as_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Request URI as ID"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-03-25 17:22:20.182417",
+ "modified": "2023-05-15 09:02:04.727016",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync ID",

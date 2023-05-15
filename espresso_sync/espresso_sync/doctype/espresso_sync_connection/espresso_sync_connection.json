@@ -1,7 +1,7 @@
 {
  "actions": [
   {
-   "action": "sync_action",
+   "action": "espresso_sync.sync_engine.process_sync_connection_form_action",
    "action_type": "Server Action",
    "label": "Sync Now"
   }
@@ -90,7 +90,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-05-12 17:16:56.020076",
+ "modified": "2023-05-15 15:23:14.357706",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection",

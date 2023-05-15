@@ -25,8 +25,8 @@ frappe.ui.form.on('Espresso Sync Connection', {
 frappe.ui.form.on('Espresso Sync Connection Shot', {
 	template_generator: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
-		import_doctype = cur_row.import_doctype;
-		open_template_generator_dialog(frm, import_doctype);
+		dt = cur_row.dt;
+		open_template_generator_dialog(frm, dt);
 	},
 	render_sample: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
@@ -52,8 +52,13 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 	},
 	test_import: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
+		if (!cur_row.sample_object) {
+			cur_row.sample_object = '{}';
+		}
+
 		frm.call({
 			method: 'test_import',
+			doc: frm.doc,
 			args: {
 				import_step: cur_row,
 				import_object: cur_row.sample_object,
@@ -69,27 +74,15 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 	get_samples: function (frm, cdt, cdn) {
 		frappe.show_alert("Fetching sample data");
 		var cur_row = locals[cdt][cdn];
-		const import_doctype = cur_row.import_doctype;
-		const get_uri = cur_row.get_uri;
-
-		// debug
-		console.log(frm.doc.name)
-
-		const args = {
-			connection: frm.doc.name,
-			get_uri: get_uri
-		};
+		const dt = cur_row.dt;
+		const uri = cur_row.uri
 		try {
-
-			// debug
-			console.log('try')
-
 			frm.call({
 				method: 'get_sample_data',
 				doc: frm.doc,
 				args: {
 					connection: frm.doc.name,
-					get_uri: get_uri
+					uri: uri
 				},
 				callback: function (response) {
 					const sample_data = response.message || [];
@@ -136,12 +129,12 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 	},
 	get_references: function (frm, cdt, cdn) {
 		var cur_row = locals[cdt][cdn];
-		const import_doctype = cur_row.import_doctype;
+		const dt = cur_row.dt;
 		frm.call({
 			method: 'get_reference_docs',
 			doc: frm.doc,
 			args: {
-				doctype: import_doctype
+				doctype: dt
 			},
 			callback: function (response) {
 				const reference_docs = response.message || [];

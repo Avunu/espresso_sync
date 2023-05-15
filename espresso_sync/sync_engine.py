@@ -20,22 +20,37 @@ def process_sync_connections():
             "Espresso Sync Connection", connection.name)
         process_sync_connection(connection_doc)
 
+@frappe.whitelist()
+def process_sync_connection_form_action(doc: str):
+    doc_name = frappe._dict(json.loads(doc)).name
+    document = frappe.get_doc("Espresso Sync Connection", doc_name) 
+
+    # debug
+    frappe.publish_realtime('console.log', 'sync action', user=frappe.session.user)
+    frappe.publish_realtime('console.log', document, user=frappe.session.user)
+	
+    process_sync_connection(document)
+    return document
 
 def process_sync_connection(connection):
-    if connection.exports:
-        for export_shot in connection.exports:
-            process_export(connection, export_shot)
-    if connection.imports:
-        for import_shot in connection.imports:
-            if import_shot.request_payload:
-                process_import_with_payload(connection, import_shot)
-            else:
-                process_import(connection, import_shot)
+    for shot in connection.shots:
+        # TODO: handle deletion of objects
+        if shot.do_import:
+            # todo: handle advanced import requests
+            # such as requests with payloads
+            # and special request types
+            # if shot.request_payload:
+            #     process_import_with_payload(connection, shot)
+            # else:
+            process_import(connection, shot)
+        if shot.do_export:
+            process_export(connection, shot)
+    return
 
 
-def process_import_with_payload(connection, import_shot):
+def process_import_with_payload(connection, shot):
     # Parse the payload
-    payload = json.loads(import_shot.request_payload)
+    payload = json.loads(shot.request_payload)
     payload_replacements = {}
 
     # Find all keys that start with "docs"
@@ -62,13 +77,14 @@ def process_import_with_payload(connection, import_shot):
             new_payload[key]['ids'] = [value]
 
         # process the import step
-        process_import(connection, import_shot, new_payload)
+        process_import(connection, shot, new_payload)
 
 
-def process_import(connection, import_shot, payload=None):
+def process_import(connection, shot, payload=None):
     # debug
     # frappe.throw(f"doctype: {doctype}, id_field: {id_field}, modified_date_field: {modified_date_field}, modified_date_format: {modified_date_format}")
-    url = connection.api_url + import_shot.get_uri
+    # TODO: render the URL using a get_url method on the shot doc
+    url = connection.api_url + shot.uri
 
     response = requests.get(
         url, headers=get_request_headers(connection), params=payload)
@@ -84,15 +100,15 @@ def process_import(connection, import_shot, payload=None):
         frappe.throw(response.text,
                      title="JSON Response should contain a list of objects")
 
-    process_import_objects(import_shot, response_data)
+    process_import_objects(shot, response_data)
 
     return
 
 
-def process_import_objects(import_shot, import_objects):
+def process_import_objects(shot, import_objects):
     i = 0
     for import_object in import_objects:
-        process_import_object(import_shot, import_object)
+        process_import_object(shot, import_object)
         # show progress on frontend
         frappe.publish_realtime(
             "import_progress", {"progress": i, "total": len(import_objects)}, user=frappe.session.user)
@@ -100,12 +116,12 @@ def process_import_objects(import_shot, import_objects):
     return
 
 
-def process_import_object(import_shot, import_object, save=True):
-    doctype = import_shot.import_doctype
-    id_field = import_shot.id_field_map
-    modified_date_field = import_shot.modified_date_field_map
-    modified_date_format = import_shot.modified_date_format
-    object_map = json.loads(import_shot.object_map)
+def process_import_object(shot, import_object, save=True):
+    doctype = shot.dt
+    id_field = shot.id_field_map
+    modified_date_field = shot.modified_date_field_map
+    modified_date_format = shot.modified_date_format
+    object_map = json.loads(shot.object_map_import)
     # test if the response contains an id field, if not, throw error
     try:
         external_id = import_object[id_field]
@@ -136,7 +152,7 @@ def process_import_object(import_shot, import_object, save=True):
 
     parsed_data = parse_mapping_template(object_map, import_object)
     doc = update_or_create_doc(
-        import_shot, parsed_data, external_id, modified_date, save)
+        shot, parsed_data, external_id, modified_date, save)
 
     return doc
 
@@ -215,17 +231,22 @@ def parse_mapping_template(object_map, data, connection=None, doc=None):
     return result
 
 
-def update_or_create_doc(import_shot, parsed_data, external_id, modified_date, save=True):
+def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=True):
+
+    # debug
+    frappe.publish_realtime(
+        "console_log", f"parsed_data: {parsed_data}", user=frappe.session.user)
+
     doc = None
-    sync_connection = import_shot.parent
-    doctype = import_shot.import_doctype
+    sync_connection = shot.parent
+    doctype = shot.dt
 
     # Check if a document with a matching Sync ID already exists
     sync_id_list = frappe.db.get_all("Espresso Sync ID", filters={
         "sync_connection": sync_connection, "external_id": external_id},
         fields=["parent"])
 
-    # confirm that a matching document with a maching doctype exists
+    # confirm that a matching document with a matching doctype exists
     if sync_id_list:
         for sync_id_entry in sync_id_list:
             parent_exists = frappe.db.exists(doctype, sync_id_entry.parent)
@@ -235,10 +256,17 @@ def update_or_create_doc(import_shot, parsed_data, external_id, modified_date, s
 
     if doc:
         # check if the document has been modified after the external system
-        if modified_date and doc.modified > modified_date or import_shot.modified > doc.modified:
+        if modified_date and doc.modified > modified_date or shot.modified > doc.modified:
             return
         doc.update(parsed_data)
     else:
+
+        # debug
+        frappe.publish_realtime("console_log", "parsed_data:", user='Administrator')
+        frappe.publish_realtime("console_log", parsed_data, user=frappe.session.user)
+        frappe.publish_realtime("console_log", "doctype:", user=frappe.session.user)
+        frappe.publish_realtime("console_log", doctype, user=frappe.session.user)
+
         doc = frappe.new_doc(doctype)
         doc.update(parsed_data)
 
@@ -256,6 +284,10 @@ def update_or_create_doc(import_shot, parsed_data, external_id, modified_date, s
 
 
 def process_export(connection, export_shot):
+
+	# debug
+    frappe.publish_realtime("console_log", "process_export", user='Administrator')
+
     doctype = export_shot.doctype
     create_url = export_shot.create_url
     update_url = export_shot.update_url
