@@ -6,6 +6,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "details_tab",
   "section_break_qchd",
   "dt",
   "column_break_mler",
@@ -446,12 +447,17 @@
    "label": "DocType",
    "options": "DocType",
    "reqd": 1
+  },
+  {
+   "fieldname": "details_tab",
+   "fieldtype": "Tab Break",
+   "label": "Details"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-05-15 15:26:16.130165",
+ "modified": "2023-05-16 09:53:03.808188",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection Shot",

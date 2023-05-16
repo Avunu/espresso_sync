@@ -45,6 +45,9 @@ def process_sync_connection(connection):
             process_import(connection, shot)
         if shot.do_export:
             process_export(connection, shot)
+    # update the last sync date
+    connection.last_pull = datetime.datetime.now()
+    connection.save()
     return
 
 # TODO: figure out how to make this work with variations of variables in payload, headers, URI, etc.
@@ -291,7 +294,14 @@ def process_export(connection, export_shot):
     # such as the following
     # docs = frappe.get_all(
     #     doctype, filters={"espresso_sync_id.sync_connection": connection.name})
-    docs = frappe.get_all(doctype)
+
+    # fetch all docs of the specified doctype that were modified after the last sync (using the "last_pull" field from the sync connection)
+    last_pull = connection.last_pull
+    if last_pull:
+        docs = frappe.get_all(
+            doctype, filters={"modified": (">", last_pull)})
+    else:
+        docs = frappe.get_all(doctype)
 
     for doc in docs:
         doc_data = frappe.get_doc(doctype, doc.name).as_dict()
