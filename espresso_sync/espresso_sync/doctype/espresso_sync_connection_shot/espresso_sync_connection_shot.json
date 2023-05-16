@@ -6,7 +6,6 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "details_tab",
   "section_break_qchd",
   "dt",
   "column_break_mler",
@@ -63,10 +62,12 @@
   "reference_doc",
   "reference_count",
   "reference_docs",
-  "advanced_tab",
   "section_break_uylz",
   "override_url",
+  "override_api_base",
+  "column_break_qudi",
   "url",
+  "api_base",
   "section_break_ialv",
   "override_uris",
   "uris_section",
@@ -309,11 +310,6 @@
    "fieldtype": "Section Break"
   },
   {
-   "fieldname": "advanced_tab",
-   "fieldtype": "Tab Break",
-   "label": "Advanced"
-  },
-  {
    "fieldname": "section_break_uylz",
    "fieldtype": "Section Break"
   },
@@ -350,6 +346,7 @@
    "default": "0",
    "fieldname": "do_export",
    "fieldtype": "Check",
+   "in_list_view": 1,
    "label": "Export Objects"
   },
   {
@@ -366,6 +363,7 @@
    "default": "0",
    "fieldname": "do_import",
    "fieldtype": "Check",
+   "in_list_view": 1,
    "label": "Import Objects"
   },
   {
@@ -392,11 +390,12 @@
    "label": "Override Export Request Type"
   },
   {
+   "default": "POST",
    "depends_on": "eval:doc.override_export_request_type==1;",
    "fieldname": "export_request_type",
    "fieldtype": "Select",
    "label": "Request Type",
-   "options": "GET\nPOST\nPUT\nPATCH"
+   "options": "GET\nPOST\nPUT\nPATCH\nDELETE"
   },
   {
    "depends_on": "eval:doc.override_import_request==1;",
@@ -449,15 +448,26 @@
    "reqd": 1
   },
   {
-   "fieldname": "details_tab",
-   "fieldtype": "Tab Break",
-   "label": "Details"
+   "fieldname": "column_break_qudi",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "override_api_base",
+   "fieldtype": "Check",
+   "label": "Override API Base"
+  },
+  {
+   "depends_on": "eval:doc.override_api_base==1",
+   "fieldname": "api_base",
+   "fieldtype": "Data",
+   "label": "API Base"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-05-16 09:53:03.808188",
+ "modified": "2023-05-16 16:34:57.670109",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection Shot",

@@ -62,12 +62,12 @@ class EspressoSyncConnection(Document):
         return field_list
 
     @frappe.whitelist()
-    def get_sample_data(self, connection, get_uri):
+    def get_sample_data(self, shot_name):
         # get a list of up to 10 objects from the given API endpoint
-        connection = frappe.get_doc("Espresso Sync Connection", connection)
-        url = connection.api_url + get_uri 
+        shot = frappe.get_doc("Espresso Sync Connection Shot", shot_name)
+        url = shot.get_crud_url('read')
         response = requests.get(
-            url, headers=sync_engine.get_request_headers(connection))
+            url, headers=sync_engine.get_request_headers(self))
         # test if response is valid json, if not, throw error
         try:
             response_data = response.json()

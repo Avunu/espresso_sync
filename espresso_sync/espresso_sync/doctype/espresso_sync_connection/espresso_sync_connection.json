@@ -20,12 +20,14 @@
   "sync_frequency",
   "cron_rule",
   "column_break_bgoy",
-  "api_url",
+  "api_domain",
+  "api_base",
   "auth_type",
   "api_key",
   "api_secret",
   "section_break_ebtb",
-  "shots"
+  "shots",
+  "last_pull"
  ],
  "fields": [
   {
@@ -33,12 +35,6 @@
    "fieldtype": "Data",
    "label": "Connection Name",
    "unique": 1
-  },
-  {
-   "fieldname": "api_url",
-   "fieldtype": "Data",
-   "label": "API URL",
-   "options": "URL"
   },
   {
    "fieldname": "api_key",
@@ -86,11 +82,27 @@
    "fieldtype": "Table",
    "label": "Shots",
    "options": "Espresso Sync Connection Shot"
+  },
+  {
+   "fieldname": "api_base",
+   "fieldtype": "Data",
+   "label": "API Base"
+  },
+  {
+   "fieldname": "api_domain",
+   "fieldtype": "Data",
+   "label": "API Domain"
+  },
+  {
+   "fieldname": "last_pull",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Last Pull"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-05-15 15:23:14.357706",
+ "modified": "2023-05-16 11:01:01.586051",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection",

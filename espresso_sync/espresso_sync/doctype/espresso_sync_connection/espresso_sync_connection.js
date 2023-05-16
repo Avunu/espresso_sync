@@ -5,6 +5,9 @@
 frappe.realtime.on("console_log", function (data) {
 	console.log(data);
 });
+frappe.realtime.on("console.log", function (data) {
+	console.log(data);
+});
 
 frappe.realtime.on("import_progress", function (data) {
 	// use show_progress
@@ -75,14 +78,15 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 		frappe.show_alert("Fetching sample data");
 		var cur_row = locals[cdt][cdn];
 		const dt = cur_row.dt;
+
+
 		const uri = cur_row.uri
 		try {
 			frm.call({
 				method: 'get_sample_data',
 				doc: frm.doc,
 				args: {
-					connection: frm.doc.name,
-					uri: uri
+					shot_name: cur_row.name,
 				},
 				callback: function (response) {
 					const sample_data = response.message || [];
@@ -95,7 +99,7 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 					first_object = JSON.stringify(sample_data[0], null, 2);
 					cur_row.sample_object = first_object;
 					// refresh the form
-					frm.refresh_field("imports");
+					frm.refresh_field("shots");
 					frappe.show_alert("Sample data updated");
 				},
 			});
@@ -113,7 +117,8 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 			index = index + 1;
 			cur_row.sample_index = index;
 			cur_row.sample_object = JSON.stringify(sample_objects[index], null, 2);
-			frm.refresh_field('imports');
+			// refresh the form
+			frm.refresh_field("shots");
 		}
 	},
 	previous_sample: function (frm, cdt, cdn) {
@@ -123,8 +128,9 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 			const sample_objects = JSON.parse(cur_row.sample_objects);
 			index = index - 1;
 			cur_row.sample_index = index;
-			cur_row.sample_object = JSON.stringify(sample_objects[index]);
-			frm.refresh_field('imports');
+			cur_row.sample_object = JSON.stringify(sample_objects[index], null, 2);
+			// refresh the form
+			frm.refresh_field("shots");
 		}
 	},
 	get_references: function (frm, cdt, cdn) {
@@ -146,9 +152,9 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 				// get the first document
 				first_doc = JSON.stringify(reference_docs[0], null, 2);
 				frappe.model.set_value(cdt, cdn, "reference_doc", first_doc);
-				// refresh the form
-				frm.refresh_field("imports");
 				frappe.show_alert("Reference docs updated");
+				// refresh the form
+				frm.refresh_field("shots");
 			},
 		});
 	},
@@ -161,7 +167,8 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 			const reference_docs = JSON.parse(cur_row.reference_docs);
 			frappe.model.set_value(cdt, cdn, "reference_index", index);
 			frappe.model.set_value(cdt, cdn, "reference_doc", reference_docs[index]);
-			frm.refresh_field('imports');
+			// refresh the form
+			frm.refresh_field("shots");
 		}
 	},
 	previous_reference: function (frm, cdt, cdn) {
@@ -172,7 +179,8 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 			const reference_docs = JSON.parse(cur_row.reference_docs);
 			frappe.model.set_value(cdt, cdn, "reference_index", index);
 			frappe.model.set_value(cdt, cdn, "reference_doc", reference_docs[index]);
-			frm.refresh_field('imports');
+			// refresh the form
+			frm.refresh_field("shots");
 		}
 	}
 });
