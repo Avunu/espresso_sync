@@ -47,7 +47,7 @@ def process_sync_connection(connection):
             process_export(connection, shot)
     return
 
-
+# TODO: figure out how to make this work with variations of variables in payload, headers, URI, etc.
 def process_import_with_payload(connection, shot):
     # Parse the payload
     payload = json.loads(shot.request_payload)
@@ -95,24 +95,17 @@ def process_import(connection, shot, payload=None):
         frappe.throw(response.text,
                      title="Invalid JSON Response from API")
 
-    # test if the response contains a list of objects, if not, throw error
-    if not isinstance(response_data, list):
-        frappe.throw(response.text,
-                     title="JSON Response should contain a list of objects")
-
-    process_import_objects(shot, response_data)
-
-    return
-
-
-def process_import_objects(shot, import_objects):
-    i = 0
-    for import_object in import_objects:
-        process_import_object(shot, import_object)
-        # show progress on frontend
-        frappe.publish_realtime(
-            "import_progress", {"progress": i, "total": len(import_objects)}, user=frappe.session.user)
-        i += 1
+    # test if the response contains a list of objects and run a loop to process each object
+    if isinstance(response_data, list):
+        i = 0
+        for import_object in response_data:
+            process_import_object(shot, import_object)
+            # show progress on frontend
+            frappe.publish_realtime(
+                "import_progress", {"progress": i, "total": len(response_data)}, user=frappe.session.user)
+            i += 1
+    else:
+        process_import_object(shot, response_data)
     return
 
 
@@ -171,14 +164,14 @@ def get_request_headers(sync_connection):
     return headers
 
 
-def parse_mapping_template(object_map, data, connection=None, doc=None):
+def parse_mapping_template(object_map, object, connection=None, doc=None):
     result = {}
     for key, value in object_map.items():
         if isinstance(value, str):
             # check if the value is a jsonpath expression
             if value.startswith("$"):
                 jsonpath_expr = parse(value)
-                match = jsonpath_expr.find(data)
+                match = jsonpath_expr.find(object)
                 if match:
                     result[key] = match[0].value
                 else:
@@ -199,32 +192,32 @@ def parse_mapping_template(object_map, data, connection=None, doc=None):
                 doctype = value.split(":")[1]
                 id = value.split(":")[2]
                 jsonpath_expr = parse(id)
-                match = jsonpath_expr.find(data)[0].value
+                match = jsonpath_expr.find(object)[0].value
                 result[key] = frappe.db.get_value(doctype="Espresso Sync ID", filters={
                                                   'sync_connection': connection.name, 'parenttype': doctype, 'external_id': match}, fieldname="parent")
             # otherwise process it as a jinja template
             else:
-                result[key] = frappe.render_template(value, data)
+                result[key] = frappe.render_template(value, object)
         elif isinstance(value, dict):
             match key in value:
                 # function dicts
                 case "match":
                     match_key = value["match"]["match-on"]
-                    match_value = data.get(match_key)
+                    match_value = object.get(match_key)
                     cases = value["match"]["cases"]
                     result[key] = cases.get(match_value)
                 case "foreach":
-                    items_key = value["foreach"]["elements"]
-                    nested_items = data.get(items_key, [])
-                    action = value["foreach"]["map"]
+                    objects_key = value["foreach"]["objects"]
+                    nested_objects = object.get(objects_key, [])
+                    nested_object_map = value["foreach"]["map"]
                     result[key] = [parse_mapping_template(
-                        action, nested_item) for nested_item in nested_items]
+                        nested_object_map, object) for object in nested_objects]
                 # non-function dicts
                 case _:
                     result[key] = value
         elif isinstance(value, list):
             result[key] = [parse_mapping_template(
-                item, data) for item in value]
+                item, object) for item in value]
     # debug
     frappe.publish_realtime(
         "console_log", f"result: {result}", user=frappe.session.user)
@@ -288,31 +281,35 @@ def process_export(connection, export_shot):
 	# debug
     frappe.publish_realtime("console_log", "process_export", user='Administrator')
 
-    doctype = export_shot.doctype
-    create_url = export_shot.create_url
-    update_url = export_shot.update_url
-    mapping_template = json.loads(export_shot.mapping_template)
+    doctype = export_shot.dt
+    object_create_url = export_shot.get_create_url()
+    object_update_url = export_shot.get_update_url()
+    mapping_template = json.loads(export_shot.object_map_export)
 
     # Fetch documents of the specified DocType
-    docs = frappe.get_all(
-        doctype, filters={"espresso_sync_id.sync_connection": connection.name})
+    # TODO: add option for only syncing docs that are already linked to the specified connection
+    # such as the following
+    # docs = frappe.get_all(
+    #     doctype, filters={"espresso_sync_id.sync_connection": connection.name})
+    docs = frappe.get_all(doctype)
 
     for doc in docs:
         doc_data = frappe.get_doc(doctype, doc.name).as_dict()
-        parsed_data = parse_mapping_template(mapping_template, doc_data)
+        parsed_data = parse_mapping_template(mapping_template, doc_data, connection=connection, doc=doc_data)
 
         # Check if the document has a unique ID for the external system
         external_id = doc_data.get("espresso_sync_id").get("external_id")
 
         if external_id:
             # Update the existing object in the external system
-            url = update_url.format(external_id)
+            # example update URL: https://api.example.com/api/v1/contacts/{external_id}
+            url = object_update_url.format(external_id)
             response = requests.put(
                 url, headers=get_request_headers(connection), json=parsed_data)
         else:
             # Create a new object in the external system
             response = requests.post(
-                create_url, headers=get_request_headers(connection), json=parsed_data)
+                object_create_url, headers=get_request_headers(connection), json=parsed_data)
 
             # If the external system returns a unique ID, store it in the espresso_sync_id field
             if response.status_code in [200, 201]:
