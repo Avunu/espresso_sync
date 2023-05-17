@@ -9,6 +9,13 @@ frappe.realtime.on("console.log", function (data) {
 	console.log(data);
 });
 
+frappe.realtime.on("show_alert", function (data) {
+	frappe.show_alert({
+		message: data.message,
+		indicator: data.indicator,
+	})
+});
+
 frappe.realtime.on("import_progress", function (data) {
 	// use show_progress
 	frappe.show_progress("Importing Sync Items", data.progress, data.total);

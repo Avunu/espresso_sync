@@ -19,6 +19,7 @@
   "connection_name",
   "sync_frequency",
   "cron_rule",
+  "api_rate_limit_per_second",
   "column_break_bgoy",
   "api_domain",
   "api_base",
@@ -98,11 +99,16 @@
    "fieldtype": "Datetime",
    "hidden": 1,
    "label": "Last Pull"
+  },
+  {
+   "fieldname": "api_rate_limit_per_second",
+   "fieldtype": "Int",
+   "label": "API Rate Limit per Second"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-05-16 11:01:01.586051",
+ "modified": "2023-05-17 11:21:24.254085",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection",

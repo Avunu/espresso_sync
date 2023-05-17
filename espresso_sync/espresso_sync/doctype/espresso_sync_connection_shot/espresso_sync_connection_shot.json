@@ -64,9 +64,13 @@
   "reference_docs",
   "section_break_uylz",
   "override_url",
+  "override_url_scheme",
+  "override_api_domain",
   "override_api_base",
   "column_break_qudi",
   "url",
+  "url_scheme",
+  "api_domain",
   "api_base",
   "section_break_ialv",
   "override_uris",
@@ -462,12 +466,37 @@
    "fieldname": "api_base",
    "fieldtype": "Data",
    "label": "API Base"
+  },
+  {
+   "default": "0",
+   "fieldname": "override_api_domain",
+   "fieldtype": "Check",
+   "label": "Override API Domain"
+  },
+  {
+   "depends_on": "eval:doc.override_api_domain==1",
+   "fieldname": "api_domain",
+   "fieldtype": "Data",
+   "label": "API Domain"
+  },
+  {
+   "default": "0",
+   "fieldname": "override_url_scheme",
+   "fieldtype": "Check",
+   "label": "Override URL Scheme"
+  },
+  {
+   "default": "https://",
+   "depends_on": "eval:doc.override_url_scheme==1",
+   "fieldname": "url_scheme",
+   "fieldtype": "Data",
+   "label": "URL Scheme"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-05-16 16:34:57.670109",
+ "modified": "2023-05-17 11:58:50.314981",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection Shot",

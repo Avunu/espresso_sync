@@ -6,6 +6,7 @@ import datetime
 import itertools
 import json
 import asyncio
+import time
 
 import frappe
 import requests
@@ -67,7 +68,7 @@ def generate_id_variations(sync_connection, dynamic_id_fields):
     # first, check if it's a string
     if isinstance(dynamic_id_fields, str):
         is_string = True
-        # convert the string to a dict based on the / delimeter
+        # convert the string to a dict based on the / delimiter
         parts = dynamic_id_fields.split('/')[1:]
         dynamic_id_fields = {parts[i]: parts[i + 1] for i in range(0, len(parts), 2)}
     # generate all combinations of IDs
@@ -102,8 +103,6 @@ def generate_id_variations(sync_connection, dynamic_id_fields):
 
     return variations
         
-
-
 def process_import(sync_connection, shot, payload=None):
     # debug
     # frappe.throw(f"doctype: {doctype}, id_field: {id_field}, modified_date_field: {modified_date_field}, modified_date_format: {modified_date_format}")
@@ -208,8 +207,7 @@ def parse_mapping_template(object_map, object, sync_connection=None, doc=None):
             # fetch external id of linked doc if string starts with "id:"
             # such as "id:project"
             elif value.startswith("id:"):
-                result[key] = frappe.db.get_value(doctype="Espresso Sync ID", filters={
-                                                'sync_connection': sync_connection.name, 'parent': doc[value.split(":")[1:][0]]}, fieldname="external_id")
+                result[key] = frappe.db.get_value(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parent': doc[value.split(":")[1:][0]]}, fieldname="external_id")
 
             # fetch linked doc name if string starts with "link:"
             # such as "link:Customer:$.clientId"
@@ -218,8 +216,7 @@ def parse_mapping_template(object_map, object, sync_connection=None, doc=None):
                 id = value.split(":")[2]
                 jsonpath_expr = parse(id)
                 match = jsonpath_expr.find(object)[0].value
-                result[key] = frappe.db.get_value(doctype="Espresso Sync ID", filters={
-                                                  'sync_connection': sync_connection.name, 'parenttype': doctype, 'external_id': match}, fieldname="parent")
+                result[key] = frappe.db.get_value(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parenttype': doctype, 'external_id': match}, fieldname="parent")
             # otherwise process it as a jinja template
             else:
                 result[key] = frappe.render_template(value, object)
@@ -287,6 +284,8 @@ def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=Tru
 
 def process_export(sync_connection, export_shot):
 
+    api_rate_limit_per_second = sync_connection.api_rate_limit_per_second
+
     doctype = export_shot.dt
     mapping_template = json.loads(export_shot.object_map_export)
 
@@ -309,11 +308,6 @@ def process_export(sync_connection, export_shot):
     for doc in docs:
         doc_data = frappe.get_doc(doctype, doc.name).as_dict()
         parsed_data = parse_mapping_template(mapping_template, doc_data, sync_connection=sync_connection, doc=doc_data)
-
-        # debug
-        frappe.publish_realtime('console.log', "Parsed Data:", user=frappe.session.user)
-        frappe.publish_realtime('console.log', parsed_data, user=frappe.session.user)
-
         # Check if the document has a unique ID for the external system
         external_id = frappe.db.get_value(doctype="Espresso Sync ID", filters={
             'sync_connection': sync_connection.name, 'parent': doc.name}, fieldname="external_id")
@@ -321,28 +315,66 @@ def process_export(sync_connection, export_shot):
         if external_id:
             # Update the existing object in the external system
             # example update URL: https://api.example.com/api/v1/contacts/{external_id}
-            object_update_url = export_shot.get_crud_url('update', external_id=external_id)
-            response = requests.put(
-                object_update_url, headers=get_request_headers(sync_connection), json=parsed_data)
+            object_update_urls = export_shot.get_crud_url('update', external_id=external_id)
+            # object update URL should be a list of urls with at least one item
+            # iterate though the list 
+            # set a stopwatch
+            start_time = time.time()
+            call_count = 0
+            for object_update_url in object_update_urls:
+                response = requests.put(
+                    object_update_url, headers=get_request_headers(sync_connection), json=parsed_data)
+
+                # debug
+                frappe.publish_realtime('console_log', 'response:', user=frappe.session.user)
+                frappe.publish_realtime('console_log', response, user=frappe.session.user)
+                # end debug
+
+                # add 1 to the call count
+                call_count += 1
+                # compare the elapsed time to the call count
+                elapsed_time = time.time() - start_time
+                # if the call count is greater than or equal to the api rate limit per second minus 1, sleep for the remainder of the second
+                if call_count >= api_rate_limit_per_second - 1:
+                    time.sleep(1 - elapsed_time)
+                    # reset the call count and stopwatch
+                    call_count = 0
+                    start_time = time.time()
         else:
             # Create a new object in the external system
-            object_create_url = export_shot.get_crud_url('create')
-            response = requests.post(
-                object_create_url, headers=get_request_headers(sync_connection), json=parsed_data)
+            object_create_urls = export_shot.get_crud_url('create')
+            # object create URL should be a list of urls with at least one item
+            # iterate though the list
+            # set a stopwatch
+            start_time = time.time()
+            call_count = 0
+            for object_create_url in object_create_urls:
+                response = requests.post(
+                    object_create_url, headers=get_request_headers(sync_connection), json=parsed_data)
+                # add 1 to the call count
+                call_count += 1
+                # compare the elapsed time to the call count
+                elapsed_time = time.time() - start_time
+                # if the call count is greater than or equal to the api rate limit per second minus 1, sleep for the remainder of the second
+                if call_count >= api_rate_limit_per_second - 1:
+                    time.sleep(1 - elapsed_time)
+                    # reset the call count and stopwatch
+                    call_count = 0
+                    start_time = time.time()
 
-            # If the external system returns a unique ID, store it in the espresso_sync_id field
-            if response.status_code in [200, 201]:
-                response_data = response.json()
-                if "id" in response_data:
-                    sync_id = frappe.new_doc("Espresso Sync ID")
-                    sync_id.sync_connection = sync_connection.name
-                    sync_id.external_id = response_data["id"]
-                    sync_id.parent = doc.name
-                    sync_id.parenttype = doctype
-                    sync_id.parentfield = "espresso_sync_id"
-                    sync_id.save()
-                    frappe.db.commit()
-            # if the external system returns an error, log it
-            else:
-                frappe.log_error(
-                    response_data.content, f"Error creating {doctype} in external system")
+                # If the external system returns a unique ID, store it in the espresso_sync_id field
+                if response.status_code in [200, 201]:
+                    response_data = response.json()
+                    if "id" in response_data:
+                        sync_id = frappe.new_doc("Espresso Sync ID")
+                        sync_id.sync_connection = sync_connection.name
+                        sync_id.external_id = response_data["id"]
+                        sync_id.parent = doc.name
+                        sync_id.parenttype = doctype
+                        sync_id.parentfield = "espresso_sync_id"
+                        sync_id.save()
+                        frappe.db.commit()
+                # if the external system returns an error, log it
+                else:
+                    frappe.log_error(
+                        response_data.content, f"Error creating {doctype} in external system")
