@@ -65,7 +65,7 @@ class EspressoSyncConnection(Document):
     def get_sample_data(self, shot_name):
         # get a list of up to 10 objects from the given API endpoint
         shot = frappe.get_doc("Espresso Sync Connection Shot", shot_name)
-        url = shot.get_crud_url('read')
+        url = shot.get_crud_uri('read')
         response = requests.get(
             url, headers=sync_engine.get_request_headers(self))
         # test if response is valid json, if not, throw error
