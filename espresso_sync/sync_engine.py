@@ -3,15 +3,12 @@
 
 import base64
 import datetime
-import itertools
-import json
-import asyncio
-import time
-import re
 import frappe
+import json
 import requests
+import time
 from dateutil.parser import parse as parse_date
-from jsonpath_ng import jsonpath, parse
+from espresso_sync.map_engine import parse_dynamic_parameter, parse_object_map
 
 
 def process_sync_connections():
@@ -25,7 +22,7 @@ def process_sync_connections():
 @frappe.whitelist()
 def process_sync_connection_form_action(doc: str):
     doc_name = frappe._dict(json.loads(doc)).name
-    document = frappe.get_doc("Espresso Sync Connection", doc_name) 
+    document = frappe.get_doc("Espresso Sync Connection", doc_name)
     process_sync_connection(document)
     return document
 
@@ -33,7 +30,7 @@ def process_sync_connection(sync_connection):
     for shot in sync_connection.shots:
         # TODO: handle deletion of objects
         if shot.do_import:
-            # todo: handle advanced import requests
+            # TODO: handle advanced import requests
             # such as requests with payloads
             # and special request types
             # if shot.request_payload:
@@ -62,115 +59,8 @@ def import_with_uri_variations(sync_connection, shot):
 
     return
 
-# TODO: figure out how to make this work with variations of variables in payload, headers, URI, etc.
-def generate_id_variations(sync_connection, dynamic_id_fields):
-    is_string = False
-    # first, check if it's a string
-    if isinstance(dynamic_id_fields, str):
-        is_string = True
-        # convert the string to a dict based on the / delimiter
-        parts = dynamic_id_fields.split('/')[1:]
-        dynamic_id_fields = {parts[i]: parts[i + 1] for i in range(0, len(parts), 2)}
-    # generate all combinations of IDs
-    dynamic_id_replacements = {}
-    for key in dynamic_id_fields:
-        if dynamic_id_fields[key].startswith('docs:'):
-            doctype = dynamic_id_fields[key].split(':')[1]
-            # Query for the IDs - USE THIS FOR PERMUTATION BUILDER
-            ids = frappe.get_list(
-                'Espresso Sync ID',
-                filters={'parenttype': doctype,
-                            'sync_connection': sync_connection.name},
-                fields=['external_id']
-            )
-            # Store the IDs for replacement
-            dynamic_id_replacements[key] = [id['external_id'] for id in ids]
+# TODO: figure out how to make this work with variations of variables in payload, headers, URI, etc. ???
 
-    # Generate all combinations of IDs
-    combinations = list(itertools.product(*dynamic_id_replacements.values()))
-
-    # For each combination, replace the IDs in the payload and run the import step
-    variations = []
-    for combination in combinations:
-        dynamic_id_value = dynamic_id_fields.copy()
-        for key, value in zip(dynamic_id_replacements.keys(), combination):
-            dynamic_id_value[key]['ids'] = [value]
-        # add the variation to a list
-        if is_string:
-            variations.append('/'.join(dynamic_id_value))
-        else:
-            variations.append(dynamic_id_value)
-
-    return variations
-
-# This function builds a list of all possible permutations of a parameter string based on dynamic tags in the string
-def permutation_builder(parameter, shot, sync_connection, is_export=False):
-	docs = [0]
-	if is_export:
-		docs = frappe.get_all(shot.doctype)
-
-	for doc in docs:
-		half_baked_parameters = [parameter]  # Start with the original parameter
-		finished_parameters = []
-		while half_baked_parameters:
-			parameter = half_baked_parameters.pop()  # Take the last parameter from the list
-			# Find the first dynamic parameter in the parameter string
-			first_dynamic_tag = re.search(r'{(.*?)}', parameter)
-			if first_dynamic_tag:
-				# Get everything between the dynamic tag braces
-				dynamic_tag = first_dynamic_tag.group(1)
-				if dynamic_tag.startswith('id:'):
-					# Split the dynamic parameter on the colon
-					dynamic_tag_parts = dynamic_tag.split(':')
-					# Get the doctype from the dynamic parameter
-					doctype = dynamic_tag_parts[1]
-					# Get a list of all instances of the doc
-					# if this is an export, get the doc related to the current doc
-					if is_export:
-						# find the fieldname of the link field that links the shot doctype to the doctype in the dynamic tag
-						link_fields = frappe.get_meta(shot.doctype).get_link_fields()
-						link_field = None
-						for field in link_fields:
-							if field.options == doctype:
-								link_field = field.fieldname
-						# get the doc
-						dynamic_tag_doc = frappe.get_list(doctype, filters={link_field: doc.name}, fields=['name'])
-						# if there is a doc, add it to the doc list
-						if dynamic_tag_doc:
-							dynamic_tag_doc_list = [doc[0]]
-					else:
-						dynamic_tag_doc_list = frappe.get_all(doctype)
-					# Loop through the list of docs
-					for dynamic_tag_doc in dynamic_tag_doc_list:
-						try:
-							# get the doc
-							doc = frappe.get_doc(doctype, doc.name)
-							# Get the external id of the doc for this sync_connection
-							external_id = frappe.db.get_value(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parent': doc.name}, fieldname="external_id")
-							# If there is an external id, replace the dynamic parameter with the external id
-							if external_id:
-								new_parameter = parameter.replace(first_dynamic_tag.group(0), external_id)
-								# Add the new parameter to the half_baked_parameters list
-								half_baked_parameters.append(new_parameter)
-						except Exception as e:
-							frappe.publish_realtime('show_alert', {'message': f"Error getting external id for {doc_name}: {e}", 'indicator': 'orange'}, user=frappe.session.user)
-							frappe.log_error(f"Error getting external id for {doc_name}: {e}")
-							continue
-				else:
-					# Handle the dyno tag as jinja
-					try:
-						# Replace the dynamic parameter with the value
-						new_parameter = parameter.replace(first_dynamic_tag.group(0), frappe.render_template(dynamic_tag, shot.as_dict()))
-						# Add the new parameter to the half_baked_parameters list
-						half_baked_parameters.append(new_parameter)
-					except Exception as e:
-						frappe.publish_realtime('show_alert', {'message': f"Error rendering template: {e}", 'indicator': 'orange'}, user=frappe.session.user)
-						frappe.log_error(f"Error rendering template: {e}")
-			# If there are no dynamic parameters, add the parameter to the finished_parameters list
-			else:
-				finished_parameters.append(parameter)
-	return finished_parameters
-        
 def process_import(sync_connection, shot, payload=None):
     # debug
     # frappe.throw(f"doctype: {doctype}, id_field: {id_field}, modified_date_field: {modified_date_field}, modified_date_format: {modified_date_format}")
@@ -199,9 +89,7 @@ def process_import(sync_connection, shot, payload=None):
         process_import_object(shot, response_data)
     return
 
-
 def process_import_object(shot, import_object, save=True):
-    doctype = shot.dt
     id_field = shot.id_field_map
     modified_date_field = shot.modified_date_field_map
     modified_date_format = shot.modified_date_format
@@ -234,12 +122,11 @@ def process_import_object(shot, import_object, save=True):
                 frappe.throw(f"Modified Date value {modified_date_field} could not be parsed as a date",
                              title="Invalid Modified Date Field")
 
-    parsed_data = parse_mapping_template(object_map, import_object)
+    parsed_data = parse_object_map(object_map, import_object)
     doc = update_or_create_doc(
         shot, parsed_data, external_id, modified_date, save)
 
     return doc
-
 
 def get_request_headers(sync_connection):
     headers = {}
@@ -253,62 +140,6 @@ def get_request_headers(sync_connection):
         headers["Authorization"] = f"Basic {encoded_credentials}"
 
     return headers
-
-
-def parse_mapping_template(object_map, object, sync_connection=None, doc=None):
-    result = {}
-    for key, value in object_map.items():
-        if isinstance(value, str):
-            # check if the value is a JSONPath expression
-            if value.startswith("$"):
-                jsonpath_expr = parse(value)
-                match = jsonpath_expr.find(object)
-                if match:
-                    result[key] = match[0].value
-                else:
-                    result[key] = None
-            # fetch single doc values from db if string starts with "{doc:}"
-            # such as "{doc:Selling Settings:default_price_list}"
-            elif value.startswith("{doc:"):
-                doc_value = value.strip("{}").split(":")[1:]
-                result[key] = frappe.db.get_single_value(doc_value[0], doc_value[1])
-            # fetch external id of linked doc if string starts with "{id:}"
-            # such as "{id:project}"
-            elif value.startswith("{id:"):
-                id_value = value.strip("{}").split(":")[1]
-                result[key] = frappe.db.get_value(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parent': doc[id_value]}, fieldname="external_id")
-            # fetch linked doc name if string starts with "{link:}"
-            # such as "{link:Customer:$.clientId}"
-            elif value.startswith("{link:"):
-                link_value = value.strip("{}").split(":")[1:]
-                jsonpath_expr = parse(link_value[1])
-                match = jsonpath_expr.find(object)[0].value
-                result[key] = frappe.db.get_value(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parenttype': link_value[0], 'external_id': match}, fieldname="parent")
-            # otherwise process it as a jinja template
-            else:
-                result[key] = frappe.render_template(value, object)
-        elif isinstance(value, dict):
-            match key in value:
-                # function dicts
-                case "match":
-                    match_key = value["match"]["match-on"]
-                    match_value = object.get(match_key)
-                    cases = value["match"]["cases"]
-                    result[key] = cases.get(match_value)
-                case "foreach":
-                    objects_key = value["foreach"]["objects"]
-                    nested_objects = object.get(objects_key, [])
-                    nested_object_map = value["foreach"]["map"]
-                    result[key] = [parse_mapping_template(
-                        nested_object_map, object) for object in nested_objects]
-                # non-function dicts
-                case _:
-                    result[key] = value
-        elif isinstance(value, list):
-            result[key] = [parse_mapping_template(
-                item, object) for item in value]
-    return result
-
 
 def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=True):
     doc = None
@@ -359,10 +190,27 @@ def process_export(sync_connection, export_shot, parameters=None):
     # docs = frappe.get_all(
     #     doctype, filters={"espresso_sync_id.sync_connection": sync_connection.name})
     # fetch all docs of the specified doctype
-    docs = frappe.get_all(doctype)
+    # docs = frappe.get_all(doctype, fields=["*"]).as_dict()
+    docs = frappe.get_all(doctype, fields=["*"])
+
+    # debug
+    frappe.publish_realtime('console_log', 'docs:', user=frappe.session.user)
+    frappe.publish_realtime('console_log', docs, user=frappe.session.user)
+    # end debug
+
     last_pull = sync_connection.last_pull
     api_url = export_shot.get_api_url()
-    api_urls = permutation_builder(api_url, export_shot, sync_connection)
+    api_urls = parse_dynamic_parameter(api_url, export_shot, sync_connection, docs)
+
+    # debug
+    frappe.publish_realtime('console_log', 'api_url:', user=frappe.session.user)
+    frappe.publish_realtime('console_log', api_url, user=frappe.session.user)
+    frappe.publish_realtime('console_log', 'api_urls:', user=frappe.session.user)
+    frappe.publish_realtime('console_log', api_urls, user=frappe.session.user)
+    # end debug
+
+    start_time = time.time()
+    call_count = 0
     for doc in docs:
         # test the modified time
         if last_pull:
@@ -374,19 +222,23 @@ def process_export(sync_connection, export_shot, parameters=None):
         object_api_url = api_urls[doc_index]
         doc = frappe.get_doc(doctype, doc.name)
         doc_data = doc.as_dict()
-        parsed_data = parse_mapping_template(mapping_template, doc_data, sync_connection=sync_connection, doc=doc_data)
+        parsed_data = parse_object_map(
+            mapping_template, doc_data, sync_connection=sync_connection, doc=doc_data)
         # Check if the document has a unique ID for the external system
-        external_id = frappe.db.get_value(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parent': doc.name}, fieldname="external_id")
+        external_id = frappe.db.get_value(doctype="Espresso Sync ID", filters={
+                                          'sync_connection': sync_connection.name, 'parent': doc.name}, fieldname="external_id")
         if external_id:
             # Update the existing object in the external system
             # object_update_url = f"{object_update_url}/{external_id}"
             # get_crud_uri(self, url, crud_action, external_id=None)
-            object_update_url = export_shot.get_crud_uri(object_api_url, "update", external_id)
+            object_update_url = export_shot.get_crud_uri(
+                object_api_url, "update", external_id)
             response = requests.put(
                 object_update_url, headers=get_request_headers(sync_connection), json=parsed_data)
         else:
             # Create a new object in the external system
-            object_create_url = export_shot.get_crud_uri(object_api_url, "create")
+            object_create_url = export_shot.get_crud_uri(
+                object_api_url, "create")
             response = requests.post(
                 object_create_url, headers=get_request_headers(sync_connection), json=parsed_data)
             # If the external system returns a unique ID, store it in the espresso_sync_id field
@@ -401,4 +253,12 @@ def process_export(sync_connection, export_shot, parameters=None):
                     frappe.db.commit()
             # if the external system returns an error, log it
             else:
-                frappe.log_error(f"Error creating {doctype} in external system", response.content)
+                frappe.log_error(
+                    f"Error creating {doctype} in external system", response.content)
+        call_count += 1
+        if call_count >= api_rate_limit_per_second:
+            time_passed = time.time() - start_time
+            if time_passed < 1:
+                time.sleep(1 - time_passed)
+            call_count = 0
+            start_time = time.time()

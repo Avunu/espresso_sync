@@ -102,20 +102,10 @@ class EspressoSyncConnection(Document):
         object_map = frappe._dict(json.loads(object_map))
         sample_object = frappe._dict(json.loads(sample_object))
 
-        return sync_engine.parse_mapping_template(object_map, sample_object)
+        return sync_engine.parse_object_map(object_map, sample_object)
 
     @frappe.whitelist()
     def test_import(self, import_step, import_object):
-
-        # debug
-        frappe.publish_realtime('console.log', 'self', user=frappe.session.user) 
-        frappe.publish_realtime('console.log', self, user=frappe.session.user)
-        frappe.publish_realtime('console.log', 'import_step', user=frappe.session.user)
-        frappe.publish_realtime('console.log', import_step, user=frappe.session.user)
-        frappe.publish_realtime('console.log', 'import_object', user=frappe.session.user)
-        frappe.publish_realtime('console.log', import_object, user=frappe.session.user)
-
-
         import_step = frappe._dict(json.loads(import_step))
         import_object = frappe._dict(json.loads(import_object))
         return sync_engine.process_import_object(import_step, import_object, False)
