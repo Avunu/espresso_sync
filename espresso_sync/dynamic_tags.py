@@ -2,7 +2,7 @@ import frappe
 from jsonpath_ng import jsonpath, parse
 
 
-def parse_dynamic_tag(tag, object, sync_connection, doc):
+def tamp_dynamic_tag(tag, object, sync_connection, doc):
     """
     This function identifies the tag type and calls the respective handler function.
     :param tag: the entire tag string (e.g., "{doc:Selling Settings:default_price_list}")
@@ -10,8 +10,9 @@ def parse_dynamic_tag(tag, object, sync_connection, doc):
     :param sync_connection: the Espresso Sync Connection
     :param doc: the associated frappe doc as a dictionary (used for exporting)
     """
-    tag_type = tag[1:-1].split(':')[0]
-    params = ":".join(tag[1:-1].split(':')[1:])
+    # broken_tag = tag.split(':')
+    tag_type = tag.split(':')[0]
+    params = ":".join(tag.split(':')[1:])
     handlers = {
         "doc": doc_tag,
         "link": link_tag,

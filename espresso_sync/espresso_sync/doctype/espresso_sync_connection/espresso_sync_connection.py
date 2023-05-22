@@ -4,9 +4,10 @@
 import json
 import frappe
 import requests
+import espresso_sync.sync_engine as sync_engine
 from frappe.model.document import Document
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
-import espresso_sync.sync_engine as sync_engine
+from espresso_sync.map_engine import tamp_dynamic_parameter, tamp_object_map
 
 
 class EspressoSyncConnection(Document):
@@ -41,13 +42,8 @@ class EspressoSyncConnection(Document):
 
     @frappe.whitelist()
     def sync_action(doc: str):
-
-		# debug
-        frappe.publish_realtime('console.log', 'sync action', user=frappe.session.user)
-
         doc_name = frappe._dict(json.loads(doc)).name
         document = frappe.get_doc("Espresso Sync Connection", doc_name) 
-        # frappe.msgprint(document)
         sync_engine.process_sync_connection(document)
         return document
 
@@ -65,7 +61,13 @@ class EspressoSyncConnection(Document):
     def get_sample_data(self, shot_name):
         # get a list of up to 10 objects from the given API endpoint
         shot = frappe.get_doc("Espresso Sync Connection Shot", shot_name)
-        url = shot.get_crud_uri('read')
+        # get sync_connection from shot
+        sync_connection = frappe.get_doc("Espresso Sync Connection", shot.parent)
+        # grab a single doc for the dynamic parameter substitution
+        doc = frappe.get_all(shot.dt, limit=1, fields=["*"])
+        url = shot.extract_api_url()
+        urls = tamp_dynamic_parameter(url, shot, sync_connection, doc)
+        url = shot.extract_crud_uri(urls[0], 'read')
         response = requests.get(
             url, headers=sync_engine.get_request_headers(self))
         # test if response is valid json, if not, throw error
@@ -102,7 +104,7 @@ class EspressoSyncConnection(Document):
         object_map = frappe._dict(json.loads(object_map))
         sample_object = frappe._dict(json.loads(sample_object))
 
-        return sync_engine.parse_object_map(object_map, sample_object)
+        return sync_engine.tamp_object_map(object_map, sample_object)
 
     @frappe.whitelist()
     def test_import(self, import_step, import_object):
@@ -114,14 +116,23 @@ class EspressoSyncConnection(Document):
 
 
 def create_espresso_sync_id_custom_field(doctype):
-    # TODO: figure out more intelligent way to set the insert_after property
-    # ideas: "Integration Details" section, "Connections" tab, "Dashboard" tab
+    # Create a new tab called 'Sync' for this table to go into
+    tab_properties = {
+        'doctype': doctype,
+        'fieldname': 'espresso_sync_tab',
+        'label': 'Sync',
+        # 'insert_after': 'modified_by',
+    }
+    create_custom_field(doctype, tab_properties)
+
+    # Create the "Espresso Sync ID" child table field in the new tab
     field_properties = {
         'doctype': doctype,
         'fieldname': 'espresso_sync_ids',
         'fieldtype': 'Table',
         'label': 'Espresso Sync IDs',
-        'insert_after': 'modified_by',
+        'insert_after': 'espresso_sync_tab',
         'options': 'Espresso Sync ID',
+        'parent': 'Sync',
     }
     create_custom_field(doctype, field_properties)

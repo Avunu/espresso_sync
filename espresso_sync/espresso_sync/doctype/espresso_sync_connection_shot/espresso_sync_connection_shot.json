@@ -32,8 +32,6 @@
   "override_import_request",
   "import_request_type",
   "request_payload",
-  "section_instructions_import",
-  "html_faru",
   "section_break_hcjd",
   "do_export",
   "section_break_mhaf",
@@ -135,8 +133,7 @@
    "fieldname": "id_field_map",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "ID Field",
-   "reqd": 1
+   "label": "ID Field"
   },
   {
    "fieldname": "modified_date_field_map",
@@ -477,23 +474,12 @@
    "fieldname": "url_scheme",
    "fieldtype": "Data",
    "label": "URL Scheme"
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "section_instructions_import",
-   "fieldtype": "Section Break",
-   "label": "Instructions"
-  },
-  {
-   "fieldname": "html_faru",
-   "fieldtype": "HTML",
-   "options": "<h1>Object Map Documentation</h1>\n<p>An Object Map is a powerful tool that enables you to import data from a remote API into your Frappe-based system using the Espresso Sync app. It provides a way to define how data from an API response should be structured for import into your system.</p>\n<h2>Using Dynamic Tags</h2>\n<p>Dynamic tags are placeholders within the object map that get replaced by actual data during the import process. Dynamic tags can include Frappe JINJA, Mapping Functions, JSONPath queries, and Espresso Sync specific tags.</p>\n<h3>Frappe Jinja</h3>\n<p>Jinja&nbsp;is a powerful template language integrated into Frappe. It allows you to include Python-like expressions within your templates. Example:&nbsp;<code>{{ 'United States' if billing.country == 'US' else 'Rest of the World' }}</code></p>\n<h3>Mapping Functions</h3>\n<p>Mapping Functions are our custom syntax for data manipulation and mapping. They allow for complex transformations. Example:</p>\n<pre>    {\n      \"status\": {\n        \"match\": {\n          \"match-on\": \"$.status\",\n          \"cases\": {\n            \"pending\": \"Draft\",\n            \"processing\": \"To Deliver and Bill\",\n            \"completed\": \"Delivered and Billed\",\n            \"canceled\": \"Cancelled\",\n            \"refunded\": \"Refunded\",\n            \"failed\": \"Cancelled\"\n          }\n        }\n      },\n      \"items\": {\n        \"foreach\": {\n          \"objects\": \"$.line_items\",\n          \"map\": {\n            \"item_code\": \"{{ sku if sku else variation_id if variation_id else product_id }}\",\n            \"qty\": \"$.quantity\",\n            \"rate\": \"$.price\",\n            \"description\": \"$.name\"\n          }\n        }\n      }\n    }\n</pre>\n<h3>JSONPath Queries</h3>\n<p>JSONPath is a query language for JSON that allows you to select and filter data from a JSON document. Example: <code>$.store.book[?(@.price &lt; 10)].title</code></p>\n<h3>Espresso Sync Dynamic Tags</h3>\n<p>Espresso Sync app extends dynamic tags to support specific functionalities. For example:</p>\n<ul>\n<li><code>{doc:}</code> fetches a specific field value from a single DocType in Frappe.</li>\n<li><code>{id:}</code> retrieves the external ID of a linked DocType.</li>\n<li><code>{link:}</code> fetches the linked DocType name based on an external ID in the API response.</li>\n</ul>\n<p>&nbsp;</p>"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-05-18 14:09:05.123888",
+ "modified": "2023-05-22 16:23:45.918287",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection Shot",

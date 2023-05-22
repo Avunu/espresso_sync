@@ -85,8 +85,6 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 		frappe.show_alert("Fetching sample data");
 		var cur_row = locals[cdt][cdn];
 		const dt = cur_row.dt;
-
-
 		const uri = cur_row.uri
 		try {
 			frm.call({
