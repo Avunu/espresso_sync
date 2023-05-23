@@ -2,7 +2,6 @@ import frappe
 import re
 from jsonpath_ng import jsonpath, parse
 from espresso_sync.dynamic_tags import tamp_dynamic_tag
-from jinja2 import Template
 
 
 # This function builds a list of all possible permutations of a parameter string based on dynamic tags in the string
@@ -18,44 +17,56 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, docs=[0]):
             # Take the last parameter from the list
             parameter = half_roasted_parameters.pop()
             # Find the first dynamic parameter in the parameter string
-            first_dynamic_tag = re.search(r'{(.*?)}', parameter)
+            # first_dynamic_tag = re.search(r'{(.*?)}', parameter)
+            first_dynamic_tag = re.search(r"\{[i|d|{#|%].*?\}", parameter)
+            
             if first_dynamic_tag:
-                # Get everything between the dynamic tag braces
-                dynamic_tag = first_dynamic_tag.group(1)
-
-                # debug
-                frappe.publish_realtime('console.log', 'dynamic_tag:', user=frappe.session.user)
-                frappe.publish_realtime('console.log', dynamic_tag, user=frappe.session.user)
-                # end debug
+                # Get everything between the inner curly braces
+                dynamic_tag = first_dynamic_tag.group(0)
+                # check if the dynamic tag has curly braces at the beginning
+                while dynamic_tag.startswith('{'):
+                    # remove the curly braces
+                    dynamic_tag = dynamic_tag[1:]
+                # check if the dynamic tag has curly braces at the end
+                while dynamic_tag.endswith('}'):
+                    # remove the curly braces
+                    dynamic_tag = dynamic_tag[:-1]
 
                 if dynamic_tag.startswith('id:'):
                     # Handle the dyno tag as a doc id
                     doc_id = tamp_dynamic_tag(dynamic_tag, None, sync_connection, doc)
-                    new_parameter = parameter.replace(first_dynamic_tag.group(0), doc_id)
-                    # Add the new parameter to the half_roasted_parameters list
-                    half_roasted_parameters.append(new_parameter)
+                    if doc_id:
+                        new_parameter = parameter.replace(first_dynamic_tag.group(0), doc_id)
+                        # Add the new parameter to the half_roasted_parameters list
+                        half_roasted_parameters.append(new_parameter)
+                    else:
+                        frappe.publish_realtime('show_alert', {'message': f"No doc id found for {dynamic_tag.split(':')[1]} on {sync_connection.name}", 'indicator': 'orange'}, user=frappe.session.user)
+                        frappe.log_error(f"No doc id found for {dynamic_tag.split(':')[1]} on {sync_connection.name}")
                 elif dynamic_tag.startswith('docs:'):
                     # Handle the dyno tag as a list of docs
                     # Get the doctype from the dynamic tag
                     doctype = dynamic_tag.split(':')[1]
                     dynamic_tag_doc_list = frappe.get_all(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parenttype': doctype}, fields=['external_id'])
                     # Loop through the list of docs
-                    for external_id in dynamic_tag_doc_list:
-                        new_parameter = parameter.replace(first_dynamic_tag.group(0), external_id['external_id'])
-                        # Add the new parameter to the half_roasted_parameters list
-                        half_roasted_parameters.append(new_parameter)
+                    if dynamic_tag_doc_list:
+                        for external_id in dynamic_tag_doc_list:
+                            new_parameter = parameter.replace(first_dynamic_tag.group(0), external_id['external_id'])
+                            # Add the new parameter to the half_roasted_parameters list
+                            half_roasted_parameters.append(new_parameter)
+                    else:
+                        frappe.publish_realtime('show_alert', {'message': f"No {doctype} docs found for {sync_connection.name}", 'indicator': 'orange'}, user=frappe.session.user)
+                        frappe.log_error(f"No {doctype} docs found for {sync_connection.name}")
                 else:
                     # Handle the dyno tag as jinja
                     try:
+                        # put the outer curly braces back on
+                        # dynamic_tag = '{' + '{' + dynamic_tag + '}' + '}'
+                        # dynamic_tag = '{' + dynamic_tag + '}' + '}'
+                        dynamic_tag = first_dynamic_tag.group(0)
+                        if not dynamic_tag.endswith('%}') or not dynamic_tag.endswith('#}'):
+                            dynamic_tag = dynamic_tag + '}'
                         # Replace the dynamic parameter with the value
-                        # new_parameter = parameter.replace(first_dynamic_tag.group(0), frappe.render_template(dynamic_tag, shot.as_dict()))
-                        new_parameter = parameter.replace(first_dynamic_tag.group(0), Template(dynamic_tag).render(shot.as_dict()))
-
-                        # debug
-                        frappe.publish_realtime('console.log', 'new_parameter:', user=frappe.session.user)
-                        frappe.publish_realtime('console.log', new_parameter, user=frappe.session.user)
-                        # end debug
-
+                        new_parameter = parameter.replace(first_dynamic_tag.group(0), frappe.render_template(dynamic_tag))
                         # Add the new parameter to the half_roasted_parameters list
                         half_roasted_parameters.append(new_parameter)
                     except Exception as e:

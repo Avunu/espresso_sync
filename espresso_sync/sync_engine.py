@@ -49,6 +49,7 @@ def import_with_payload_variations(sync_connection, shot):
     # Parse the payload
     # payload = json.loads(shot.request_payload)
     payload = shot.request_payload
+
     # payload_replacements = {}
     # # Find all keys that start with "docs"
     # for key in payload:
@@ -62,6 +63,7 @@ def import_with_payload_variations(sync_connection, shot):
     # end debug
 
     payloads = tamp_dynamic_parameter(payload, shot, sync_connection)
+    # payloads = tamp_object_map(payload, shot, sync_connection)
     for payload in payloads:
 
         # debug
