@@ -56,53 +56,32 @@ def import_with_payload_variations(sync_connection, shot):
     #     if isinstance(payload[key], dict) and 'ids' in payload[key] and payload[key]['ids'].startswith('docs:'):
     #         doctype = payload[key]['ids'].split(':')[1]
     # return
-
-    # debug
-    frappe.publish_realtime('console.log', 'payload:', user=frappe.session.user)
-    frappe.publish_realtime('console.log', payload, user=frappe.session.user)
-    # end debug
-
     payloads = tamp_dynamic_parameter(payload, shot, sync_connection)
     # payloads = tamp_object_map(payload, shot, sync_connection)
     for payload in payloads:
-
-        # debug
-        frappe.publish_realtime('console.log', 'payload:', user=frappe.session.user)
-        frappe.publish_realtime('console.log', payload, user=frappe.session.user)
-        # end debug
-
         process_import(sync_connection, shot, payload)
 
 def import_with_uri_variations(sync_connection, shot):
 
     return
 
-# TODO: figure out how to make this work with variations of variables in payload, headers, URI, etc. ???
-
+# TODO: figure out how to make this work with variations of variables in payload, headers, URI, etc.
 def process_import(sync_connection, shot, payload=None):
-    # TODO: render the URL using a get_url method on the shot doc
-
-    # debug
-    frappe.publish_realtime('console.log', 'shot:', user=frappe.session.user)
-    frappe.publish_realtime('console.log', shot, user=frappe.session.user)
-    # end debug
-
     url = shot.extract_api_url()
     urls = tamp_dynamic_parameter(url, shot, sync_connection)
-
-    # debug
-    frappe.publish_realtime('console.log', 'urls:', user=frappe.session.user)
-    frappe.publish_realtime('console.log', urls, user=frappe.session.user)
-    # end debug
-
-    # url = sync_connection.api_url + shot.uri
     headers = get_request_headers(sync_connection)
     for url in urls:
         call_string = f"{url}{headers}{payload}"
+        # debug
+        frappe.publish_realtime('console.log', 'call_string:', user=frappe.session.user)
+        frappe.publish_realtime('console.log', call_string, user=frappe.session.user)
         if shot.override_import_request:
             response = requests.request(shot.import_request_type, url, headers=headers, data=payload)
         else:
             response = requests.get(url, headers=headers, params=payload)
+        # test if response is valid server response, if not, throw error
+        if response.status_code != 200:
+            frappe.throw(response.text, title="Invalid Server Response")
         # test if response is valid json, if not, throw error
         try:
             response_data = response.json()
@@ -124,6 +103,7 @@ def process_import(sync_connection, shot, payload=None):
     return
 
 def process_import_object(shot, import_object, call_string, save=True):
+    espresso_sync_connection = frappe.get_doc("Espresso Sync Connection", shot.parent)
     id_field = shot.id_field_map
     modified_date_field = shot.modified_date_field_map
     modified_date_format = shot.modified_date_format
@@ -157,8 +137,15 @@ def process_import_object(shot, import_object, call_string, save=True):
             except ValueError:
                 frappe.throw(f"Modified Date value {modified_date_field} could not be parsed as a date",
                              title="Invalid Modified Date Field")
+                
+    # debug
+    frappe.publish_realtime('console.log', 'object_map:', user=frappe.session.user)
+    frappe.publish_realtime('console.log', object_map, user=frappe.session.user)
+    frappe.publish_realtime('console.log', 'import_object:', user=frappe.session.user)
+    frappe.publish_realtime('console.log', import_object, user=frappe.session.user)
+    # end debug
 
-    parsed_data = tamp_object_map(object_map, import_object)
+    parsed_data = tamp_object_map(object_map, import_object, espresso_sync_connection)
     doc = update_or_create_doc(
         shot, parsed_data, external_id, modified_date, save)
 
@@ -174,6 +161,9 @@ def get_request_headers(sync_connection):
         credentials = f"{sync_connection.api_key}:{sync_connection.get_password('api_secret')}"
         encoded_credentials = base64.b64encode(credentials.encode()).decode()
         headers["Authorization"] = f"Basic {encoded_credentials}"
+
+    # append a content-type application/json header
+    headers["Content-Type"] = "application/json"
 
     return headers
 
@@ -202,6 +192,14 @@ def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=Tru
         doc.update(parsed_data)
     else:
         doc = frappe.new_doc(doctype)
+
+        # debug
+        frappe.publish_realtime('console.log', 'doc:', user=frappe.session.user)
+        frappe.publish_realtime('console.log', doc, user=frappe.session.user)
+        frappe.publish_realtime('console.log', 'parsed_data:', user=frappe.session.user)
+        frappe.publish_realtime('console.log', parsed_data, user=frappe.session.user)
+        # end debug
+
         doc.update(parsed_data)
 
         # Create Espresso Sync ID child table entry

@@ -10,7 +10,8 @@ def tamp_dynamic_tag(tag, object, sync_connection, doc):
     :param sync_connection: the Espresso Sync Connection
     :param doc: the associated frappe doc as a dictionary (used for exporting)
     """
-    # broken_tag = tag.split(':')
+    # take the brackets off
+    tag = tag[1:-1]
     tag_type = tag.split(':')[0]
     params = ":".join(tag.split(':')[1:])
     handlers = {
@@ -35,11 +36,15 @@ def link_tag(params, object, sync_connection, doc):
     """
     doctype, id = params.split(":")
     jsonpath_expr = parse(id)
-    match = jsonpath_expr.find(object)[0].value
+    matches = [match.value for match in jsonpath_expr.find(object)]
+    if not matches:
+        return None
+    external_id = matches[0]
+    # return the frappe customer name whose espresso_sync_id matches the client ID for the sync connection
     return frappe.db.get_value(
         doctype="Espresso Sync ID",
         filters={'sync_connection': sync_connection.name,
-                 'parenttype': doctype, 'external_id': match},
+                    'parenttype': doctype, 'external_id': external_id},
         fieldname="parent"
     )
 

@@ -11,6 +11,9 @@ class EspressoSyncConnectionShot(Document):
 
 	def extract_crud_uri(self, url, crud_action, external_id=None):
 
+		# scrub double quotes from url
+		url = url.replace('"', '')
+
 		match crud_action:
 			case 'create':
 				return extract_create_uri(url)
