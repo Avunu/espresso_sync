@@ -80,7 +80,9 @@ def process_import(sync_connection, shot, payload=None):
         else:
             response = requests.get(url, headers=headers, params=payload)
         # test if response is valid server response, if not, throw error
-        if response.status_code != 200:
+        # if response.status code does not begin with 2
+        if not str(response.status_code).startswith("2"):
+        # if response.status_code != 200:
             frappe.throw(response.text, title="Invalid Server Response")
         # test if response is valid json, if not, throw error
         try:
@@ -88,6 +90,11 @@ def process_import(sync_connection, shot, payload=None):
         except ValueError:
             frappe.throw(response.text,
                         title="Invalid JSON Response from API")
+
+        # debug
+        frappe.publish_realtime('console.log', 'response_data:', user=frappe.session.user)
+        frappe.publish_realtime('console.log', response_data, user=frappe.session.user)
+        # end debug
 
         # test if the response contains a list of objects and run a loop to process each object
         if isinstance(response_data, list):
@@ -112,11 +119,23 @@ def process_import_object(shot, import_object, call_string, save=True):
         # test if the response contains an id field, if not, throw error
         try:
             external_id = import_object[id_field]
+
+            # debug
+            frappe.publish_realtime('console.log', 'external_id found in response:', user=frappe.session.user)
+            frappe.publish_realtime('console.log', external_id, user=frappe.session.user)
+            # end debug
+
         except KeyError:
             frappe.throw(f"ID field {id_field} not found in response data",
                         title="Invalid ID Field")
     else:
         external_id = hashlib.md5(call_string.encode()).hexdigest()
+
+        # debug
+        frappe.publish_realtime('console.log', 'external_id generated from call_string:', user=frappe.session.user)
+        frappe.publish_realtime('console.log', external_id, user=frappe.session.user)
+        # end debug
+
     # test if the response contains a modified date field, if not, throw error
     modified_date = None
     if modified_date_field:
@@ -146,8 +165,7 @@ def process_import_object(shot, import_object, call_string, save=True):
     # end debug
 
     parsed_data = tamp_object_map(object_map, import_object, espresso_sync_connection)
-    doc = update_or_create_doc(
-        shot, parsed_data, external_id, modified_date, save)
+    doc = update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
 
     return doc
 
@@ -187,19 +205,12 @@ def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=Tru
 
     if doc:
         # check if the document has been modified after the external system
-        if modified_date and doc.modified > modified_date or shot.modified > doc.modified:
+        if modified_date and (doc.modified is None or doc.modified > modified_date or shot.modified > doc.modified):
             return
-        doc.update(parsed_data)
+        else:   
+            doc.update(parsed_data)
     else:
         doc = frappe.new_doc(doctype)
-
-        # debug
-        frappe.publish_realtime('console.log', 'doc:', user=frappe.session.user)
-        frappe.publish_realtime('console.log', doc, user=frappe.session.user)
-        frappe.publish_realtime('console.log', 'parsed_data:', user=frappe.session.user)
-        frappe.publish_realtime('console.log', parsed_data, user=frappe.session.user)
-        # end debug
-
         doc.update(parsed_data)
 
         # Create Espresso Sync ID child table entry
@@ -207,6 +218,13 @@ def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=Tru
             "sync_connection": sync_connection,
             "external_id": external_id
         })
+
+    # debug
+    frappe.publish_realtime('console.log', 'doc:', user=frappe.session.user)
+    frappe.publish_realtime('console.log', doc, user=frappe.session.user)
+    frappe.publish_realtime('console.log', 'parsed_data:', user=frappe.session.user)
+    frappe.publish_realtime('console.log', parsed_data, user=frappe.session.user)
+    # end debug
 
     if save:
         doc.save()
@@ -231,10 +249,32 @@ def process_export(sync_connection, export_shot, parameters=None):
     api_urls = tamp_dynamic_parameter(api_url, export_shot, sync_connection, docs)
     start_time = time.time()
     call_count = 0
+
+    # debug
+    frappe.publish_realtime('console.log', 'api_url:', user=frappe.session.user)
+    frappe.publish_realtime('console.log', api_url, user=frappe.session.user)
+    frappe.publish_realtime('console.log', 'api_urls:', user=frappe.session.user)
+    frappe.publish_realtime('console.log', api_urls, user=frappe.session.user)
+    frappe.publish_realtime('console.log', 'last_pull:', user=frappe.session.user)
+    frappe.publish_realtime('console.log', last_pull, user=frappe.session.user)
+    # end debug
+
     for doc in docs:
+
+        # debug
+        frappe.publish_realtime('console.log', 'doc.modified:', user=frappe.session.user)
+        frappe.publish_realtime('console.log', doc.modified, user=frappe.session.user)
+        # end debug
+
         # test the modified time
-        if last_pull:
-            if doc.modified < last_pull:
+        if last_pull and doc.modified:
+            # had to switch this around to get docs modified after last_pull to sync
+            if doc.modified > last_pull:
+
+                # debug
+                frappe.publish_realtime('console.log', 'doc.modified older than last_pull', user=frappe.session.user)
+                # end debug
+
                 continue
         # index position of the current doc in the loop
         doc_index = docs.index(doc)
@@ -249,18 +289,37 @@ def process_export(sync_connection, export_shot, parameters=None):
                                           'sync_connection': sync_connection.name, 'parent': doc.name}, fieldname="external_id")
         if external_id:
             # Update the existing object in the external system
-            # object_update_url = f"{object_update_url}/{external_id}"
-            # extract_crud_uri(self, url, crud_action, external_id=None)
-            object_update_url = export_shot.extract_crud_uri(
-                object_api_url, "update", external_id)
-            response = requests.put(
-                object_update_url, headers=get_request_headers(sync_connection), json=parsed_data)
+            object_update_url = export_shot.extract_crud_uri(object_api_url, "update", external_id)
+            
+            # debug
+            frappe.publish_realtime('console.log', 'object_update_url:', user=frappe.session.user)
+            frappe.publish_realtime('console.log', object_update_url, user=frappe.session.user)
+            # end debug
+
+            response = requests.put(object_update_url, headers=get_request_headers(sync_connection), json=parsed_data)
+            # handle bad response
+            if  not str(response.status_code).startswith('2'):
+
+                # debug
+                frappe.publish_realtime('console.log', 'Bad response:', user=frappe.session.user)
+                frappe.publish_realtime('console.log', response.json, user=frappe.session.user)
+                # end debug
+
+                continue
         else:
             # Create a new object in the external system
-            object_create_url = export_shot.extract_crud_uri(
-                object_api_url, "create")
-            response = requests.post(
-                object_create_url, headers=get_request_headers(sync_connection), json=parsed_data)
+            object_create_url = export_shot.extract_crud_uri(object_api_url, "create")
+
+            # debug
+            frappe.publish_realtime('console.log', 'object_create_url:', user=frappe.session.user)
+            frappe.publish_realtime('console.log', object_create_url, user=frappe.session.user)
+            frappe.publish_realtime('console.log', 'parsed_data:', user=frappe.session.user)
+            frappe.publish_realtime('console.log', parsed_data, user=frappe.session.user)
+            frappe.publish_realtime('console.log', 'headers:', user=frappe.session.user)
+            frappe.publish_realtime('console.log', get_request_headers(sync_connection), user=frappe.session.user)
+            # end debug
+
+            response = requests.post(object_create_url, headers=get_request_headers(sync_connection), json=parsed_data)
             # If the external system returns a unique ID, store it in the espresso_sync_id field
             if str(response.status_code).startswith('2'):
                 response_data = response.json()
@@ -273,8 +332,20 @@ def process_export(sync_connection, export_shot, parameters=None):
                     frappe.db.commit()
             # if the external system returns an error, log it
             else:
-                frappe.log_error(
-                    f"Error creating {doctype} in external system", response.content)
+
+                # debug
+                frappe.publish_realtime('console.log', 'Bad response:', user=frappe.session.user)
+                frappe.publish_realtime('console.log', response.json, user=frappe.session.user)
+                # end debug
+
+                frappe.publish_realtime('show_alert', {'message': f"Error creating {doctype} in external system", 'indicator': 'orange'}, user=frappe.session.user)
+                frappe.log_error(f"Error creating {doctype} in external system", response.content)
+                
+        # debug
+        # frappe.publish_realtime('console.log', 'response:', user=frappe.session.user)
+        # frappe.publish_realtime('console.log', response.json, user=frappe.session.user)
+        # end debug
+
         call_count += 1
         if call_count >= api_rate_limit_per_second:
             time_passed = time.time() - start_time
@@ -282,8 +353,3 @@ def process_export(sync_connection, export_shot, parameters=None):
                 time.sleep(1 - time_passed)
             call_count = 0
             start_time = time.time()
-
-def generate_id(shot, call_string):
-    if not shot.id_field_map:
-        shot.id_field_map = hashlib.md5(call_string.encode()).hexdigest()
-        shot.save()

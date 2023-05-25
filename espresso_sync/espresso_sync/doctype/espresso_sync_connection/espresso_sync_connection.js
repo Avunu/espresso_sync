@@ -3,7 +3,8 @@
 
 // debug
 frappe.realtime.on("console_log", function (data) {
-	console.log(data);
+	console.log(data.label);
+	console.log(data.message);
 });
 frappe.realtime.on("console.log", function (data) {
 	console.log(data);
