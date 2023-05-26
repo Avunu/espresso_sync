@@ -1,6 +1,7 @@
 # Copyright (c) 2023, Avunu LLC and contributors
 # For license information, please see license.txt
 
+import asyncio
 import base64
 import datetime
 import frappe
@@ -59,6 +60,8 @@ def import_with_payload_variations(sync_connection, shot):
     payloads = tamp_dynamic_parameter(payload, shot, sync_connection)
     # payloads = tamp_object_map(payload, shot, sync_connection)
     for payload in payloads:
+        # replace '""' with '"'
+        payload = payload.replace('""', '"')
         process_import(sync_connection, shot, payload)
 
 def import_with_uri_variations(sync_connection, shot):
@@ -72,9 +75,6 @@ def process_import(sync_connection, shot, payload=None):
     headers = get_request_headers(sync_connection)
     for url in urls:
         call_string = f"{url}{headers}{payload}"
-        # debug
-        frappe.publish_realtime('console.log', 'call_string:', user=frappe.session.user)
-        frappe.publish_realtime('console.log', call_string, user=frappe.session.user)
         if shot.override_import_request:
             response = requests.request(shot.import_request_type, url, headers=headers, data=payload)
         else:
@@ -90,11 +90,6 @@ def process_import(sync_connection, shot, payload=None):
         except ValueError:
             frappe.throw(response.text,
                         title="Invalid JSON Response from API")
-
-        # debug
-        frappe.publish_realtime('console.log', 'response_data:', user=frappe.session.user)
-        frappe.publish_realtime('console.log', response_data, user=frappe.session.user)
-        # end debug
 
         # test if the response contains a list of objects and run a loop to process each object
         if isinstance(response_data, list):
@@ -119,23 +114,11 @@ def process_import_object(shot, import_object, call_string, save=True):
         # test if the response contains an id field, if not, throw error
         try:
             external_id = import_object[id_field]
-
-            # debug
-            frappe.publish_realtime('console.log', 'external_id found in response:', user=frappe.session.user)
-            frappe.publish_realtime('console.log', external_id, user=frappe.session.user)
-            # end debug
-
         except KeyError:
             frappe.throw(f"ID field {id_field} not found in response data",
                         title="Invalid ID Field")
     else:
         external_id = hashlib.md5(call_string.encode()).hexdigest()
-
-        # debug
-        frappe.publish_realtime('console.log', 'external_id generated from call_string:', user=frappe.session.user)
-        frappe.publish_realtime('console.log', external_id, user=frappe.session.user)
-        # end debug
-
     # test if the response contains a modified date field, if not, throw error
     modified_date = None
     if modified_date_field:
@@ -156,14 +139,6 @@ def process_import_object(shot, import_object, call_string, save=True):
             except ValueError:
                 frappe.throw(f"Modified Date value {modified_date_field} could not be parsed as a date",
                              title="Invalid Modified Date Field")
-                
-    # debug
-    frappe.publish_realtime('console.log', 'object_map:', user=frappe.session.user)
-    frappe.publish_realtime('console.log', object_map, user=frappe.session.user)
-    frappe.publish_realtime('console.log', 'import_object:', user=frappe.session.user)
-    frappe.publish_realtime('console.log', import_object, user=frappe.session.user)
-    # end debug
-
     parsed_data = tamp_object_map(object_map, import_object, espresso_sync_connection)
     doc = update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
 
@@ -218,21 +193,29 @@ def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=Tru
             "sync_connection": sync_connection,
             "external_id": external_id
         })
-
-    # debug
-    frappe.publish_realtime('console.log', 'doc:', user=frappe.session.user)
-    frappe.publish_realtime('console.log', doc, user=frappe.session.user)
-    frappe.publish_realtime('console.log', 'parsed_data:', user=frappe.session.user)
-    frappe.publish_realtime('console.log', parsed_data, user=frappe.session.user)
-    # end debug
-
     if save:
-        doc.save()
-        frappe.db.commit()
+        try:
 
+            # debug
+            frappe.publish_realtime('console.log', 'Saving doc - ', user=frappe.session.user)
+            frappe.publish_realtime('console_log', {'label': 'doc:', 'message': doc.as_dict()}, user=frappe.session.user)
+            # end debug
+
+            doc.save()
+            frappe.db.commit()
+        except Exception as e:
+            frappe.publish_realtime('show_alert', {'message': f"Error saving document: {doc.name}", 'indicator': 'orange'}, user=frappe.session.user)
+            # frappe.log_error(f"Error creating {doctype} in external system", response.content)
+            frappe.log_error(f"Error saving document: {doc.name}", e)
     return doc
 
 def process_export(sync_connection, export_shot, parameters=None):
+
+    # debug
+    frappe.publish_realtime('console.log', 'Starting export - ', user=frappe.session.user)
+    frappe.publish_realtime('console_log', {'label': 'export_shot:', 'message': export_shot.as_dict()}, user=frappe.session.user)
+    # end debug
+
     api_rate_limit_per_second = sync_connection.api_rate_limit_per_second
     doctype = export_shot.dt
     mapping_template = json.loads(export_shot.object_map_export)
@@ -251,101 +234,84 @@ def process_export(sync_connection, export_shot, parameters=None):
     call_count = 0
 
     # debug
-    frappe.publish_realtime('console.log', 'api_url:', user=frappe.session.user)
-    frappe.publish_realtime('console.log', api_url, user=frappe.session.user)
-    frappe.publish_realtime('console.log', 'api_urls:', user=frappe.session.user)
-    frappe.publish_realtime('console.log', api_urls, user=frappe.session.user)
-    frappe.publish_realtime('console.log', 'last_pull:', user=frappe.session.user)
-    frappe.publish_realtime('console.log', last_pull, user=frappe.session.user)
+    frappe.publish_realtime('console_log', {'label': 'docs:', 'message': docs}, user=frappe.session.user)
+    frappe.publish_realtime('console_log', {'label': 'api_urls:', 'message': api_urls}, user=frappe.session.user)
     # end debug
 
     for doc in docs:
-
-        # debug
-        frappe.publish_realtime('console.log', 'doc.modified:', user=frappe.session.user)
-        frappe.publish_realtime('console.log', doc.modified, user=frappe.session.user)
-        # end debug
-
         # test the modified time
-        if last_pull and doc.modified:
-            # had to switch this around to get docs modified after last_pull to sync
-            if doc.modified > last_pull:
-
-                # debug
-                frappe.publish_realtime('console.log', 'doc.modified older than last_pull', user=frappe.session.user)
-                # end debug
-
-                continue
+        # TODO: put this back in
+        # if last_pull and doc.modified:
+        #     # had to switch this around to get docs modified after last_pull to sync
+        #     if doc.modified > last_pull:
+        #         continue
         # index position of the current doc in the loop
         doc_index = docs.index(doc)
         # run the requests, pairing the url with the current doc in the loop based on index position
         object_api_url = api_urls[doc_index]
         doc = frappe.get_doc(doctype, doc.name)
         doc_data = doc.as_dict()
-        parsed_data = tamp_object_map(
-            mapping_template, doc_data, sync_connection=sync_connection, doc=doc_data)
+        parsed_data = tamp_object_map(mapping_template, doc_data, sync_connection=sync_connection, doc=doc_data)
         # Check if the document has a unique ID for the external system
-        external_id = frappe.db.get_value(doctype="Espresso Sync ID", filters={
-                                          'sync_connection': sync_connection.name, 'parent': doc.name}, fieldname="external_id")
+        external_id = frappe.db.get_value(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parent': doc.name}, fieldname="external_id")
         if external_id:
             # Update the existing object in the external system
             object_update_url = export_shot.extract_crud_uri(object_api_url, "update", external_id)
-            
-            # debug
-            frappe.publish_realtime('console.log', 'object_update_url:', user=frappe.session.user)
-            frappe.publish_realtime('console.log', object_update_url, user=frappe.session.user)
-            # end debug
-
             response = requests.put(object_update_url, headers=get_request_headers(sync_connection), json=parsed_data)
             # handle bad response
             if  not str(response.status_code).startswith('2'):
-
-                # debug
-                frappe.publish_realtime('console.log', 'Bad response:', user=frappe.session.user)
-                frappe.publish_realtime('console.log', response.json, user=frappe.session.user)
-                # end debug
-
                 continue
         else:
             # Create a new object in the external system
             object_create_url = export_shot.extract_crud_uri(object_api_url, "create")
-
-            # debug
-            frappe.publish_realtime('console.log', 'object_create_url:', user=frappe.session.user)
-            frappe.publish_realtime('console.log', object_create_url, user=frappe.session.user)
-            frappe.publish_realtime('console.log', 'parsed_data:', user=frappe.session.user)
-            frappe.publish_realtime('console.log', parsed_data, user=frappe.session.user)
-            frappe.publish_realtime('console.log', 'headers:', user=frappe.session.user)
-            frappe.publish_realtime('console.log', get_request_headers(sync_connection), user=frappe.session.user)
-            # end debug
-
             response = requests.post(object_create_url, headers=get_request_headers(sync_connection), json=parsed_data)
             # If the external system returns a unique ID, store it in the espresso_sync_id field
             if str(response.status_code).startswith('2'):
                 response_data = response.json()
-                if "id" in response_data:
-                    doc.append("espresso_sync_ids", {
-                        "sync_connection": sync_connection.name,
-                        "external_id": response_data["id"]
-                    })
-                    doc.save()
-                    frappe.db.commit()
-            # if the external system returns an error, log it
-            else:
 
                 # debug
-                frappe.publish_realtime('console.log', 'Bad response:', user=frappe.session.user)
-                frappe.publish_realtime('console.log', response.json, user=frappe.session.user)
+                frappe.publish_realtime('console_log', {'label': 'response_data:', 'message': response_data}, user=frappe.session.user)
                 # end debug
 
+                if "id" in response_data:
+                    # for response_data_item in response_data:
+                    #     if "id" in response_data_item:
+                    #         # Update the Espresso Sync ID field with the external ID
+                    #         external_id = response_data_item["id"]
+                    #         frappe.db.set_value("Espresso Sync ID", {"sync_connection": sync_connection.name, "parent": doc.name}, "external_id", external_id)
+                    #         # Add the Espresso Sync ID to the document
+                    #         doc.append("espresso_sync_ids", {
+                    #             "sync_connection": sync_connection.name,
+                    #             "external_id": external_id
+                    #         })
+                    #         # Save the document
+                    #         save_doc(doc)
+                    #     else:
+                    #         # if the external system returns an error, log it
+                    #         frappe.log_error(f"Error creating {doctype} in external system", response_data_item)
+                    external_id = response_data["id"]
+
+                    # debug
+                    frappe.publish_realtime('console_log', {'label': 'external_id:', 'message': external_id}, user=frappe.session.user)
+                    # end debug
+
+                    frappe.db.set_value("Espresso Sync ID", {"sync_connection": sync_connection.name, "parent": doc.name}, "external_id", external_id)
+                    # Add the Espresso Sync ID to the document
+                    doc.append("espresso_sync_ids", {
+                        "sync_connection": sync_connection.name,
+                        "external_id": external_id
+                    })
+                    # Save the document
+                    doc.save()
+                    frappe.db.commit()
+
+                    # debug
+                    frappe.publish_realtime('console_log', {'label': 'doc:', 'message': doc}, user=frappe.session.user)
+                    # end debug
+
+            else:
                 frappe.publish_realtime('show_alert', {'message': f"Error creating {doctype} in external system", 'indicator': 'orange'}, user=frappe.session.user)
                 frappe.log_error(f"Error creating {doctype} in external system", response.content)
-                
-        # debug
-        # frappe.publish_realtime('console.log', 'response:', user=frappe.session.user)
-        # frappe.publish_realtime('console.log', response.json, user=frappe.session.user)
-        # end debug
-
         call_count += 1
         if call_count >= api_rate_limit_per_second:
             time_passed = time.time() - start_time

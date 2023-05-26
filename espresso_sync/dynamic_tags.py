@@ -16,14 +16,10 @@ def tamp_dynamic_tag(tag, object, sync_connection, doc):
     params = ":".join(tag.split(':')[1:])
     handlers = {
         "doc": doc_tag,
-        "docs": docs_tag,
+        # "docs": docs_tag,
         "link": link_tag,
         "id": id_tag,
     }
-
-    # debug
-    frappe.publish_realtime('console_log', {'label': 'tag:', 'message': tag}, user=frappe.session.user)
-
     if tag_type in handlers:
         try:
             return handlers[tag_type](params, object, sync_connection, doc)
