@@ -114,14 +114,12 @@ class EspressoSyncConnection(Document):
 
     pass
 
-
 def create_espresso_sync_id_custom_field(doctype):
     # Create a new tab called 'Sync' for this table to go into
     tab_properties = {
         'doctype': doctype,
         'fieldname': 'espresso_sync_tab',
         'label': 'Sync',
-        # 'insert_after': 'modified_by',
     }
     create_custom_field(doctype, tab_properties)
 

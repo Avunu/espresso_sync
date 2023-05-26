@@ -26,13 +26,6 @@ frappe.realtime.on("import_progress", function (data) {
 	}
 });
 
-frappe.ui.form.on('Espresso Sync Connection', {
-	refresh: function(frm) {
-		// load css from assets/espresso_sync/css/espresso_sync_connection.css using frappe.dom.set_style()
-		// frappe.dom.set_style(frappe.render_template("espresso_sync_connection_css"), "espresso_sync_connection_css");
-	}
-});
-
 frappe.ui.form.on('Espresso Sync Connection Shot', {
 	template_generator: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
@@ -111,7 +104,6 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 			});
 		} catch (error) {
 			console.error(error);
-			console.log('error')
 		}
 	},
 	next_sample: function (frm, cdt, cdn) {

@@ -27,9 +27,6 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, docs=[0]):
                 dynamic_tag = first_dynamic_tag.group(1)
                 # check if the dynamic tag is a single bracketed string (exclude jinja delimiters)
                 if dynamic_tag.startswith('{') and not dynamic_tag[1] in ["%", "#", "{"]:
-                    # remove the outer curly braces
-                    # (this is already being done in the dynamic_tags.py file)
-                    # dynamic_tag = dynamic_tag[1:-1]
                     if dynamic_tag.startswith('{id:'):
                         # Handle the dyno tag as a doc id
                         doc_id = tamp_dynamic_tag(dynamic_tag, None, sync_connection, doc)

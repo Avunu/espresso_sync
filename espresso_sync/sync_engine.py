@@ -1,7 +1,6 @@
 # Copyright (c) 2023, Avunu LLC and contributors
 # For license information, please see license.txt
 
-import asyncio
 import base64
 import datetime
 import frappe
@@ -31,10 +30,8 @@ def process_sync_connection_form_action(doc: str):
 def process_sync_connection(sync_connection):
     for shot in sync_connection.shots:
         # TODO: handle deletion of objects
+        # TODO: handle URI overrides
         if shot.do_import:
-            # TODO: handle advanced import requests
-            # such as requests with payloads
-            # and special request types
             if shot.request_payload:
                 import_with_payload_variations(sync_connection, shot)
             else:
@@ -47,20 +44,9 @@ def process_sync_connection(sync_connection):
     return
 
 def import_with_payload_variations(sync_connection, shot):
-    # Parse the payload
-    # payload = json.loads(shot.request_payload)
     payload = shot.request_payload
-
-    # payload_replacements = {}
-    # # Find all keys that start with "docs"
-    # for key in payload:
-    #     if isinstance(payload[key], dict) and 'ids' in payload[key] and payload[key]['ids'].startswith('docs:'):
-    #         doctype = payload[key]['ids'].split(':')[1]
-    # return
     payloads = tamp_dynamic_parameter(payload, shot, sync_connection)
-    # payloads = tamp_object_map(payload, shot, sync_connection)
     for payload in payloads:
-        # replace '""' with '"'
         payload = payload.replace('""', '"')
         process_import(sync_connection, shot, payload)
 
@@ -68,7 +54,6 @@ def import_with_uri_variations(sync_connection, shot):
 
     return
 
-# TODO: figure out how to make this work with variations of variables in payload, headers, URI, etc.
 def process_import(sync_connection, shot, payload=None):
     url = shot.extract_api_url()
     urls = tamp_dynamic_parameter(url, shot, sync_connection)
@@ -80,9 +65,7 @@ def process_import(sync_connection, shot, payload=None):
         else:
             response = requests.get(url, headers=headers, params=payload)
         # test if response is valid server response, if not, throw error
-        # if response.status code does not begin with 2
         if not str(response.status_code).startswith("2"):
-        # if response.status_code != 200:
             frappe.throw(response.text, title="Invalid Server Response")
         # test if response is valid json, if not, throw error
         try:
@@ -90,7 +73,6 @@ def process_import(sync_connection, shot, payload=None):
         except ValueError:
             frappe.throw(response.text,
                         title="Invalid JSON Response from API")
-
         # test if the response contains a list of objects and run a loop to process each object
         if isinstance(response_data, list):
             i = 0
@@ -146,7 +128,6 @@ def process_import_object(shot, import_object, call_string, save=True):
 
 def get_request_headers(sync_connection):
     headers = {}
-
     if sync_connection.auth_type == "Header-based":
         headers[sync_connection.api_key] = sync_connection.get_password(
             'api_secret')
@@ -154,7 +135,7 @@ def get_request_headers(sync_connection):
         credentials = f"{sync_connection.api_key}:{sync_connection.get_password('api_secret')}"
         encoded_credentials = base64.b64encode(credentials.encode()).decode()
         headers["Authorization"] = f"Basic {encoded_credentials}"
-
+    
     # append a content-type application/json header
     headers["Content-Type"] = "application/json"
 
@@ -195,27 +176,14 @@ def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=Tru
         })
     if save:
         try:
-
-            # debug
-            frappe.publish_realtime('console.log', 'Saving doc - ', user=frappe.session.user)
-            frappe.publish_realtime('console_log', {'label': 'doc:', 'message': doc.as_dict()}, user=frappe.session.user)
-            # end debug
-
             doc.save()
             frappe.db.commit()
         except Exception as e:
             frappe.publish_realtime('show_alert', {'message': f"Error saving document: {doc.name}", 'indicator': 'orange'}, user=frappe.session.user)
-            # frappe.log_error(f"Error creating {doctype} in external system", response.content)
             frappe.log_error(f"Error saving document: {doc.name}", e)
     return doc
 
 def process_export(sync_connection, export_shot, parameters=None):
-
-    # debug
-    frappe.publish_realtime('console.log', 'Starting export - ', user=frappe.session.user)
-    frappe.publish_realtime('console_log', {'label': 'export_shot:', 'message': export_shot.as_dict()}, user=frappe.session.user)
-    # end debug
-
     api_rate_limit_per_second = sync_connection.api_rate_limit_per_second
     doctype = export_shot.dt
     mapping_template = json.loads(export_shot.object_map_export)
@@ -232,15 +200,9 @@ def process_export(sync_connection, export_shot, parameters=None):
     api_urls = tamp_dynamic_parameter(api_url, export_shot, sync_connection, docs)
     start_time = time.time()
     call_count = 0
-
-    # debug
-    frappe.publish_realtime('console_log', {'label': 'docs:', 'message': docs}, user=frappe.session.user)
-    frappe.publish_realtime('console_log', {'label': 'api_urls:', 'message': api_urls}, user=frappe.session.user)
-    # end debug
-
     for doc in docs:
         # test the modified time
-        # TODO: put this back in
+        # TODO: put this back in, make sure it's actually working as intended
         # if last_pull and doc.modified:
         #     # had to switch this around to get docs modified after last_pull to sync
         #     if doc.modified > last_pull:
@@ -260,6 +222,15 @@ def process_export(sync_connection, export_shot, parameters=None):
             response = requests.put(object_update_url, headers=get_request_headers(sync_connection), json=parsed_data)
             # handle bad response
             if  not str(response.status_code).startswith('2'):
+                frappe.publish_realtime('show_alert', {'message': f"Error updating document: {doc.name}", 'indicator': 'orange'}, user=frappe.session.user)
+                frappe.log_error(f"Error updating document: {doc.name}", response.text)
+
+                # debug
+                frappe.publish_realtime('console_log', response, user=frappe.session.user)
+                # end debug
+
+                # TODO: figure out task updates since they are all erroring here on an undefined response
+
                 continue
         else:
             # Create a new object in the external system
@@ -268,12 +239,8 @@ def process_export(sync_connection, export_shot, parameters=None):
             # If the external system returns a unique ID, store it in the espresso_sync_id field
             if str(response.status_code).startswith('2'):
                 response_data = response.json()
-
-                # debug
-                frappe.publish_realtime('console_log', {'label': 'response_data:', 'message': response_data}, user=frappe.session.user)
-                # end debug
-
                 if "id" in response_data:
+                    # Why is there a loop here? This wasn't working.
                     # for response_data_item in response_data:
                     #     if "id" in response_data_item:
                     #         # Update the Espresso Sync ID field with the external ID
@@ -290,11 +257,6 @@ def process_export(sync_connection, export_shot, parameters=None):
                     #         # if the external system returns an error, log it
                     #         frappe.log_error(f"Error creating {doctype} in external system", response_data_item)
                     external_id = response_data["id"]
-
-                    # debug
-                    frappe.publish_realtime('console_log', {'label': 'external_id:', 'message': external_id}, user=frappe.session.user)
-                    # end debug
-
                     frappe.db.set_value("Espresso Sync ID", {"sync_connection": sync_connection.name, "parent": doc.name}, "external_id", external_id)
                     # Add the Espresso Sync ID to the document
                     doc.append("espresso_sync_ids", {
@@ -304,11 +266,6 @@ def process_export(sync_connection, export_shot, parameters=None):
                     # Save the document
                     doc.save()
                     frappe.db.commit()
-
-                    # debug
-                    frappe.publish_realtime('console_log', {'label': 'doc:', 'message': doc}, user=frappe.session.user)
-                    # end debug
-
             else:
                 frappe.publish_realtime('show_alert', {'message': f"Error creating {doctype} in external system", 'indicator': 'orange'}, user=frappe.session.user)
                 frappe.log_error(f"Error creating {doctype} in external system", response.content)
