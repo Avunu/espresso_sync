@@ -115,11 +115,15 @@ class EspressoSyncConnection(Document):
     pass
 
 def create_espresso_sync_id_custom_field(doctype):
+    # get the current last field of the doctype
+    last_field = frappe.get_meta(doctype).fields[-1]
     # Create a new tab called 'Sync' for this table to go into
     tab_properties = {
         'doctype': doctype,
         'fieldname': 'espresso_sync_tab',
+        'fieldtype': 'Tab Break',
         'label': 'Sync',
+        'insert_after': last_field.fieldname
     }
     create_custom_field(doctype, tab_properties)
 

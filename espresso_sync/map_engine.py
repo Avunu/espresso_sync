@@ -98,7 +98,8 @@ def tamp_object_map(object_map, object, sync_connection=None, doc=None):
                 # process it as a dynamic tag
                 result[key] = tamp_dynamic_tag(value, object, sync_connection, doc)
             else:
-                # process it as a jinja template
+                # process it as a jinja template 
+                # TODO: fix this syntax here so we aren't using object as the context
                 result[key] = frappe.render_template(value, {'object': object})
         elif isinstance(value, dict):
             for key in object_map:
