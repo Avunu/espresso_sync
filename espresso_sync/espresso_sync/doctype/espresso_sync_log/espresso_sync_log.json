@@ -1,0 +1,80 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2023-05-30 11:27:24.214280",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "timestamp",
+  "sync_connection",
+  "sync_shot",
+  "sync_doctype",
+  "sync_object",
+  "sync_document",
+  "traceback",
+  "sync_direction",
+  "sync_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "timestamp",
+   "fieldtype": "Datetime",
+   "label": "Timestamp"
+  },
+  {
+   "fieldname": "traceback",
+   "fieldtype": "Data",
+   "label": "Traceback"
+  },
+  {
+   "fieldname": "sync_direction",
+   "fieldtype": "Data",
+   "label": "Sync Direction"
+  },
+  {
+   "fieldname": "sync_connection",
+   "fieldtype": "Link",
+   "label": "Sync Connection",
+   "options": "Espresso Sync Connection"
+  },
+  {
+   "fieldname": "sync_shot",
+   "fieldtype": "Data",
+   "label": "Sync Shot"
+  },
+  {
+   "fieldname": "sync_doctype",
+   "fieldtype": "Link",
+   "label": "Sync DocType",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "sync_object",
+   "fieldtype": "Data",
+   "label": "Sync Object"
+  },
+  {
+   "fieldname": "sync_document",
+   "fieldtype": "Data",
+   "label": "Sync Document"
+  },
+  {
+   "fieldname": "sync_status",
+   "fieldtype": "Data",
+   "label": "Sync Status"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2023-05-30 14:19:23.208072",
+ "modified_by": "Administrator",
+ "module": "Espresso Sync",
+ "name": "Espresso Sync Log",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

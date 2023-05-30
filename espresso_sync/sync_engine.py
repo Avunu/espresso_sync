@@ -92,6 +92,10 @@ def process_import_object(shot, import_object, call_string, save=True):
     modified_date_field = shot.modified_date_field_map
     modified_date_format = shot.modified_date_format
     object_map = json.loads(shot.object_map_import)
+
+    # add the import to the sync log using add_sync_log
+    # espresso_sync_log = add_sync_log(sync_connection = espresso_sync_connection, call_string = call_string, sync_object = import_object, sync_direction = "Import")
+
     if id_field:
         # test if the response contains an id field, if not, throw error
         try:
@@ -122,6 +126,7 @@ def process_import_object(shot, import_object, call_string, save=True):
                 frappe.throw(f"Modified Date value {modified_date_field} could not be parsed as a date",
                              title="Invalid Modified Date Field")
     parsed_data = tamp_object_map(object_map, import_object, espresso_sync_connection)
+    # doc = update_or_create_doc(shot, parsed_data, external_id, modified_date, save, espresso_sync_log)
     doc = update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
 
     return doc
@@ -141,7 +146,7 @@ def get_request_headers(sync_connection):
 
     return headers
 
-def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=True):
+def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=True, espresso_sync_log=None):
     doc = None
     sync_connection = shot.parent
     doctype = shot.dt
@@ -176,11 +181,21 @@ def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=Tru
         })
     if save:
         try:
-            doc.save()
-            frappe.db.commit()
+            doc.validate()
         except Exception as e:
-            frappe.publish_realtime('show_alert', {'message': f"Error saving document: {doc.name}", 'indicator': 'orange'}, user=frappe.session.user)
-            frappe.log_error(f"Error saving document: {doc.name}", e)
+            frappe.log_error(f"Document not valid: {doc.name}", e)
+            # add the error to the sync log
+            # espresso_sync_log.error = e
+            # espresso_sync_log.save()
+        else:
+            try:
+                doc.save()
+                frappe.db.commit()
+            except Exception as e:
+                frappe.log_error(f"Document not saved: {doc.name}", e)
+                # add the error to the sync log
+                # espresso_sync_log.error = e
+                # espresso_sync_log.save()
     return doc
 
 def process_export(sync_connection, export_shot, parameters=None):
@@ -196,6 +211,8 @@ def process_export(sync_connection, export_shot, parameters=None):
     # docs = frappe.get_all(doctype, fields=["*"]).as_dict()
     docs = frappe.get_all(doctype, fields=["*"])
     last_pull = sync_connection.last_pull
+    # get the last modified timestamp of the sync connection
+    sync_connection_last_modified = sync_connection.modified
     api_url = export_shot.extract_api_url()
     api_urls = tamp_dynamic_parameter(api_url, export_shot, sync_connection, docs)
     start_time = time.time()
@@ -203,10 +220,10 @@ def process_export(sync_connection, export_shot, parameters=None):
     for doc in docs:
         # test the modified time
         # TODO: put this back in, make sure it's actually working as intended
-        # if last_pull and doc.modified:
-        #     # had to switch this around to get docs modified after last_pull to sync
-        #     if doc.modified > last_pull:
-        #         continue
+        if last_pull and doc.modified:
+            # had to switch this around to get docs modified after last_pull to sync
+            if doc.modified > last_pull and doc.modified > sync_connection_last_modified:
+                continue
         # index position of the current doc in the loop
         doc_index = docs.index(doc)
         # run the requests, pairing the url with the current doc in the loop based on index position
@@ -276,3 +293,34 @@ def process_export(sync_connection, export_shot, parameters=None):
                 time.sleep(1 - time_passed)
             call_count = 0
             start_time = time.time()
+
+# function to add a log of the sync to the espresso_sync_log table on the espresso_sync_history doctype
+# the table fields are timestamp, sync_connection, sync_shot, sync_doctype, sync_object, sync_document, traceback, sync_direction, and sync_status
+def add_sync_log(espresso_sync_log=None, sync_connection=None, sync_shot=None, sync_doctype=None, sync_object=None, sync_document=None, traceback=None, call_string=None, sync_direction=None, sync_status=None):
+    # create a new espresso_sync_log document
+    if not espresso_sync_log:
+        espresso_sync_log = frappe.new_doc("Espresso Sync Log")
+    # set the fields
+    if sync_connection:
+        espresso_sync_log.sync_connection = sync_connection
+    if sync_shot:
+        espresso_sync_log.sync_shot = sync_shot
+    if sync_doctype:
+        espresso_sync_log.sync_doctype = sync_doctype
+    if sync_object:
+        espresso_sync_log.sync_object = sync_object
+    if sync_document:
+        espresso_sync_log.sync_document = sync_document
+    if traceback:
+        espresso_sync_log.traceback = traceback
+    if call_string:
+        espresso_sync_log.call_string = call_string
+    if sync_direction:
+        espresso_sync_log.sync_direction = sync_direction
+    if sync_status:
+        espresso_sync_log.sync_status = sync_status
+    # save the document
+    espresso_sync_log.save()
+    frappe.db.commit()
+
+    return espresso_sync_log
