@@ -16,23 +16,23 @@ app_license = "MIT"
 
 scheduler_events = {
     "all": [
-        "espresso_sync.sync_machine.sync_all"
+        "espresso_sync.sync_scheduler.sync_all"
     ],
     "hourly": [
-        "espresso_sync.sync_machine.sync_hourly"
+        "espresso_sync.sync_scheduler.sync_hourly"
     ],
     "daily": [
-        "espresso_sync.sync_machine.sync_daily"
+        "espresso_sync.sync_scheduler.sync_daily"
     ],
     "weekly": [
-        "espresso_sync.sync_machine.sync_weekly"
+        "espresso_sync.sync_scheduler.sync_weekly"
     ],
     "monthly": [
-        "espresso_sync.sync_machine.sync_monthly"
+        "espresso_sync.sync_scheduler.sync_monthly"
     ],
     "cron": {
         "*/5 * * * *": [
-            "espresso_sync.sync_machine.sync_cron"
+            "espresso_sync.sync_scheduler.sync_cron"
         ]
     }
 }
