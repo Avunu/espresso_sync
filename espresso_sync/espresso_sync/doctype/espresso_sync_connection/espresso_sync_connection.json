@@ -1,7 +1,7 @@
 {
  "actions": [
   {
-   "action": "espresso_sync.sync_engine.process_sync_connection_form_action",
+   "action": "espresso_sync.sync_machine.process_sync_connection_form_action",
    "action_type": "Server Action",
    "label": "Sync Now"
   }

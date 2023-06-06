@@ -1,7 +1,7 @@
 import frappe
 import re
 from jsonpath_ng import jsonpath, parse
-from espresso_sync.dynamic_tags import tamp_dynamic_tag
+from espresso_sync.dynamic_tags import extract_dynamic_tag
 
 
 # This function builds a list of all possible permutations of a parameter string based on dynamic tags in the string
@@ -12,11 +12,11 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, docs=[0]):
     i = 0
     for doc in docs:
         # Start with the original parameter
-        half_roasted_parameters = [parameter]
-        while half_roasted_parameters and i < 1000:
+        half_tamped_parameters = [parameter]
+        while half_tamped_parameters and i < 1000:
             i += 1
             # Take the last parameter from the list
-            parameter = half_roasted_parameters.pop()
+            parameter = half_tamped_parameters.pop()
             # Find the first dynamic parameter in the parameter string
             # first_dynamic_tag = re.search(r'{(.*?)}', parameter)
             first_dynamic_tag = re.search(r"(\{[i|d|l|{|#|%].*\})", parameter)
@@ -29,12 +29,12 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, docs=[0]):
                 if dynamic_tag.startswith('{') and not dynamic_tag[1] in ["%", "#", "{"]:
                     if dynamic_tag.startswith('{id:'):
                         # Handle the dyno tag as a doc id
-                        doc_id = tamp_dynamic_tag(dynamic_tag, None, sync_connection, doc)
+                        doc_id = extract_dynamic_tag(dynamic_tag, None, sync_connection, doc)
                         if doc_id:
                             doc_id = apply_quotes(doc_id)
                             new_parameter = parameter.replace(first_dynamic_tag.group(0), doc_id)
-                            # Add the new parameter to the half_roasted_parameters list
-                            half_roasted_parameters.append(new_parameter)
+                            # Add the new parameter to the half_tamped_parameters list
+                            half_tamped_parameters.append(new_parameter)
                         else:
                             frappe.publish_realtime('show_alert', {'message': f"No doc id found for {dynamic_tag.split(':')[1]} on {sync_connection.name} on {shot.dt} shot and {doc.name} doc.", 'indicator': 'orange'}, user=frappe.session.user)
                             frappe.log_error(f"No doc id found for {dynamic_tag.split(':')[1]} on {sync_connection.name} on {shot.dt} shot and {doc.name} doc.")
@@ -44,14 +44,14 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, docs=[0]):
                         # Get the doctype from the dynamic tag
                         doctype = dynamic_tag.split(':')[1]
                         dynamic_tag_doc_list = frappe.get_all(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parenttype': doctype}, fields=['external_id'])
-                        # dynamic_tag_doc_list = tamp_dynamic_tag(dynamic_tag, None, sync_connection, doc)
+                        # dynamic_tag_doc_list = extract_dynamic_tag(dynamic_tag, None, sync_connection, doc)
                         # Loop through the list of docs
                         if dynamic_tag_doc_list:
                             for external_id in dynamic_tag_doc_list:
                                 external_id['external_id'] = apply_quotes(external_id['external_id'])
                                 new_parameter = parameter.replace(first_dynamic_tag.group(0), external_id['external_id'])
-                                # Add the new parameter to the half_roasted_parameters list
-                                half_roasted_parameters.append(new_parameter)
+                                # Add the new parameter to the half_tamped_parameters list
+                                half_tamped_parameters.append(new_parameter)
                         else:
                             frappe.publish_realtime('show_alert', {'message': f"No docs found for {sync_connection.name}", 'indicator': 'orange'}, user=frappe.session.user)
                             frappe.log_error(f"No docs found for {sync_connection.name}")
@@ -62,8 +62,8 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, docs=[0]):
                         jinja_value = apply_quotes(jinja_value)
                         # Replace the dynamic parameter with the value
                         new_parameter = parameter.replace(first_dynamic_tag.group(0), jinja_value)
-                        # Add the new parameter to the half_roasted_parameters list
-                        half_roasted_parameters.append(new_parameter)
+                        # Add the new parameter to the half_tamped_parameters list
+                        half_tamped_parameters.append(new_parameter)
                     except Exception as e:
                         frappe.publish_realtime('show_alert', {'message': f"Error rendering template: {e}", 'indicator': 'orange'}, user=frappe.session.user)
                         frappe.log_error(f"Error rendering template: {e}")
@@ -81,7 +81,7 @@ def apply_quotes(value):
             value = '"' + value + '"'
     return value
 
-def tamp_object_map(object_map, object, sync_connection=None, doc=None):
+def extract_object(object_map, object, sync_connection=None, doc=None):
     result = {}
     for key, value in object_map.items():
         if isinstance(value, str):
@@ -96,7 +96,7 @@ def tamp_object_map(object_map, object, sync_connection=None, doc=None):
             # detect dynamic tags as single-bracketed strings (exclude jinja delimiters)
             elif value.startswith("{") and not value[1] in ["%", "#", "{"]:
                 # process it as a dynamic tag
-                result[key] = tamp_dynamic_tag(value, object, sync_connection, doc)
+                result[key] = extract_dynamic_tag(value, object, sync_connection, doc)
             else:
                 # process it as a jinja template 
                 # TODO: fix this syntax here so we aren't using object as the context
@@ -115,10 +115,10 @@ def tamp_object_map(object_map, object, sync_connection=None, doc=None):
                         objects_key = value["foreach"]["objects"]
                         nested_objects = object.get(objects_key, [])
                         nested_object_map = value["foreach"]["map"]
-                        result[key] = [tamp_object_map(nested_object_map, obj, sync_connection, doc) for obj in nested_objects]
+                        result[key] = [extract_object(nested_object_map, obj, sync_connection, doc) for obj in nested_objects]
                     # non-function dicts
                     else:
                         result[key] = value
                 elif isinstance(value, list):
-                    result[key] = [tamp_object_map(item, object, sync_connection, doc) for item in value]
+                    result[key] = [extract_object(item, object, sync_connection, doc) for item in value]
     return result

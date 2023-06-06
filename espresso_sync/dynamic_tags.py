@@ -2,7 +2,7 @@ import frappe
 from jsonpath_ng import jsonpath, parse
 
 
-def tamp_dynamic_tag(tag, object, sync_connection, doc):
+def extract_dynamic_tag(tag, object, sync_connection, doc):
     """
     This function identifies the tag type and calls the respective handler function.
     :param tag: the entire tag string (e.g., "{doc:Selling Settings:default_price_list}")

@@ -4,10 +4,10 @@
 import json
 import frappe
 import requests
-import espresso_sync.sync_engine as sync_engine
+import espresso_sync.sync_machine as sync_machine
 from frappe.model.document import Document
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
-from espresso_sync.map_engine import tamp_dynamic_parameter, tamp_object_map
+from espresso_sync.map_machine import tamp_dynamic_parameter, extract_object
 
 
 class EspressoSyncConnection(Document):
@@ -38,13 +38,13 @@ class EspressoSyncConnection(Document):
                 create_espresso_sync_id_custom_field(doctype)
 
     def sync(self):
-        sync_engine.process_sync_connection(self)
+        sync_machine.process_sync_connection(self)
 
     @frappe.whitelist()
     def sync_action(doc: str):
         doc_name = frappe._dict(json.loads(doc)).name
         document = frappe.get_doc("Espresso Sync Connection", doc_name) 
-        sync_engine.process_sync_connection(document)
+        sync_machine.process_sync_connection(document)
         return document
 
     @frappe.whitelist()
@@ -69,7 +69,7 @@ class EspressoSyncConnection(Document):
         urls = tamp_dynamic_parameter(url, shot, sync_connection, doc)
         url = shot.extract_crud_uri(urls[0], 'read')
         response = requests.get(
-            url, headers=sync_engine.get_request_headers(self))
+            url, headers=sync_machine.get_request_headers(self))
         # test if response is valid json, if not, throw error
         try:
             response_data = response.json()
@@ -84,7 +84,7 @@ class EspressoSyncConnection(Document):
                          title="JSON Response should contain a list of objects")
             response_data = []
 
-        return response_data[:10]
+        return response_data[:100]
 
     @frappe.whitelist()
     def get_reference_docs(self, doctype):
@@ -104,13 +104,13 @@ class EspressoSyncConnection(Document):
         object_map = frappe._dict(json.loads(object_map))
         sample_object = frappe._dict(json.loads(sample_object))
 
-        return sync_engine.tamp_object_map(object_map, sample_object)
+        return sync_machine.extract_object(object_map, sample_object)
 
     @frappe.whitelist()
     def test_import(self, import_step, import_object):
         import_step = frappe._dict(json.loads(import_step))
         import_object = frappe._dict(json.loads(import_object))
-        return sync_engine.process_import_object(import_step, import_object, False)
+        return sync_machine.process_import_object(import_step, import_object, False)
 
     pass
 
@@ -127,13 +127,24 @@ def create_espresso_sync_id_custom_field(doctype):
     }
     create_custom_field(doctype, tab_properties)
 
+    # Create a new "check" for "Exclude from Sync"
+    check_properties = {
+        'doctype': doctype,
+        'fieldname': 'exclude_from_sync',
+        'fieldtype': 'Check',
+        'label': 'Exclude from Sync',
+        'insert_after': 'espresso_sync_tab',
+        'parent': 'Sync',
+    }
+    create_custom_field(doctype, check_properties)
+
     # Create the "Espresso Sync ID" child table field in the new tab
     field_properties = {
         'doctype': doctype,
         'fieldname': 'espresso_sync_ids',
         'fieldtype': 'Table',
         'label': 'Espresso Sync IDs',
-        'insert_after': 'espresso_sync_tab',
+        'insert_after': 'exclude_from_sync',
         'options': 'Espresso Sync ID',
         'parent': 'Sync',
     }

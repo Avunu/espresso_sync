@@ -9,7 +9,7 @@ import json
 import requests
 import time
 from dateutil.parser import parse as parse_date
-from espresso_sync.map_engine import tamp_dynamic_parameter, tamp_object_map
+from espresso_sync.map_machine import tamp_dynamic_parameter, extract_object
 
 
 def process_sync_connections():
@@ -125,7 +125,7 @@ def process_import_object(shot, import_object, call_string, save=True):
             except ValueError:
                 frappe.throw(f"Modified Date value {modified_date_field} could not be parsed as a date",
                              title="Invalid Modified Date Field")
-    parsed_data = tamp_object_map(object_map, import_object, espresso_sync_connection)
+    parsed_data = extract_object(object_map, import_object, espresso_sync_connection)
     # doc = update_or_create_doc(shot, parsed_data, external_id, modified_date, save, espresso_sync_log)
     doc = update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
 
@@ -230,7 +230,7 @@ def process_export(sync_connection, export_shot, parameters=None):
         object_api_url = api_urls[doc_index]
         doc = frappe.get_doc(doctype, doc.name)
         doc_data = doc.as_dict()
-        parsed_data = tamp_object_map(mapping_template, doc_data, sync_connection=sync_connection, doc=doc_data)
+        parsed_data = extract_object(mapping_template, doc_data, sync_connection=sync_connection, doc=doc_data)
         # Check if the document has a unique ID for the external system
         external_id = frappe.db.get_value(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parent': doc.name}, fieldname="external_id")
         if external_id:
