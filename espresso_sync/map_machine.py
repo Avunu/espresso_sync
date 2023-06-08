@@ -98,8 +98,14 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
                 # process it as a dynamic tag
                 result[key] = extract_dynamic_tag(value, object, sync_connection, doc)
             else:
-                # process it as a jinja template 
-                result[key] = frappe.render_template(value, object)
+                # check if the template should be numeric (starts with #)
+                if value.startswith("#"):
+                    template_value = value[1:]  # remove the '#'
+                    template_result = frappe.render_template(template_value, object)
+                    result[key] = float(template_result) if '.' in template_result else int(template_result)
+                else:
+                    # process it as a jinja template 
+                    result[key] = frappe.render_template(value, object)
         elif isinstance(value, dict):
             for key in object_map:
                 value = object_map[key]

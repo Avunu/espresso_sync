@@ -244,8 +244,8 @@ def process_export(sync_connection, export_shot, parameters=None):
             response = requests.put(object_update_url, headers=get_request_headers(sync_connection), json=parsed_data)
             # handle bad response
             if  not str(response.status_code).startswith('2'):
-                frappe.publish_realtime('show_alert', {'message': f"Error updating document: {doc.name}", 'indicator': 'orange'}, user=frappe.session.user)
-                frappe.log_error(f"Error updating document: {doc.name}", response.text)
+                frappe.publish_realtime('show_alert', {'message': f"Error exporting {doctype}: {doc.name}", 'indicator': 'orange'}, user=frappe.session.user)
+                frappe.log_error(f"Error exporting {doctype}: {doc.name}", response.text)
 
                 # debug
                 frappe.publish_realtime('console_log', response, user=frappe.session.user)

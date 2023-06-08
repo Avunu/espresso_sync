@@ -4,11 +4,47 @@ Espresso Sync provides a flexible way to map JSON objects from external systems 
 
 ## Jinja Templates
 
-Jinja templates are enclosed in double curly brackets `{{ }}` and they allow for conditional formatting and evaluation of expressions.
+Jinja templates are enclosed in double curly brackets `{{ }}`. They are a powerful tool for dynamic data processing, allowing for conditional formatting, evaluation of expressions, and even some mathematical operations.
+
+### Basic Example
 
 ```json
 "customer": "{{ billing.company if billing.company else billing.first_name ~ ' ' ~ billing.last_name }}-{{ billing.city }}"
 ```
+
+In this example, if `billing.company` is present, it's used as the customer's name. Otherwise, the first and last name from `billing` are concatenated with a space in between. The result is then appended with a '-' and the `billing.city`.
+
+### Mathematical Operations
+
+Jinja templates support basic mathematical operations. For example, multiplying a variable by 100:
+
+```json
+"amount": "{{ billing_rate * 100 }}"
+```
+
+In this case, the value of `billing_rate` is multiplied by 100 before it's assigned to the `amount`.
+
+### Returning Numbers
+
+To return a number instead of a string from a Jinja template, you can use a '#' at the beginning of your template:
+
+```json
+"amount": "#{{ billing_rate * 100 if billing_rate else 0 | int }}"
+```
+
+In this case, the `#` symbol is a special indicator that tells the system to treat the result of the template as a number. If `billing_rate` is present, it's multiplied by 100, and the result is returned as an integer number due to the `int` filter. If `billing_rate` is not present, 0 is returned.
+
+### Formatting
+
+You can also use Jinja templates to format values. For example, to format a number as a floating-point number with two decimal places:
+
+```json
+"amount": "{{ '%.2f'|format(billing_rate) }}"
+```
+
+In this example, `billing_rate` is formatted as a floating-point number with two decimal places. The `format` filter applies the specified string formatting to `billing_rate`.
+
+Jinja templates can be a powerful tool in formatting and manipulating your data before export. Their flexibility allows you to handle a wide range of scenarios in data processing.
 
 ## JSONPath Expressions
 
