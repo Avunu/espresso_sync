@@ -66,6 +66,8 @@ def process_import(sync_connection, shot, payload=None):
             response = requests.get(url, headers=headers, params=payload)
         # test if response is valid server response, if not, throw error
         if not str(response.status_code).startswith("2"):
+            error_message = f"Invalid Server Response for {call_string} - {response.text}"
+            frappe.log_error("Invalid Server Response", error_message)
             frappe.throw(response.text, title="Invalid Server Response")
         # test if response is valid json, if not, throw error
         try:
@@ -80,7 +82,7 @@ def process_import(sync_connection, shot, payload=None):
                 process_import_object(shot, import_object, call_string)
                 # show progress on frontend
                 frappe.publish_realtime(
-                    "import_progress", {"progress": i, "total": len(response_data)}, user=frappe.session.user)
+                    "import_progress", {"doctype": shot.dt, "progress": i, "total": len(response_data)}, user=frappe.session.user)
                 i += 1
         else:
             process_import_object(shot, response_data, call_string)
