@@ -99,8 +99,7 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
                 result[key] = extract_dynamic_tag(value, object, sync_connection, doc)
             else:
                 # process it as a jinja template 
-                # TODO: fix this syntax here so we aren't using object as the context
-                result[key] = frappe.render_template(value, {'object': object})
+                result[key] = frappe.render_template(value, object)
         elif isinstance(value, dict):
             for key in object_map:
                 value = object_map[key]
@@ -116,9 +115,9 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
                         nested_objects = object.get(objects_key, [])
                         nested_object_map = value["foreach"]["map"]
                         result[key] = [extract_object(nested_object_map, obj, sync_connection, doc) for obj in nested_objects]
-                    # non-function dicts
+                    # non-function dicts, pass through to extract_object
                     else:
-                        result[key] = value
+                        result[key] = extract_object(value, object, sync_connection, doc)
                 elif isinstance(value, list):
                     result[key] = [extract_object(item, object, sync_connection, doc) for item in value]
     return result
