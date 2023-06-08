@@ -168,10 +168,13 @@ def update_or_create_doc(shot, parsed_data, external_id, modified_date, save=Tru
 
     if doc:
         # check if the document has been modified after the external system
-        if modified_date and (doc.modified is None or doc.modified > modified_date or shot.modified > doc.modified):
-            return
-        else:   
-            doc.update(parsed_data)
+        # if modified_date and (doc.modified is None or doc.modified > modified_date or shot.modified > doc.modified):
+        #     return
+        # else:   
+        #     doc.update(parsed_data)
+
+        # return for now, let's not modify until we have a better way to handle this
+        return
     else:
         doc = frappe.new_doc(doctype)
         doc.update(parsed_data)
