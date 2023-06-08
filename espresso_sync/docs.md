@@ -51,12 +51,8 @@ Jinja templates can be a powerful tool in formatting and manipulating your data 
 JSONPath expressions allow for navigating the object tree and they start with a `$`.
 
 ```json
-"woocommerce_id": "$.id"
+"project_name": "$.name"
 ```
-
-Sure, here are the detailed specifications for the Mapping Functions.
-
----
 
 ## Mapping Functions
 
