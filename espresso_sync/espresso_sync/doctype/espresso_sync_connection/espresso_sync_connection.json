@@ -1,7 +1,7 @@
 {
  "actions": [
   {
-   "action": "espresso_sync.sync_machine.process_sync_connection_form_action",
+   "action": "sync_action",
    "action_type": "Server Action",
    "label": "Sync Now"
   }
@@ -19,7 +19,7 @@
   "connection_name",
   "sync_frequency",
   "cron_rule",
-  "api_rate_limit_per_second",
+  "api_rate_limit",
   "column_break_bgoy",
   "api_domain",
   "api_base",
@@ -101,14 +101,15 @@
    "label": "Last Pull"
   },
   {
-   "fieldname": "api_rate_limit_per_second",
+   "description": "Rate limit in maximum requests per minute.",
+   "fieldname": "api_rate_limit",
    "fieldtype": "Int",
-   "label": "API Rate Limit per Second"
+   "label": "API Rate Limit"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-05-17 11:21:24.254085",
+ "modified": "2023-07-06 13:19:11.818711",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection",
