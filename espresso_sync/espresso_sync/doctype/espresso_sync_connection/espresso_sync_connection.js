@@ -49,7 +49,7 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 					// show the sample in a frappe dialog
 					const sample = response.message || {};
 					const sample_formatted = JSON.stringify(sample, null, 2);
-					frappe.msgprint({'message': '<pre>' + sample_formatted + '</pre>', 'title': 'Sample Data'});
+					frappe.msgprint({ 'message': '<pre>' + sample_formatted + '</pre>', 'title': 'Sample Data' });
 				},
 			});
 		}
@@ -71,7 +71,7 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 				// show the sample in a frappe dialog
 				const sample = response.message || {};
 				const sample_formatted = JSON.stringify(sample, null, 2);
-				frappe.msgprint({'message': '<pre>' + sample_formatted + '</pre>', 'title': 'Sample Import'});
+				frappe.msgprint({ 'message': '<pre>' + sample_formatted + '</pre>', 'title': 'Sample Import' });
 			},
 		});
 	},
@@ -161,10 +161,10 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 		var index = cur_row.reference_index;
 		const count = cur_row.reference_count;
 		if (index < count - 1) {
-			index = index + 1;
+			index++;
 			const reference_docs = JSON.parse(cur_row.reference_docs);
-			frappe.model.set_value(cdt, cdn, "reference_index", index);
-			frappe.model.set_value(cdt, cdn, "reference_doc", reference_docs[index]);
+			cur_row.reference_index = index;
+			cur_row.reference_doc = JSON.stringify(reference_docs[index], null, 2);
 			// refresh the form
 			frm.refresh_field("shots");
 		}
@@ -175,8 +175,8 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 		if (index > 0) {
 			index = index - 1;
 			const reference_docs = JSON.parse(cur_row.reference_docs);
-			frappe.model.set_value(cdt, cdn, "reference_index", index);
-			frappe.model.set_value(cdt, cdn, "reference_doc", reference_docs[index]);
+			cur_row.reference_index = index;
+			cur_row.reference_doc = JSON.stringify(reference_docs[index], null, 2);
 			// refresh the form
 			frm.refresh_field("shots");
 		}

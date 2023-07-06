@@ -28,6 +28,7 @@
   "column_break_wjnr",
   "view_log",
   "section_break_hhmu",
+  "objects_key",
   "object_map_import",
   "override_import_request",
   "import_request_type",
@@ -474,12 +475,17 @@
    "fieldname": "url_scheme",
    "fieldtype": "Data",
    "label": "URL Scheme"
+  },
+  {
+   "fieldname": "objects_key",
+   "fieldtype": "Data",
+   "label": "Objects Key"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-05-22 16:23:45.918287",
+ "modified": "2023-07-04 15:32:58.676331",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection Shot",

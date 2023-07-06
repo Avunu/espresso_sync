@@ -63,28 +63,32 @@ class EspressoSyncConnection(Document):
         shot = frappe.get_doc("Espresso Sync Connection Shot", shot_name)
         # get sync_connection from shot
         sync_connection = frappe.get_doc("Espresso Sync Connection", shot.parent)
+        sample_data = sync_machine.pull_import_data(sync_connection, shot, payload=None, single_pull=True)
+        # debug
+        frappe.publish_realtime('console.log', str(sample_data), user=frappe.session.user)
+        sample_data = sample_data[0]["response_data"]
         # grab a single doc for the dynamic parameter substitution
-        doc = frappe.get_all(shot.dt, limit=1, fields=["*"])
-        url = shot.extract_api_url()
-        urls = tamp_dynamic_parameter(url, shot, sync_connection, doc)
-        url = shot.extract_crud_uri(urls[0], 'read')
-        response = requests.get(
-            url, headers=sync_machine.get_request_headers(self))
-        # test if response is valid json, if not, throw error
-        try:
-            response_data = response.json()
-        except ValueError:
-            frappe.throw(response.text,
-                         title="Invalid JSON Response from API")
-            response_data = []
+        # doc = frappe.get_all(shot.dt, limit=1, fields=["*"])
+        # url = shot.get_api_url()
+        # urls = tamp_dynamic_parameter(url, shot, sync_connection, doc)
+        # url = shot.get_crud_uri(urls[0], 'read')
+        # response = requests.get(
+        #     url, headers=sync_machine.get_request_headers(self))
+        # # test if response is valid json, if not, throw error
+        # try:
+        #     response_data = response.json()
+        # except ValueError:
+        #     frappe.throw(response.text,
+        #                  title="Invalid JSON Response from API")
+        #     response_data = []
 
         # test if the response contains a list of objects, if not, throw error
-        if not isinstance(response_data, list):
-            frappe.throw(response.text,
+        if not isinstance(sample_data, list):
+            frappe.throw(sample_data.text,
                          title="JSON Response should contain a list of objects")
-            response_data = []
+            sample_data = []
 
-        return response_data[:100]
+        return sample_data[:10]
 
     @frappe.whitelist()
     def get_reference_docs(self, doctype):
@@ -95,8 +99,11 @@ class EspressoSyncConnection(Document):
         reference_docs_names = frappe.db.get_list(
             doctype, pluck='name', limit=10)
         for doc_name in reference_docs_names:
-            doc = frappe.get_doc(doctype, doc_name)
-            reference_docs.append(doc.as_dict())
+            doc = frappe.get_doc(doctype, doc_name).as_dict()
+            # remove the espresso_sync_ids field from the doc dict
+            if "espresso_sync_ids" in doc:
+                del doc["espresso_sync_ids"]
+            reference_docs.append(doc)
         return reference_docs
 
     @frappe.whitelist()
