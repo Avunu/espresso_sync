@@ -394,6 +394,13 @@ class EspressoSyncConnection(Document):
         headers['Content-Type'] = 'application/json'
 
         return headers
+    
+    @frappe.whitelist()
+    def test_import(self, shot_name, sample_object):
+        # shot = frappe._dict(json.loads(shot))
+        import_object = frappe._dict(json.loads(sample_object))
+        shot = frappe.get_doc('Espresso Sync Connection Shot', shot_name)
+        return self.process_import_object(shot=shot, import_object=import_object, call_string='', save=False)
 
     pass
 
@@ -404,13 +411,6 @@ def render_sample(object_map, sample_object):
     sample_object = frappe._dict(json.loads(sample_object))
 
     return extract_object(object_map, sample_object)
-
-@frappe.whitelist()
-def test_import(doc_name, shot, sample_object):
-    self = frappe.get_doc('Espresso Sync Connection', doc_name)
-    shot = frappe._dict(json.loads(shot))
-    import_object = frappe._dict(json.loads(sample_object))
-    return self.process_import_object(shot=shot, import_object=import_object, call_string='', save=False)
 
 @frappe.whitelist()
 def sync_action(doc: str):

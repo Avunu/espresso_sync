@@ -67,8 +67,8 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 			method: 'test_import',
 			doc: frm.doc,
 			args: {
-				import_step: cur_row,
-				import_object: cur_row.sample_object,
+				shot_name: cdn,
+				sample_object: cur_row.sample_object,
 			},
 			callback: function (response) {
 				// show the sample in a frappe dialog
