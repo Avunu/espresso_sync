@@ -27,6 +27,9 @@ frappe.realtime.on("import_progress", function (data) {
 });
 
 frappe.ui.form.on('Espresso Sync Connection Shot', {
+	form_render: function (frm, cdt, cdn) {
+		make_filter_widget(frm, cdt, cdn);
+	},
 	template_generator: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
 		dt = cur_row.dt;
@@ -34,11 +37,11 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 	},
 	render_sample: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
-		object_map = cur_row.object_map;
+		object_map = cur_row.object_map_import;
 		sample_object = cur_row.sample_object;
 		if (object_map && sample_object) {
-			object_map = JSON.parse(object_map);
-			sample_object = JSON.parse(sample_object);
+			// object_map = JSON.parse(object_map);
+			// sample_object = JSON.parse(sample_object);
 			frm.call({
 				method: 'render_sample',
 				args: {
@@ -221,6 +224,33 @@ function show_template_generator_dialog(frm, fields) {
 	dialog.show();
 }
 
+// shot form filter widget for the export documents
+function make_filter_widget(frm, cdt, cdn) {
+	var cur_row = locals[cdt][cdn];
+	var doctype = cur_row.dt;
+	var filters = cur_row.filters;
+	const open_form = frm.fields_dict.shots.grid.open_grid_row;
+	if (open_form && doctype) {
+		const filter_widget = open_form.fields_dict.filter_widget.$wrapper;
+		frappe.model.with_doctype(doctype, () => {
+			filter_widget.empty();
+			// console.log(frm.fields_dict.shots.grid);
+			this.filter_group = new frappe.ui.FilterGroup({
+				parent: filter_widget,
+				doctype: cur_row.dt,
+				on_change: () => {
+					this.filters = this.filter_group.get_filters();
+					cur_row.filters = JSON.stringify(this.filters, null, 2);
+					frm.refresh_field("shots");
+					frm.dirty();
+				},
+			});
+			if (filters) {
+				this.filter_group.add_filters_to_filter_group(JSON.parse(filters));
+			}
+		});
+	}
+}
 
 // Helper functions to add fields to the dialog, get selected fields, create the JSON template, and show the output
 function add_fields_to_dialog(dialog, fields) {

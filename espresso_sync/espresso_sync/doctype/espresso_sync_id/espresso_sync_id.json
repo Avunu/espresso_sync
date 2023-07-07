@@ -6,9 +6,12 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "section_break_imxu",
   "sync_connection",
   "column_break_nzxn",
-  "external_id"
+  "external_id",
+  "section_break_stiv",
+  "dont_sync"
  ],
  "fields": [
   {
@@ -24,17 +27,34 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "External ID",
-   "reqd": 1
+   "mandatory_depends_on": "eval: !(doc.dont_sync)"
   },
   {
    "fieldname": "column_break_nzxn",
    "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "dont_sync",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Disabled"
+  },
+  {
+   "fieldname": "section_break_imxu",
+   "fieldtype": "Section Break",
+   "hide_border": 1
+  },
+  {
+   "fieldname": "section_break_stiv",
+   "fieldtype": "Section Break",
+   "hide_border": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-05-16 09:14:48.272292",
+ "modified": "2023-07-07 11:06:36.339874",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync ID",

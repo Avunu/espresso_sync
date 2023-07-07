@@ -22,3 +22,19 @@ class RateLimitedSession:
         response = self.session.request(*args, **kwargs)
         self.requests_made += 1
         return response
+
+    def get(self, *args, **kwargs):
+        return self.request('GET', *args, **kwargs)
+    
+    def patch(self, *args, **kwargs):
+        return self.request('PATCH', *args, **kwargs)
+    
+    def post(self, *args, **kwargs):
+        return self.request('POST', *args, **kwargs)
+    
+    def put(self, *args, **kwargs):
+        return self.request('PUT', *args, **kwargs)
+    
+    def delete(self, *args, **kwargs):
+        return self.request('DELETE', *args, **kwargs)
+    
