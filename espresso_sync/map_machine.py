@@ -5,12 +5,12 @@ from espresso_sync.dynamic_tags import extract_dynamic_tag
 
 
 # This function builds a list of all possible permutations of a parameter string based on dynamic tags in the string
-def tamp_dynamic_parameter(parameter, shot, sync_connection, docs=[0]):
+def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=[0]):
     finished_parameters = []
     # loop over exported docs (if any)
     # if no docs are passed, loop over a single empty dict
     i = 0
-    for doc in docs:
+    for doc_name in doc_names:
         # Start with the original parameter
         half_tamped_parameters = [parameter]
         while half_tamped_parameters and i < 1000:
@@ -36,8 +36,8 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, docs=[0]):
                             # Add the new parameter to the half_tamped_parameters list
                             half_tamped_parameters.append(new_parameter)
                         else:
-                            frappe.publish_realtime('show_alert', {'message': f"No doc id found for {dynamic_tag.split(':')[1]} on {sync_connection.name} on {shot.dt} shot and {doc.name} doc.", 'indicator': 'orange'}, user=frappe.session.user)
-                            frappe.log_error(f"No doc id found for {dynamic_tag.split(':')[1]} on {sync_connection.name} on {shot.dt} shot and {doc.name} doc.")
+                            frappe.publish_realtime('show_alert', {'message': f"No doc id found for {dynamic_tag.split(':')[1]} on {sync_connection.name} on {shot.dt} shot and {doc_name} doc.", 'indicator': 'orange'}, user=frappe.session.user)
+                            frappe.log_error(f"No doc id found for {dynamic_tag.split(':')[1]} on {sync_connection.name} on {shot.dt} shot and {doc_name} doc.")
                     elif dynamic_tag.startswith('{docs:'):
                         # Handle the dyno tag as a list of docs
                         dynamic_tag = dynamic_tag[1:-1]

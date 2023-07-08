@@ -78,8 +78,8 @@ class EspressoSyncConnection(Document):
         # first check to see if we need to return a single URL or a list of URLs
         if single_pull:
             # grab a single doc for the dynamic parameter substitution
-            doc = frappe.get_all(shot.dt, limit=1, fields=['*'])
-            urls = tamp_dynamic_parameter(url, shot, self, doc)
+            doc_name = frappe.get_all(shot.dt, limit=1, pluck='name')
+            urls = tamp_dynamic_parameter(url, shot, self, doc_name)
             urls = [urls[0]]
         else:
             urls = tamp_dynamic_parameter(url, shot, self)
@@ -144,7 +144,7 @@ class EspressoSyncConnection(Document):
         #             title='Docs to Export')
         # loop through the docs
         api_url = shot.get_api_url()
-        api_urls = tamp_dynamic_parameter(api_url, shot, self, docs)
+        api_urls = tamp_dynamic_parameter(api_url, shot, self, doc_names)
         for doc_name in doc_names:
             # index position of the current doc in the loop
             doc_index = doc_names.index(doc_name)
