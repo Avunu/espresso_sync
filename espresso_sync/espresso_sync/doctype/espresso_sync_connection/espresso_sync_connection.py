@@ -152,7 +152,7 @@ class EspressoSyncConnection(Document):
             object_api_url = api_urls[doc_index]
             doc = frappe.get_doc(doctype, doc_name)
             doc_data = doc.as_dict()
-            parsed_data = self.extract_object(
+            parsed_data = extract_object(
                 mapping_template, doc_data, sync_connection=self, doc=doc_data)
             # Check if the document has a unique ID for the external system
             external_id = frappe.db.get_value(doctype='Espresso Sync ID', filters={
