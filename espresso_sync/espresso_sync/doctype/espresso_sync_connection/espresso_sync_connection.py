@@ -138,19 +138,19 @@ class EspressoSyncConnection(Document):
         if shot.filters:
             filters.append(json.loads(shot.filters))
         # get the docs to export
-        docs = frappe.get_list(doctype, filters=filters, pluck='name')
-        # debug
-        frappe.throw(str(docs),
-                    title='Docs to Export')
+        doc_names = frappe.get_list(doctype, filters=filters, pluck='name')
+        # # debug
+        # frappe.throw(str(docs),
+        #             title='Docs to Export')
         # loop through the docs
         api_url = shot.get_api_url()
         api_urls = tamp_dynamic_parameter(api_url, shot, self, docs)
-        for doc in docs:
+        for doc_name in doc_names:
             # index position of the current doc in the loop
-            doc_index = docs.index(doc)
+            doc_index = doc_names.index(doc_name)
             # run the self.session, pairing the url with the current doc in the loop based on index position
             object_api_url = api_urls[doc_index]
-            doc = frappe.get_doc(doctype, doc.name)
+            doc = frappe.get_doc(doctype, doc_name)
             doc_data = doc.as_dict()
             parsed_data = self.extract_object(
                 mapping_template, doc_data, sync_connection=self, doc=doc_data)
@@ -205,7 +205,8 @@ class EspressoSyncConnection(Document):
                     frappe.log_error(
                         f'Error creating {doctype} in external system', response.content)
         # update the last_export timestamp
-        frappe.db.set_value('Espresso Sync Connection Shot', shot.name, 'last_export', frappe.utils.now())
+        frappe.db.set_value('Espresso Sync Connection Shot',
+                            shot.name, 'last_export', frappe.utils.now())
         frappe.db.commit()
         return
 
@@ -219,7 +220,8 @@ class EspressoSyncConnection(Document):
             if isinstance(response_data, list):
                 i = 0
                 for import_object in response_data:
-                    self.process_import_object(shot, import_object, call_string)
+                    self.process_import_object(
+                        shot, import_object, call_string)
                     # show progress on frontend
                     frappe.publish_realtime(
                         'import_progress', {'doctype': shot.dt, 'progress': i, 'total': len(import_data)}, user=frappe.session.user)
@@ -227,7 +229,8 @@ class EspressoSyncConnection(Document):
             else:
                 self.process_import_object(shot, response_data, call_string)
         # update the last_import timestamp
-        frappe.db.set_value('Espresso Sync Connection Shot', shot.name, 'last_import', frappe.utils.now())
+        frappe.db.set_value('Espresso Sync Connection Shot',
+                            shot.name, 'last_import', frappe.utils.now())
         return
 
     def process_import_object(self, shot, import_object, call_string, save=True):
@@ -343,7 +346,8 @@ class EspressoSyncConnection(Document):
         # get sync_connection from shot
         if not self:
             self = shot.parent
-        sample_data = self.pull_import_data(shot, payload=None, single_pull=True)
+        sample_data = self.pull_import_data(
+            shot, payload=None, single_pull=True)
         sample_data = sample_data[0]['response_data']
         # test if the response contains a list of objects, if not, throw error
         if not isinstance(sample_data, list):
@@ -384,7 +388,7 @@ class EspressoSyncConnection(Document):
         headers['Content-Type'] = 'application/json'
 
         return headers
-    
+
     @frappe.whitelist()
     def test_import(self, shot_name, sample_object):
         # shot = frappe._dict(json.loads(shot))
@@ -396,6 +400,7 @@ class EspressoSyncConnection(Document):
 
 # API Calls
 
+
 @frappe.whitelist()
 def get_doctype_fields(doctype):
     field_list = [
@@ -406,12 +411,14 @@ def get_doctype_fields(doctype):
     ]
     return field_list
 
+
 @frappe.whitelist()
 def render_sample(object_map, sample_object):
     object_map = frappe._dict(json.loads(object_map))
     sample_object = frappe._dict(json.loads(sample_object))
 
     return extract_object(object_map, sample_object)
+
 
 @frappe.whitelist()
 def sync_action(doc: str):
@@ -421,6 +428,8 @@ def sync_action(doc: str):
     return self
 
 # Custom Fields
+
+
 def create_espresso_sync_id_custom_fields(doctype):
     # get the current last field of the doctype
     last_field = frappe.get_meta(doctype).fields[-1]

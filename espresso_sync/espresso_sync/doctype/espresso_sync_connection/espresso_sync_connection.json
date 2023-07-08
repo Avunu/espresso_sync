@@ -4,6 +4,16 @@
    "action": "espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.sync_action",
    "action_type": "Server Action",
    "label": "Sync Now"
+  },
+  {
+   "action": "espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.export_action",
+   "action_type": "Server Action",
+   "label": "Export Template"
+  },
+  {
+   "action": "espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.import_action",
+   "action_type": "Server Action",
+   "label": "Import Template"
   }
  ],
  "allow_import": 1,
@@ -109,7 +119,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-07-07 16:46:16.615464",
+ "modified": "2023-07-08 13:29:12.372573",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection",

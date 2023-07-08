@@ -28,7 +28,12 @@ frappe.realtime.on("import_progress", function (data) {
 
 frappe.ui.form.on('Espresso Sync Connection Shot', {
 	form_render: function (frm, cdt, cdn) {
-		make_filter_widget(frm, cdt, cdn);
+		var cur_row = locals[cdt][cdn];
+		const dialog_form = frm.fields_dict.shots.grid.open_grid_row;
+		// render the filter widget
+		make_filter_widget(cur_row, dialog_form);
+		// Add a buttons to the code editors
+		add_editor_buttons(cur_row, dialog_form);
 	},
 	generate_template: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
@@ -271,13 +276,11 @@ function show_template_generator_dialog(frm, fields) {
 }
 
 // shot form filter widget for the export documents
-function make_filter_widget(frm, cdt, cdn) {
-	var cur_row = locals[cdt][cdn];
+function make_filter_widget(cur_row, dialog_form) {
 	var doctype = cur_row.dt;
 	var filters = cur_row.filters;
-	const open_form = frm.fields_dict.shots.grid.open_grid_row;
-	if (open_form && doctype) {
-		const filter_widget = open_form.fields_dict.filter_widget.$wrapper;
+	if (dialog_form && doctype) {
+		const filter_widget = dialog_form.fields_dict.filter_widget.$wrapper;
 		frappe.model.with_doctype(doctype, () => {
 			filter_widget.empty();
 			// console.log(frm.fields_dict.shots.grid);
@@ -296,6 +299,25 @@ function make_filter_widget(frm, cdt, cdn) {
 			}
 		});
 	}
+}
+
+// helper function to add extra utility buttons to the code editors
+function add_editor_buttons(cur_row, dialog_form) {
+	const code_editors = [
+		'object_map_import',
+		'request_payload',
+		'object_map_export'
+	]
+	// format code button
+	code_editors.forEach((editor_name) => {
+		const editor_field = dialog_form.fields_dict[editor_name];
+		const $format_button = $('<button class="btn btn-xs btn-default">Format</button>');
+		$format_button.click(function(editor_field) {
+			editor_field.editor.autoIndent();
+		}
+		.bind(this, editor_field));
+		editor_field.$input_wrapper.append($format_button);
+	});
 }
 
 // Helper functions to add fields to the dialog, get selected fields, create the JSON template, and show the output
