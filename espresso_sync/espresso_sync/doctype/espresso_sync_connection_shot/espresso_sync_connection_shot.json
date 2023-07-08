@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2023-03-18 20:03:25.969737",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -211,6 +210,7 @@
    "label": "Sample Count"
   },
   {
+   "default": "{}",
    "fieldname": "sample_objects",
    "fieldtype": "JSON",
    "hidden": 1,
@@ -256,6 +256,7 @@
    "read_only": 1
   },
   {
+   "default": "{}",
    "fieldname": "reference_docs",
    "fieldtype": "JSON",
    "hidden": 1,
@@ -304,6 +305,7 @@
    "label": "Next Doc \u25ba"
   },
   {
+   "default": "{}",
    "depends_on": "eval:doc.override_import_request==1;",
    "fieldname": "request_payload",
    "fieldtype": "JSON",
@@ -354,6 +356,7 @@
    "label": "Export Objects"
   },
   {
+   "default": "{}",
    "fieldname": "object_map_export",
    "fieldtype": "JSON",
    "label": "Export Object Map",
@@ -367,6 +370,7 @@
    "label": "Import Objects"
   },
   {
+   "default": "{}",
    "fieldname": "object_map_import",
    "fieldtype": "JSON",
    "label": "Import Object Map",
@@ -513,6 +517,7 @@
    "label": "Filter Widget"
   },
   {
+   "default": "[]",
    "fieldname": "filters",
    "fieldtype": "JSON",
    "hidden": 1,
@@ -535,7 +540,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-07-07 16:29:17.640495",
+ "modified": "2023-07-08 13:19:57.824495",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection Shot",

@@ -55,7 +55,7 @@ class EspressoSyncConnection(Document):
             # TODO: handle deletion of objects
             # TODO: handle URI overrides
             if shot.do_import:
-                if shot.request_payload:
+                if shot.override_import_request and shot.request_payload:
                     self.import_with_payload_variations(shot)
                 else:
                     self.process_import(shot)
@@ -337,16 +337,6 @@ class EspressoSyncConnection(Document):
         return doc
 
     @frappe.whitelist()
-    def get_doctype_fields(self, doctype):
-        field_list = [
-            {'fieldname': df.fieldname, 'label': df.label,
-                'fieldtype': df.fieldtype, 'options': df.options}
-            for df in frappe.get_meta(doctype).fields
-            if df.fieldtype in ['Data', 'Table', 'Text', 'Small Text', 'Link', 'Select']
-        ]
-        return field_list
-
-    @frappe.whitelist()
     def get_sample_data(self, shot_name):
         # get a list of up to 10 objects from the given API endpoint
         shot = frappe.get_doc('Espresso Sync Connection Shot', shot_name)
@@ -405,6 +395,17 @@ class EspressoSyncConnection(Document):
     pass
 
 # API Calls
+
+@frappe.whitelist()
+def get_doctype_fields(doctype):
+    field_list = [
+        {'fieldname': df.fieldname, 'label': df.label,
+            'fieldtype': df.fieldtype, 'options': df.options}
+        for df in frappe.get_meta(doctype).fields
+        if df.fieldtype in ['Data', 'Table', 'Text', 'Small Text', 'Link', 'Select']
+    ]
+    return field_list
+
 @frappe.whitelist()
 def render_sample(object_map, sample_object):
     object_map = frappe._dict(json.loads(object_map))

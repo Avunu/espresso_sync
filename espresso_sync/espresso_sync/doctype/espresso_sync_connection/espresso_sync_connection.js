@@ -30,7 +30,7 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 	form_render: function (frm, cdt, cdn) {
 		make_filter_widget(frm, cdt, cdn);
 	},
-	template_generator: function (frm, cdt, cdn) {
+	generate_template: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
 		dt = cur_row.dt;
 		open_template_generator_dialog(frm, dt);
@@ -205,10 +205,56 @@ function show_template_generator_dialog(frm, fields) {
 		fields: [
 			{
 				fieldtype: 'Section Break',
-				label: __('Select Fields'),
+				label: __('Fields Selection'),
 			},
-			// Main fields 'Table MultiSelect' will be added by add_fields_to_dialog function
-			// Add more fields here for the table fields
+			{
+				fieldtype: 'Table',
+				fieldname: 'fields_map',
+				label: __('Fields Map'),
+				fields: [
+					{
+						fieldtype: 'Check',
+						fieldname: 'enabled',
+						label: __('Enabled'),
+						default: 1,
+					},
+					{
+						fieldtype: 'Data',
+						fieldname: 'field_name',
+						label: __('Field Name'),
+						read_only: 1,
+					},
+					{
+						fieldtype: 'Data',
+						fieldname: 'field_label',
+						label: __('Field Label'),
+						read_only: 1,
+					},
+					{
+						fieldtype: 'Select',
+						fieldname: 'map_type',
+						label: __('Map Type'),
+						options: [
+							{ label: __('Field Match'), value: 'field_match' },
+							{ label: __('Static/Custom'), value: 'custom' }
+						],
+						default: 'jsonpath',
+					},
+					{
+						fieldtype: 'Data',
+						fieldname: 'map_value',
+						label: __('Map Value'),
+						depends_on: 'map_type=="custom"',
+					},
+					{
+						fieldtype: 'Select',
+						fieldname: 'field_match',
+						label: __('Field Match'),
+						depends_on: 'map_type=="field_match"',
+					}
+				],
+				data: fields,
+			},
 		],
 		primary_action_label: __('Render Template'),
 		primary_action: function () {
@@ -257,7 +303,7 @@ function add_fields_to_dialog(dialog, fields) {
 	const main_fields = fields.filter((field) => field.fieldtype !== "Table");
 	const table_fields = fields.filter((field) => field.fieldtype === "Table");
 
-	dialog.append({
+	dialog.fields.push({
 		fieldtype: "Table MultiSelect",
 		fieldname: "main_fields",
 		label: __("Main Fields"),
@@ -267,25 +313,28 @@ function add_fields_to_dialog(dialog, fields) {
 		})),
 	});
 
-	for (const table_field of table_fields) {
-		dialog.append({
-			fieldtype: "Table MultiSelect",
-			fieldname: table_field.fieldname,
-			label: __(table_field.label),
-			options: table_field.child_fields.map((field) => ({
-				label: field.label,
-				value: field.fieldname,
-			})),
-		});
+	// for (const table_field of table_fields) {
+	// 	dialog.fields.push({
+	// 		fieldtype: "Table MultiSelect",
+	// 		fieldname: table_field.fieldname,
+	// 		label: __(table_field.label),
+	// 		options: table_field.child_fields.map((field) => ({
+	// 			label: field.label,
+	// 			value: field.fieldname,
+	// 		})),
+	// 	});
 
-		dialog.append({
-			fieldtype: "Select",
-			fieldname: table_field.fieldname + "_options",
-			label: __("Select " + table_field.label + " Template Type"),
-			options: ["List", "Loop"],
-			default: "List",
-		});
-	}
+	// 	dialog.fields.push({
+	// 		fieldtype: "Select",
+	// 		fieldname: table_field.fieldname + "_options",
+	// 		label: __("Select " + table_field.label + " Template Type"),
+	// 		options: ["List", "Loop"],
+	// 		default: "List",
+	// 	});
+	// }
+
+	// refresh the dialog
+	dialog.refresh();
 }
 
 function get_selected_fields(dialog) {
