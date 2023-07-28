@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class EspressoSyncHistory(Document):
+class EspressoSyncPull(Document):
 	pass
