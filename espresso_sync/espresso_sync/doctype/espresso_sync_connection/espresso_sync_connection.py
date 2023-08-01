@@ -70,7 +70,7 @@ class EspressoSyncConnection(Document):
         payload = shot.request_payload
         payloads = tamp_dynamic_parameter(payload, shot, self)
         for payload in payloads:
-            payload = payload.replace("''", "'")
+            payload = payload.replace('""', '"')
             self.process_import(shot, payload)
 
     def pull_import_data(self, shot, payload=None, single_pull=False):
