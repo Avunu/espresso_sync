@@ -58,9 +58,12 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=[0]):
                 else:
                     # Handle the dyno tag as jinja
                     try:
+                        # Get the doc data from the dynamic tag
                         if doc_name:
                             doc_data = frappe.get_doc(shot.dt, doc_name).as_dict()
-                        jinja_value = frappe.render_template(dynamic_tag, doc_data or {})
+                        else:
+                            doc_data = {}
+                        jinja_value = frappe.render_template(dynamic_tag, doc_data)
                         jinja_value = apply_quotes(jinja_value)
                         # Replace the dynamic parameter with the value
                         new_parameter = parameter.replace(first_dynamic_tag.group(0), jinja_value)
