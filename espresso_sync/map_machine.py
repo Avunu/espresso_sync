@@ -58,8 +58,9 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=[0]):
                 else:
                     # Handle the dyno tag as jinja
                     try:
-                        doc_data = frappe.get_doc(shot.dt, doc_name).as_dict()
-                        jinja_value = frappe.render_template(dynamic_tag, doc_data)
+                        if doc_name:
+                            doc_data = frappe.get_doc(shot.dt, doc_name).as_dict()
+                        jinja_value = frappe.render_template(dynamic_tag, doc_data or {})
                         jinja_value = apply_quotes(jinja_value)
                         # Replace the dynamic parameter with the value
                         new_parameter = parameter.replace(first_dynamic_tag.group(0), jinja_value)
@@ -67,7 +68,7 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=[0]):
                         half_tamped_parameters.append(new_parameter)
                     except Exception as e:
                         frappe.publish_realtime('show_alert', {'message': f"Error rendering template: {e}", 'indicator': 'orange'}, user=frappe.session.user)
-                        frappe.log_error(f"Error rendering template: {e}")
+                        frappe.log_error(f"Error rendering template: {e} for dynamic tag: {dynamic_tag} on shot {shot.dt} and doc {doc_name}")
             # If there are no dynamic parameters, add the parameter to the finished_parameters list
             else:
                 finished_parameters.append(parameter)
