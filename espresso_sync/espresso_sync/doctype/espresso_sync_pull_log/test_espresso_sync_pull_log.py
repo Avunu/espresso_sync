@@ -5,5 +5,5 @@
 from frappe.tests.utils import FrappeTestCase
 
 
-class TestEspressoSyncPull(FrappeTestCase):
+class TestEspressoSyncPullLog(FrappeTestCase):
 	pass

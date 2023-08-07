@@ -1,0 +1,56 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2023-05-30 11:28:52.570103",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sync_connection",
+  "objects_processed",
+  "documents_processed"
+ ],
+ "fields": [
+  {
+   "fieldname": "sync_connection",
+   "fieldtype": "Link",
+   "label": "Sync Connection",
+   "options": "Espresso Sync Connection"
+  },
+  {
+   "fieldname": "objects_processed",
+   "fieldtype": "Int",
+   "label": "Objects Processed"
+  },
+  {
+   "fieldname": "documents_processed",
+   "fieldtype": "Int",
+   "label": "Documents Processed"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2023-08-07 09:04:02.671514",
+ "modified_by": "Administrator",
+ "module": "Espresso Sync",
+ "name": "Espresso Sync History",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
