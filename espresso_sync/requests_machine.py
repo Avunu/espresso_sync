@@ -1,6 +1,7 @@
 import time
 import requests
 
+
 class RateLimitedSession:
     def __init__(self, max_requests_per_minute):
         self.session = requests.Session()
@@ -37,4 +38,3 @@ class RateLimitedSession:
     
     def delete(self, *args, **kwargs):
         return self.request('DELETE', *args, **kwargs)
-    

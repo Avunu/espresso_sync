@@ -30,7 +30,6 @@ def extract_dynamic_tag(tag, object, sync_connection, doc):
         frappe.log_error(f"Unknown dynamic tag type {tag_type}")
         return None
 
-
 def doc_tag(params, object, sync_connection, doc):
     """
     This function handles "doc" tags.
@@ -41,7 +40,6 @@ def doc_tag(params, object, sync_connection, doc):
     except Exception as e:
         frappe.log_error(f"Error handling dynamic tag {params}: {e}")
         return None
-
 
 def docs_tag(params, object, sync_connection, doc):
     # Handle the dyno tag as a list of docs
@@ -57,7 +55,6 @@ def docs_tag(params, object, sync_connection, doc):
     except Exception as e:
         frappe.log_error(f"Error handling dynamic tag {params}: {e}")
         return None
-
 
 def id_tag(params, object, sync_connection, doc):
     """
@@ -75,6 +72,7 @@ def id_tag(params, object, sync_connection, doc):
         frappe.log_error(f"Error handling dynamic tag {params}: {e}")
         return None
 
+# TODO: Get rid of duplicate link_tag function
 
 def link_tag(params, object, sync_connection, doc):
     """
@@ -98,7 +96,6 @@ def link_tag(params, object, sync_connection, doc):
     except Exception as e:
         frappe.log_error(f"Error handling dynamic tag {params}: {e}")
         return None
-
 
 def link_tag(params, object, sync_connection, doc):
     """

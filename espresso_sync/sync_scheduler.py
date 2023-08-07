@@ -40,4 +40,3 @@ def sync_cron():
             schedule = CronSlices.from_string(cron_string)
             if schedule.should_run_now():
                 process_sync(frappe.get_doc("Espresso Sync Connection", sync_connection.name))
-

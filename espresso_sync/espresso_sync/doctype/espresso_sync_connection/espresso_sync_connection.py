@@ -5,7 +5,6 @@ import base64
 import datetime
 import hashlib
 import json
-
 import espresso_sync.sync_machine as sync_machine
 import frappe
 import requests
@@ -14,6 +13,7 @@ from espresso_sync.map_machine import extract_object, tamp_dynamic_parameter
 from espresso_sync.requests_machine import RateLimitedSession
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 from frappe.model.document import Document
+
 
 class PullLog(Document):
     def __init__(self, SyncConnection):
@@ -77,14 +77,17 @@ class EspressoSyncConnection(Document):
 
     def sync(self):
         for shot in self.shots:
+            self.pull.sync_shot = shot
             # TODO: handle deletion of objects
             # TODO: handle URI overrides
             if shot.do_import:
+                self.pull.sync_direction = 'Import'
                 if shot.override_import_request and shot.request_payload:
                     self.import_with_payload_variations(shot)
                 else:
                     self.process_import(shot)
             if shot.do_export:
+                self.pull.sync_direction = 'Export'
                 self.process_export(shot)
         # update the last sync date
         self.last_pull = datetime.datetime.now()
@@ -96,6 +99,7 @@ class EspressoSyncConnection(Document):
         payloads = tamp_dynamic_parameter(payload, shot, self)
         for payload in payloads:
             payload = payload.replace('""', '"')
+            # does a pull log go here? what does the payload match up with?
             self.process_import(shot, payload)
 
     def pull_import_data(self, shot, payload=None, single_pull=False):
@@ -112,43 +116,61 @@ class EspressoSyncConnection(Document):
         import_data = []
         for url in urls:
             call_string = f'{url}{headers}{payload}'
+            self.pull.url = url
+            self.pull.request = {'payload': payload, 'headers': headers}
             if shot.override_import_request:
-                response = self.session.request(
-                    shot.import_request_type, url, headers=headers, data=payload)
+                self.pull.request_type = shot.import_request_type
+                response = self.session.request(shot.import_request_type, url, headers=headers, data=payload)
             else:
-                response = self.session.get(
-                    url, headers=headers, params=payload)
+                self.pull.request_type = 'GET'
+                response = self.session.get(url, headers=headers, params=payload)
+            self.pull.response = response
             # test if response is valid server response, if not, throw error
             if not str(response.status_code).startswith('2'):
                 error_message = f'Invalid Server Response for {call_string} - {response.text}'
                 frappe.log_error('Invalid Server Response', error_message)
                 frappe.throw(response.text, title='Invalid Server Response')
+                # put the error in the pull log
+                self.pull.sync_status = 'Error'
+                self.pull.traceback = response.text
+                self.pull.save()
             # test if response is valid json, if not, throw error
             response_data = {}
             try:
                 response_data = response.json()
             except ValueError:
-                frappe.throw(response.text,
-                             title='Invalid JSON Response from API')
+                frappe.throw(response.text, title='Invalid JSON Response from API')
+                # put the error in the pull log
+                self.pull.sync_status = 'Error'
+                self.pull.traceback = response.text
+                self.pull.save()
             # if an objects_key is set, filter the response data to only include the objects_key value
             if shot.objects_key:
                 try:
                     response_data = response_data[shot.objects_key]
                 except KeyError:
-                    frappe.throw(f'Objects Key {shot.objects_key} not found in response data',
-                                 title='Invalid Objects Key')
+                    frappe.throw(f'Objects Key {shot.objects_key} not found in response data', title='Invalid Objects Key')
+                    # put the error in the pull log
+                    self.pull.sync_status = 'Error'
+                    self.pull.traceback = f'Objects Key {shot.objects_key} not found in response data'
+                    self.pull.save()
             # add the response data to the import_data list
             api_call = {
                 'call_string': call_string,
                 'response_data': response_data
             }
             import_data.append(api_call)
+            # save the pull log here?
+            self.pull.sync_status = 'Success'
+            self.pull.save()
 
         return import_data
 
     def process_export(self, shot, parameters=None):
         doctype = shot.dt
+        self.pull.sync_doctype = doctype
         mapping_template = json.loads(shot.object_map_export)
+        self.pull.map = mapping_template
         # get the last modified timestamp of the sync connection shot
         shot_last_modified = shot.modified
         last_export = shot.last_export
@@ -164,9 +186,6 @@ class EspressoSyncConnection(Document):
             filters.append(json.loads(shot.filters))
         # get the docs to export
         doc_names = frappe.get_list(doctype, filters=filters, pluck='name')
-        # # debug
-        # frappe.throw(str(docs),
-        #             title='Docs to Export')
         # loop through the docs
         api_url = shot.get_api_url()
         api_urls = tamp_dynamic_parameter(api_url, shot, self, doc_names)
@@ -177,38 +196,36 @@ class EspressoSyncConnection(Document):
             object_api_url = api_urls[doc_index]
             doc = frappe.get_doc(doctype, doc_name)
             doc_data = doc.as_dict()
-            parsed_data = extract_object(
-                mapping_template, doc_data, sync_connection=self, doc=doc_data)
+            parsed_data = extract_object(mapping_template, doc_data, sync_connection=self, doc=doc_data)
             # Check if the document has a unique ID for the external system
-            external_id = frappe.db.get_value(doctype='Espresso Sync ID', filters={
-                'sync_connection': self.name, 'parent': doc.name}, fieldname='external_id')
+            external_id = frappe.db.get_value(doctype='Espresso Sync ID', filters={'sync_connection': self.name, 'parent': doc.name}, fieldname='external_id')
             if external_id:
                 # Update the existing object in the external system
-                object_update_url = shot.get_crud_uri(
-                    object_api_url, 'update', external_id)
-                response = self.session.put(
-                    object_update_url, headers=self.get_request_headers(), json=parsed_data)
+                object_update_url = shot.get_crud_uri(object_api_url, 'update', external_id)
+                response = self.session.put(object_update_url, headers=self.get_request_headers(), json=parsed_data)
+                self.pull.request_type = 'PUT'
+                self.pull.request = {'payload': parsed_data, 'headers': self.get_request_headers()}
+                self.pull.response = response
+                self.pull.url = object_update_url
                 # handle bad response
                 if not str(response.status_code).startswith('2'):
                     frappe.publish_realtime('show_alert', {
                                             'message': f'Error exporting {doctype}: {doc.name}', 'indicator': 'orange'}, user=frappe.session.user)
-                    frappe.log_error(
-                        f'Error exporting {doctype}: {doc.name}', response.text)
-
-                    # debug
-                    frappe.publish_realtime(
-                        'console_log', response, user=frappe.session.user)
-                    # end debug
-
+                    frappe.log_error(f'Error exporting {doctype}: {doc.name}', response.text)
+                    self.pull.sync_status = 'Error'
+                    self.pull.traceback = response.text
+                    self.pull.save()
                     # TODO: figure out task updates since they are all erroring here on an undefined response
 
                     continue
             else:
                 # Create a new object in the external system
-                object_create_url = shot.get_crud_uri(
-                    object_api_url, 'create')
-                response = self.session.post(
-                    object_create_url, headers=self.get_request_headers(), json=parsed_data)
+                object_create_url = shot.get_crud_uri(object_api_url, 'create')
+                response = self.session.post(object_create_url, headers=self.get_request_headers(), json=parsed_data)
+                self.pull.request_type = 'POST'
+                self.pull.request = {'payload': parsed_data, 'headers': self.get_request_headers()}
+                self.pull.response = response
+                self.pull.url = object_create_url
                 # If the external system returns a unique ID, store it in the espresso_sync_id field
                 if str(response.status_code).startswith('2'):
                     response_data = response.json()
@@ -229,6 +246,10 @@ class EspressoSyncConnection(Document):
                                             'message': f'Error creating {doctype} in external system', 'indicator': 'orange'}, user=frappe.session.user)
                     frappe.log_error(
                         f'Error creating {doctype} in external system', response.content)
+                    self.pull.sync_status = 'Error'
+                    self.pull.traceback = response.text
+            self.pull.sync_status = 'Success'
+            self.pull.save()
         # update the last_export timestamp
         frappe.db.set_value('Espresso Sync Connection Shot',
                             shot.name, 'last_export', frappe.utils.now())
@@ -245,8 +266,7 @@ class EspressoSyncConnection(Document):
             if isinstance(response_data, list):
                 i = 0
                 for import_object in response_data:
-                    self.process_import_object(
-                        shot, import_object, call_string)
+                    self.process_import_object(shot, import_object, call_string)
                     # show progress on frontend
                     frappe.publish_realtime(
                         'import_progress', {'doctype': shot.dt, 'progress': i, 'total': len(import_data)}, user=frappe.session.user)
@@ -254,8 +274,7 @@ class EspressoSyncConnection(Document):
             else:
                 self.process_import_object(shot, response_data, call_string)
         # update the last_import timestamp
-        frappe.db.set_value('Espresso Sync Connection Shot',
-                            shot.name, 'last_import', frappe.utils.now())
+        frappe.db.set_value('Espresso Sync Connection Shot', shot.name, 'last_import', frappe.utils.now())
         return
 
     def process_import_object(self, shot, import_object, call_string, save=True):
@@ -264,8 +283,7 @@ class EspressoSyncConnection(Document):
         modified_date_format = shot.modified_date_format
         object_map = json.loads(shot.object_map_import)
 
-        # add the import to the sync log using add_sync_log
-        # espresso_sync_log = add_sync_log(self = self, call_string = call_string, sync_object = import_object, sync_direction = 'Import')
+        self.pull.map = object_map
 
         external_id = ''
         if id_field:
@@ -273,8 +291,9 @@ class EspressoSyncConnection(Document):
             try:
                 external_id = import_object[id_field]
             except KeyError:
-                frappe.throw(f'ID field {id_field} not found in response data',
-                             title='Invalid ID Field')
+                frappe.throw(f'ID field {id_field} not found in response data', title='Invalid ID Field')
+                self.pull.sync_status = 'Error'
+                self.pull.traceback = f'ID field {id_field} not found in response data'
         else:
             external_id = hashlib.md5(call_string.encode()).hexdigest()
         # test if the response contains a modified date field, if not, throw error
@@ -301,11 +320,10 @@ class EspressoSyncConnection(Document):
                     except ValueError:
                         frappe.throw(f'Modified Date value {modified_date_field} could not be parsed as a date',
                                      title='Invalid Modified Date Field')
-        parsed_data = extract_object(
-            object_map, import_object, self)
+        parsed_data = extract_object(object_map, import_object, self)
         # doc = update_or_create_doc(shot, parsed_data, external_id, modified_date, save, espresso_sync_log)
-        doc = self.update_or_create_doc(
-            shot, parsed_data, external_id, modified_date, save)
+        doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
+        self.pull.sync_status = 'Success'
 
         return doc
 
@@ -425,7 +443,6 @@ class EspressoSyncConnection(Document):
 
 # API Calls
 
-
 @frappe.whitelist()
 def get_doctype_fields(doctype):
     field_list = [
@@ -453,7 +470,6 @@ def sync_action(doc: str):
     return self
 
 # Custom Fields
-
 
 def create_espresso_sync_id_custom_fields(doctype):
     # get the current last field of the doctype
