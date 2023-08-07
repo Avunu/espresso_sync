@@ -15,10 +15,35 @@ from espresso_sync.requests_machine import RateLimitedSession
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 from frappe.model.document import Document
 
+class PullLog(Document):
+    def __init__(self, SyncConnection):
+        self.sync_connection = SyncConnection.name
+        self.sync_shot = ''
+        self.sync_doctype = ''
+        self.sync_direction = ''
+        self.sync_status = ''
+        self.object = ''
+        self.document = ''
+        self.map = ''
+        self.url = ''
+        self.request_type = ''
+        self.request = ''
+        self.response = ''
+        self.traceback = ''
+
+    # return self as dict
+    def as_dict(self):
+        return self.__dict__
+    
+    # save the pull log
+    def save(self):
+        frappe.get_doc("Espresso Sync Pull Log", self.as_dict()).insert()
 
 class EspressoSyncConnection(Document):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)  # This calls the init method of the superclass
+        # current pull log for the connection
+        self.pull = PullLog(self)
         if self.api_rate_limit:
             self.session = RateLimitedSession(self.api_rate_limit)
         else:
