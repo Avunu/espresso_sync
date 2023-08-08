@@ -5,5 +5,5 @@
 from frappe.tests.utils import FrappeTestCase
 
 
-class TestEspressoSyncHistory(FrappeTestCase):
+class TestEspressoSyncBatch(FrappeTestCase):
 	pass

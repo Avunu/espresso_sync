@@ -1,14 +1,13 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{sync_doctype}-{YYYY}-{MM}-{DD}-{#####}",
  "creation": "2023-05-30 11:27:24.214280",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "sync_connection",
-  "column_break_kicv",
-  "sync_shot",
   "column_break_rfue",
   "sync_doctype",
   "column_break_iekp",
@@ -40,6 +39,9 @@
   {
    "fieldname": "sync_direction",
    "fieldtype": "Select",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Sync Direction",
    "options": "Import\nExport",
    "read_only": 1
@@ -47,19 +49,18 @@
   {
    "fieldname": "sync_connection",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Sync Connection",
    "options": "Espresso Sync Connection",
    "read_only": 1
   },
   {
-   "fieldname": "sync_shot",
-   "fieldtype": "Data",
-   "label": "Sync Shot",
-   "read_only": 1
-  },
-  {
    "fieldname": "sync_doctype",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Sync DocType",
    "options": "DocType",
    "read_only": 1
@@ -67,13 +68,12 @@
   {
    "fieldname": "sync_status",
    "fieldtype": "Select",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Sync Status",
    "options": "Success\nFailure",
    "read_only": 1
-  },
-  {
-   "fieldname": "column_break_kicv",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "column_break_rfue",
@@ -122,7 +122,8 @@
   {
    "fieldname": "url",
    "fieldtype": "Data",
-   "label": "URL"
+   "label": "URL",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_gote",
@@ -132,7 +133,8 @@
    "fieldname": "request_type",
    "fieldtype": "Select",
    "label": "Request Type",
-   "options": "GET\nPOST\nPUT\nPATCH\nDELETE"
+   "options": "GET\nPOST\nPUT\nPATCH\nDELETE",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_bfam",
@@ -158,10 +160,11 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-07-08 16:05:14.944631",
+ "modified": "2023-08-08 12:07:40.237049",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Pull Log",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {

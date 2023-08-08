@@ -89,19 +89,29 @@ def apply_quotes(value):
 def extract_object(object_map, object, sync_connection=None, doc=None):
     result = {}
     for key, value in object_map.items():
+        # if isinstance(value, str):
+        #     # check if the value is a JSONPath expression
+        #     if value.startswith("$"):
+        #         jsonpath_expr = parse(value)
+        #         try:
+        #             match = jsonpath_expr.find(object)
+        #         except Exception as e:
+        #             frappe.publish_realtime('show_alert', {'message': f"Error parsing JSONPath: {e}", 'indicator': 'orange'}, user=frappe.session.user)
+        #             frappe.log_error(f"Error parsing JSONPath: {e}")
+        #         if match:
+        #             result[key] = match[0].value
+        #         else:
+        #             result[key] = None
         if isinstance(value, str):
             # check if the value is a JSONPath expression
             if value.startswith("$"):
-                jsonpath_expr = parse(value)
-                try:
-                    match = jsonpath_expr.find(object)
-                except Exception as e:
-                    frappe.publish_realtime('show_alert', {'message': f"Error parsing JSONPath: {e}", 'indicator': 'orange'}, user=frappe.session.user)
-                    frappe.log_error(f"Error parsing JSONPath: {e}")
-                if match:
-                    result[key] = match[0].value
+                jsonpath_expr = value
+                if "||" in value:
+                    # Handle JSONPath expression with the || operator
+                    result[key] = handle_jsonpath_with_operator(jsonpath_expr, object)
                 else:
-                    result[key] = None
+                    # Evaluate the regular JSONPath expression
+                    result[key] = evaluate_jsonpath(jsonpath_expr, object)[0] or None
             # detect dynamic tags as single-bracketed strings (exclude jinja delimiters)
             elif value.startswith("{") and not value[1] in ["%", "#", "{"]:
                 # process it as a dynamic tag
@@ -136,3 +146,25 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
                 elif isinstance(value, list):
                     result[key] = [extract_object(item, object, sync_connection, doc) for item in value]
     return result
+
+def evaluate_jsonpath(expression, data):
+    # Helper function to evaluate a JSONPath expression
+    result = []
+    jsonpath_expr = parse(expression)
+    for match in jsonpath_expr.find(data):
+        result.append(match.value)
+    if len(result):
+        return result
+    return [None]
+
+def handle_jsonpath_with_operator(expression, data):
+    # Helper function to handle JSONPath expressions with the || operator
+    expressions = expression.split("||")
+    for expr in expressions:
+        trimmed_expr = expr.strip()
+        if not trimmed_expr.startswith("$"):
+            return trimmed_expr
+        result = evaluate_jsonpath(trimmed_expr, data)
+        if result[0]:
+            return result[0]  # Return the first non-empty result
+    return None
