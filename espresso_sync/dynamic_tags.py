@@ -38,7 +38,7 @@ def doc_tag(params, object, sync_connection, doc):
     try:
         return frappe.db.get_single_value(params.split(":")[0], params.split(":")[1])
     except Exception as e:
-        frappe.log_error(f"Error handling dynamic tag {params}: {e}")
+        frappe.log_error(f"Error handling doc dynamic tag {params}: {e}")
         return None
 
 def docs_tag(params, object, sync_connection, doc):
@@ -53,7 +53,7 @@ def docs_tag(params, object, sync_connection, doc):
         # Get the list of external IDs from the Espresso Sync ID doctype
         return frappe.db.get_list('Espresso Sync ID', filters={'sync_connection': sync_connection.name, 'parenttype': doctype, 'parent': ['in', doc_names]}, fields=['external_id'])
     except Exception as e:
-        frappe.log_error(f"Error handling dynamic tag {params}: {e}")
+        frappe.log_error(f"Error handling docs dynamic tag {params}: {e}")
         return None
 
 def id_tag(params, object, sync_connection, doc):
@@ -69,33 +69,9 @@ def id_tag(params, object, sync_connection, doc):
             fieldname="external_id"
         )
     except Exception as e:
-        frappe.log_error(f"Error handling dynamic tag {params}: {e}")
+        frappe.log_error(f"Error handling id dynamic tag {params}: {e}")
         return None
 
-# TODO: Get rid of duplicate link_tag function
-
-def link_tag(params, object, sync_connection, doc):
-    """
-    This function handles "link" tags.
-    Example: "{link:Customer:$.clientId}" - fetches the name of the linked Customer doctype using the client ID.
-    """
-    try:
-        doctype, id = params.split(":")
-        jsonpath_expr = parse(id)
-        matches = [match.value for match in jsonpath_expr.find(object)]
-        if not matches:
-            return None
-        external_id = matches[0]
-        # return the frappe doc whose espresso_sync_id matches the client ID for the sync connection
-        return frappe.db.get_value(
-            doctype="Espresso Sync ID",
-            filters={'sync_connection': sync_connection.name,
-                        'parenttype': doctype, 'external_id': external_id},
-            fieldname="parent"
-        )
-    except Exception as e:
-        frappe.log_error(f"Error handling dynamic tag {params}: {e}")
-        return None
 
 def link_tag(params, object, sync_connection, doc):
     """
@@ -117,8 +93,9 @@ def link_tag(params, object, sync_connection, doc):
             fieldname="parent"
         )
     except Exception as e:
-        frappe.log_error(f"Error handling dynamic tag {params}: {e}")
+        frappe.log_error(f"Error handling link dynamic tag {params}: {e}")
         return None
+    
     
 def id_tag(params, object, sync_connection, doc):
     """
@@ -134,9 +111,9 @@ def id_tag(params, object, sync_connection, doc):
             fieldname="external_id"        )
 
     except Exception as e:
-        frappe.log_error(f"Error handling dynamic tag {params}: {e}")
+        frappe.log_error(f"Error handling id dynamic tag {params}: {e}")
         return None
-    
+
 # def meta_tag(params, object, sync_connection, doc):
 #     """
 #     This function handles "meta" tags.

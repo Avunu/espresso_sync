@@ -347,10 +347,6 @@ class EspressoSyncConnection(Document):
         parsed_data = extract_object(object_map, import_object, self)
         # doc = update_or_create_doc(shot, parsed_data, external_id, modified_date, save, espresso_sync_log)
         doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
-        if doc is not None:
-            self.pull.document = str(doc.as_json())
-        self.pull.sync_status = 'Success'
-        self.pull.save()
         return doc
 
     def update_or_create_doc(self, shot, parsed_data, external_id, modified_date, save=True, espresso_sync_log=None):
@@ -389,21 +385,29 @@ class EspressoSyncConnection(Document):
                 'sync_connection': self.name,
                 'external_id': external_id
             })
-        # save the pull log entry
-        self.pull.sync_doc = doc.name
-        self.pull.document = str(doc.as_json())
-        self.pull.save()
         if save:
+            # validate and save the doc
             try:
                 doc.validate()
             except Exception as e:
                 frappe.log_error(f'Document not valid: {doc.name}', e)
+                self.pull.sync_doc = ''
+                self.pull.document = doc.as_json()
+                self.pull.sync_status = 'Failure'
             else:
                 try:
                     doc.save()
                     frappe.db.commit()
+                    self.pull.sync_doc = doc.name
+                    self.pull.document = doc.as_json()
+                    self.pull.sync_status = 'Success'
                 except Exception as e:
                     frappe.log_error(f'Document not saved: {doc.name}', e)
+                    self.pull.sync_doc = ''
+                    self.pull.sync_status = 'Failure'
+            # save the pull log entry
+            finally:
+                self.pull.save()
         return doc
 
     @frappe.whitelist()
