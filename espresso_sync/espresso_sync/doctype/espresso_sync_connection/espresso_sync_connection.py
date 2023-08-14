@@ -141,12 +141,10 @@ class EspressoSyncConnection(Document):
             else:
                 self.pull.request_type = 'GET'
                 response = self.session.get(url, headers=headers, params=payload)
-            self.pull.response = str(response.json())
+            self.pull.response = json.dumps(response.json(), indent=4)
             # test if response is valid server response, if not, throw error
             if not str(response.status_code).startswith('2'):
-                error_message = f'Invalid Server Response for {call_string} - {response.text}'
-                frappe.log_error('Invalid Server Response', error_message)
-                frappe.throw(response.text, title='Invalid Server Response')
+                frappe.throw(response.text, title=f'Invalid Server Response for {call_string}')
                 # put the error in the pull log
                 self.pull.sync_status = 'Failure'
                 self.pull.traceback = response.text
@@ -197,7 +195,7 @@ class EspressoSyncConnection(Document):
         # if "Only Export Synced Documents" is checked, only sync docs that have a sync_id
         if shot.export_existing:
             filters.append(['Espresso Sync ID', 'sync_connection', '=', self.name])
-            filters.append(['Espresso Sync ID', 'espresso_sync_id', '!=', ''])
+            filters.append(['Espresso Sync ID', 'external_id', '!=', ''])
         # grab any filters from the shot
         if shot.filters:
             # shot.filters is a list of lists, we need to add each item of each list to the filters list
@@ -239,7 +237,10 @@ class EspressoSyncConnection(Document):
                     frappe.publish_realtime('show_alert', {
                                             'message': f'Error exporting {doctype}: {doc.name}', 'indicator': 'orange'}, user=frappe.session.user)
                     frappe.log_error(f'Error exporting {doctype}: {doc.name}', response.text)
+                    # put the error in the pull log
+                    self.pull.sync_status = 'Failure'
                     self.pull.traceback = response.text
+                    self.pull.save()
                     # TODO: figure out task updates since they are all erroring here on an undefined response
             else:
                 # Create a new object in the external system
@@ -269,8 +270,6 @@ class EspressoSyncConnection(Document):
                     self.pull.sync_status = 'Failure'
                     frappe.publish_realtime('show_alert', {
                                             'message': f'Error creating {doctype} in external system', 'indicator': 'orange'}, user=frappe.session.user)
-                    frappe.log_error(
-                        f'Error creating {doctype} in external system', response.content)
                     self.pull.traceback = response.text
             self.pull.save()
         # update the last_export timestamp
@@ -389,22 +388,16 @@ class EspressoSyncConnection(Document):
             # validate and save the doc
             try:
                 doc.validate()
+                doc.save()
+                frappe.db.commit()
+                self.pull.sync_status = 'Success'
+                self.pull.sync_doc = doc.name
+                self.pull.document = doc.as_json()
             except Exception as e:
-                frappe.log_error(f'Document not valid: {doc.name}', e)
+                self.pull.sync_status = 'Failure'
                 self.pull.sync_doc = ''
                 self.pull.document = doc.as_json()
-                self.pull.sync_status = 'Failure'
-            else:
-                try:
-                    doc.save()
-                    frappe.db.commit()
-                    self.pull.sync_doc = doc.name
-                    self.pull.document = doc.as_json()
-                    self.pull.sync_status = 'Success'
-                except Exception as e:
-                    frappe.log_error(f'Document not saved: {doc.name}', e)
-                    self.pull.sync_doc = ''
-                    self.pull.sync_status = 'Failure'
+                self.pull.traceback = e
             # save the pull log entry
             finally:
                 self.pull.save()

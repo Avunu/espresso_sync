@@ -32,7 +32,7 @@ def extract_dynamic_tag(tag, object, sync_connection, doc):
 
 def doc_tag(params, object, sync_connection, doc):
     """
-    This function handles "doc" tags.
+    This function handles "doc" tags, which are used to fetch values from "Single" doctypes. This is useful for pulling parameters from global settings.
     Example: "{doc:Selling Settings:default_price_list}" - fetches the default price list from the Selling Settings doctype.
     """
     try:
@@ -58,7 +58,8 @@ def docs_tag(params, object, sync_connection, doc):
 
 def id_tag(params, object, sync_connection, doc):
     """
-    This function handles "id" tags.
+    This function handles "id" tags, which are used to fetch the external ID of a linked doc.
+    params: the name of the field which contains the document to fetch the external ID from
     Example: "{id:project}" - fetches the external ID of the linked doc in the project field.
     """
     try:
@@ -75,7 +76,7 @@ def id_tag(params, object, sync_connection, doc):
 
 def link_tag(params, object, sync_connection, doc):
     """
-    This function handles "link" tags.
+    This function handles "link" tags, which are used to fetch a frappe doc based on an external ID.
     Example: "{link:Customer:$.clientId}" - fetches the name of the linked Customer doctype using the client ID.
     """
     try:
@@ -95,24 +96,7 @@ def link_tag(params, object, sync_connection, doc):
     except Exception as e:
         frappe.log_error(f"Error handling link dynamic tag {params}: {e}")
         return None
-    
-    
-def id_tag(params, object, sync_connection, doc):
-    """
-    This function handles "id" tags.
-    params: the name of the field which contains the document to fetch the external ID from
-    Example: "{id:project}" - fetches the external ID of the linked doc in the project field.
-    """
-    try:
-        return frappe.db.get_value(
-            doctype="Espresso Sync ID",
-            filters={'sync_connection': sync_connection.name,
-                     'parent': doc[params]},
-            fieldname="external_id"        )
 
-    except Exception as e:
-        frappe.log_error(f"Error handling id dynamic tag {params}: {e}")
-        return None
 
 # def meta_tag(params, object, sync_connection, doc):
 #     """
