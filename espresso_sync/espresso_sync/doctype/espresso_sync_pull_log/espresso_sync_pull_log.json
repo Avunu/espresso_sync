@@ -10,6 +10,8 @@
   "sync_connection",
   "column_break_rfue",
   "sync_doctype",
+  "column_break_njxw",
+  "sync_doc",
   "column_break_iekp",
   "sync_direction",
   "column_break_gqyj",
@@ -156,11 +158,24 @@
    "fieldname": "errors_tab",
    "fieldtype": "Tab Break",
    "label": "Errors"
+  },
+  {
+   "fieldname": "column_break_njxw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sync_doc",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Sync Document",
+   "options": "sync_doctype",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-08-08 12:07:40.237049",
+ "modified": "2023-08-10 17:08:41.711720",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Pull Log",

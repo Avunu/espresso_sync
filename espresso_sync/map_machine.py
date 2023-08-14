@@ -43,7 +43,7 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=[0]):
                         dynamic_tag = dynamic_tag[1:-1]
                         # Get the doctype from the dynamic tag
                         doctype = dynamic_tag.split(':')[1]
-                        dynamic_tag_doc_list = frappe.get_all(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parenttype': doctype}, fields=['external_id'])
+                        dynamic_tag_doc_list = frappe.get_all(doctype='Espresso Sync ID', filters={'sync_connection': sync_connection.name, 'parenttype': doctype}, fields=['external_id'])
                         # dynamic_tag_doc_list = extract_dynamic_tag(dynamic_tag, None, sync_connection, doc)
                         # Loop through the list of docs
                         if dynamic_tag_doc_list:

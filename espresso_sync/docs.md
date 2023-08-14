@@ -123,11 +123,15 @@ Espresso Sync dynamic tags are enclosed in single curly brackets `{ }` and provi
 
 - `doc`: Fetches a single document value from the database. The format is `{doc:Doctype:fieldname}` where `Doctype` is the document type and `fieldname` is the field of the document to fetch.
 
+For example, to fetch the default price list from the Selling Settings:
+
 ```json
 "default_price_list": "{doc:Selling Settings:default_price_list}"
 ```
 
 - `id`: Fetches the external ID of a linked document. The format is `{id:fieldname}` where `fieldname` is the name of the link field connecting the current document to a related document.
+
+For example, to fetch the external project ID from a Sales Order:
 
 ```json
 "project_id": "{id:project}"
@@ -135,6 +139,32 @@ Espresso Sync dynamic tags are enclosed in single curly brackets `{ }` and provi
 
 - `link`: Fetches the linked document name based on its external ID. The format is `{link:Doctype:JSONPath}` where `Doctype` is the document type and `JSONPath` is the JSONPath expression to find the external ID in the object.
 
+For example, to fetch the customer name from a Sales Order based on the external customer ID:
+
 ```json
 "customer": "{link:Customer:$.clientId}"
 ```
+
+<!-- ### Custom Metadata
+
+Espresso Sync allows you to define and store custom metadata for each object that is imported and/or exported. This metadata can be used to store additional information that's important to keep associated with the object on export, such as the ID of an image in an external system.
+
+To define custom metadata, you can use the `meta` key in the mapping object. The format is `{meta:field}` where `field` is the name of the field and `type` is the data type of the metadata value.
+
+Type is auto-detected, and can be one of the following:
+- `array`
+- `boolean`
+- `number`
+- `string` (default)
+
+For example, to store the ID of an image from an external object (on import):
+
+```json
+"{meta:image_id}": "$.imageId"
+```
+
+To fetch that same value in an export mapping:
+
+```json
+"image_id": "{meta:image_id}"
+``` -->

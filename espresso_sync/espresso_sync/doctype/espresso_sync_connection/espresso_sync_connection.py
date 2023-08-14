@@ -19,6 +19,7 @@ class PullLog(Document):
     def __init__(self, SyncConnection):
         self.sync_connection = SyncConnection.name
         self.sync_doctype = ''
+        self.sync_doc = ''
         self.sync_direction = ''
         self.sync_status = ''
         self.object = '{}'
@@ -39,6 +40,7 @@ class PullLog(Document):
         pull_log = frappe.new_doc("Espresso Sync Pull Log")
         pull_log.sync_connection = self.sync_connection
         pull_log.sync_doctype = self.sync_doctype
+        pull_log.sync_doc = self.sync_doc
         pull_log.sync_direction = self.sync_direction
         pull_log.sync_status = self.sync_status
         pull_log.object = self.object
@@ -49,8 +51,6 @@ class PullLog(Document):
         pull_log.request = self.request
         pull_log.response = self.response
         pull_log.traceback = self.traceback
-        # rename the pull log to the current datetime in the format YYYY-MM-DD-HH-MM-SS
-        # pull_log.name = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
         try:
             pull_log.insert()
         except Exception as e:
@@ -194,9 +194,12 @@ class EspressoSyncConnection(Document):
         # if the shot was modified after the last export, re-sync all docs
         if last_export and shot_last_modified < last_export:
             filters.append([doctype, 'modified', '>', last_export])
+        # if "Only Export Synced Documents" is checked, only sync docs that have a sync_id
+        if shot.export_existing:
+            filters.append(['Espresso Sync ID', 'sync_connection', '=', self.name])
+            filters.append(['Espresso Sync ID', 'espresso_sync_id', '!=', ''])
         # grab any filters from the shot
         if shot.filters:
-            # filters.append(json.loads(shot.filters))
             # shot.filters is a list of lists, we need to add each item of each list to the filters list
             for filter in json.loads(shot.filters):
                 filters.append(filter)
@@ -206,6 +209,10 @@ class EspressoSyncConnection(Document):
         api_url = shot.get_api_url()
         api_urls = tamp_dynamic_parameter(api_url, shot, self, doc_names)
         for doc_name in doc_names:
+            self.pull.sync_doc = doc_name
+            # ensure this doc is not excluded from sync
+            if (frappe.db.get_value(doctype='Espresso Sync ID', filters={'sync_connection': self.name, 'parent': doc_name}, fieldname='dont_sync')):
+                continue
             # index position of the current doc in the loop
             doc_index = doc_names.index(doc_name)
             # run the self.session, pairing the url with the current doc in the loop based on index position
@@ -248,8 +255,8 @@ class EspressoSyncConnection(Document):
                     response_data = response.json()
                     if 'id' in response_data:
                         external_id = response_data['id']
-                        frappe.db.set_value('Espresso Sync ID', {
-                                            'sync_connection': self.name, 'parent': doc.name}, 'external_id', external_id)
+                        # frappe.db.set_value('Espresso Sync ID', {
+                        #                     'sync_connection': self.name, 'parent': doc.name}, 'external_id', external_id)
                         # Add the Espresso Sync ID to the document
                         doc.append('espresso_sync_ids', {
                             'sync_connection': self.name,
@@ -382,6 +389,10 @@ class EspressoSyncConnection(Document):
                 'sync_connection': self.name,
                 'external_id': external_id
             })
+        # save the pull log entry
+        self.pull.sync_doc = doc.name
+        self.pull.document = str(doc.as_json())
+        self.pull.save()
         if save:
             try:
                 doc.validate()
@@ -517,3 +528,4 @@ def create_espresso_sync_id_custom_fields(doctype):
         'parent': 'Sync',
     }
     create_custom_field(doctype, field_properties)
+

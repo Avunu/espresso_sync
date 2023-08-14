@@ -123,6 +123,7 @@ def link_tag(params, object, sync_connection, doc):
 def id_tag(params, object, sync_connection, doc):
     """
     This function handles "id" tags.
+    params: the name of the field which contains the document to fetch the external ID from
     Example: "{id:project}" - fetches the external ID of the linked doc in the project field.
     """
     try:
@@ -135,3 +136,21 @@ def id_tag(params, object, sync_connection, doc):
     except Exception as e:
         frappe.log_error(f"Error handling dynamic tag {params}: {e}")
         return None
+    
+# def meta_tag(params, object, sync_connection, doc):
+#     """
+#     This function handles "meta" tags.
+#     Example: "{meta:image_id}" - fetches the value of the image_id meta field associated with the Espresso Sync Metadata table for the sync connection and doc.
+#     """
+#     try:
+#         return frappe.db.get_value(
+#             doctype="Espresso Sync Metadata",
+#             filters={'sync_connection': sync_connection.name,
+#                      'parent': doc.name,
+#                      'key': params},
+#             fieldname='value'
+#         )
+
+#     except Exception as e:
+#         frappe.log_error(f"Error handling dynamic tag {params}: {e}")
+#         return None
