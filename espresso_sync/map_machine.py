@@ -160,4 +160,4 @@ def extract_jsonpath(expression, data):
         result.append(match.value)
     if len(result):
         return result[0]
-    return None
+    return ''

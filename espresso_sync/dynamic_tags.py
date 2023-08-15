@@ -17,8 +17,9 @@ def extract_dynamic_tag(tag, object, sync_connection, doc):
     handlers = {
         "doc": doc_tag,
         # "docs": docs_tag,
-        "link": link_tag,
         "id": id_tag,
+        "link": link_tag,
+        "value": value_tag,
     }
     if tag_type in handlers:
         try:
@@ -95,6 +96,21 @@ def link_tag(params, object, sync_connection, doc):
         )
     except Exception as e:
         frappe.log_error(f"Error handling link dynamic tag {params}: {e}")
+        return None
+
+def value_tag(params, object, sync_connection, doc):
+    """
+    This function handles "value" tags, which are used to fetch the value of a field from a linked document.
+    params: the name of the field which contains the document to fetch the value from, and the field to fetch the value from
+    Example: "{value:customer:email_id}" - fetches the customer's email address from a Sales Order.
+    """
+    try:
+        linkfield, valuefield = params.split(":")
+        docname = doc[linkfield]
+        doctype = frappe.get_meta(doc['doctype']).get_link_doctype(linkfield)
+        return frappe.get_value(doctype, docname, valuefield)
+    except Exception as e:
+        frappe.log_error(f"Error handling value dynamic tag {params}: {e}")
         return None
 
 
