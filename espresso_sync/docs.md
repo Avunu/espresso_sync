@@ -129,7 +129,7 @@ For example, to fetch the default price list from the Selling Settings:
 "default_price_list": "{doc:Selling Settings:default_price_list}"
 ```
 
-- `id`: Fetches the external ID of a linked document. The format is `{id:fieldname}` where `fieldname` is the name of the link field connecting the current document to a related document.
+- `id`: Fetches the external ID of a linked document. The format is `{id:linkfield}` where `linkfield` is the name of the link field connecting the current document to a related document.
 
 For example, to fetch the external project ID from a Sales Order:
 
@@ -143,6 +143,14 @@ For example, to fetch the customer name from a Sales Order based on the external
 
 ```json
 "customer": "{link:Customer:$.clientId}"
+```
+
+- `value`: Fetches the value of a field from a linked document. The format is `{value:linkfield:valuefield}` where `linkfield` is the name of the link field connecting the current document to a related document and `valuefield` is the name of the field to fetch from the linked document.
+
+For example, to fetch the customer's email address from a Sales Order:
+
+```json
+"customer_email": "{value:customer:email_id}"
 ```
 
 <!-- ### Custom Metadata

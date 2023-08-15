@@ -105,13 +105,7 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
         if isinstance(value, str):
             # check if the value is a JSONPath expression
             if value.startswith("$"):
-                jsonpath_expr = value
-                if "||" in value:
-                    # Handle JSONPath expression with the || operator
-                    result[key] = handle_jsonpath_with_operator(jsonpath_expr, object)
-                else:
-                    # Evaluate the regular JSONPath expression
-                    result[key] = evaluate_jsonpath(jsonpath_expr, object)[0] or None
+                result[key] = extract_jsonpath(value, object)
             # detect dynamic tags as single-bracketed strings (exclude jinja delimiters)
             elif value.startswith("{") and not value[1] in ["%", "#", "{"]:
                 # process it as a dynamic tag
@@ -147,24 +141,23 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
                     result[key] = [extract_object(item, object, sync_connection, doc) for item in value]
     return result
 
-def evaluate_jsonpath(expression, data):
-    # Helper function to evaluate a JSONPath expression
+
+# Helper function to evaluate a JSONPath expression
+def extract_jsonpath(expression, data):
+    # Handle JSONPath expression with the || operator
+    if "||" in expression:
+        expressions = expression.split("||")
+        for expr in expressions:
+            trimmed_expr = expr.strip()
+            if not trimmed_expr.startswith("$"):
+                return trimmed_expr
+            result = extract_jsonpath(trimmed_expr, data)
+            if result:
+                return result # Return the first non-empty result
     result = []
     jsonpath_expr = parse(expression)
     for match in jsonpath_expr.find(data):
         result.append(match.value)
     if len(result):
-        return result
-    return [None]
-
-def handle_jsonpath_with_operator(expression, data):
-    # Helper function to handle JSONPath expressions with the || operator
-    expressions = expression.split("||")
-    for expr in expressions:
-        trimmed_expr = expr.strip()
-        if not trimmed_expr.startswith("$"):
-            return trimmed_expr
-        result = evaluate_jsonpath(trimmed_expr, data)
-        if result[0]:
-            return result[0]  # Return the first non-empty result
+        return result[0]
     return None
