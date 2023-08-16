@@ -16,10 +16,11 @@ def extract_dynamic_tag(tag, object, sync_connection, doc):
     params = ":".join(tag.split(':')[1:])
     handlers = {
         "doc": doc_tag,
-        # "docs": docs_tag,
+        "get_value": get_value_tag,
         "id": id_tag,
+        "link_value": link_value_tag,
         "link": link_tag,
-        "value": value_tag,
+        # "docs": docs_tag,
     }
     if tag_type in handlers:
         try:
@@ -77,7 +78,7 @@ def id_tag(params, object, sync_connection, doc):
 
 def link_tag(params, object, sync_connection, doc):
     """
-    This function handles "link" tags, which are used to fetch a frappe doc based on an external ID.
+    This function handles "link" tags, which are used to fetch a frappe doc name based on an external ID.
     Example: "{link:Customer:$.clientId}" - fetches the name of the linked Customer doctype using the client ID.
     """
     try:
@@ -97,8 +98,43 @@ def link_tag(params, object, sync_connection, doc):
     except Exception as e:
         frappe.log_error(f"Error handling link dynamic tag {params}: {e}")
         return None
+    
 
-def value_tag(params, object, sync_connection, doc):
+def get_value_tag(params, object, sync_connection, doc):
+    """
+    This function handles "get_value" tags, which are used to fetch the value of a field based on given Doctype and filters.
+    params: the doctype, fieldname, and filters to use to fetch the value
+    Example: "{get_value:Country:name:code=$.billing.country}" - fetches the name of the country based on the billing country code.
+    """
+    try:
+        # Splitting by ':' to get the individual components
+        doctype, fieldname, filters = params.split(':')
+
+        # Extracting filter values using JSONPath
+        filter_dict = {}
+        for f in filters.split('&'):
+            filter_key, jsonpath_expr = f.split('=')
+            
+            # Check if the expression starts with '$', which indicates it's a JSONPath expression
+            if jsonpath_expr.startswith('$'):
+                # Extract value using JSONPath expression
+                filter_value = parse(jsonpath_expr).find(object)
+                
+                # If the expression finds a match in the object, get the first value
+                if filter_value:
+                    filter_dict[filter_key] = filter_value[0].value
+            else:
+                filter_dict[filter_key] = jsonpath_expr  # It's a static value
+
+        # Use Frappe's `get_value` function to fetch the desired value from the database
+        return frappe.get_value(doctype, filters=filter_dict, fieldname=fieldname)
+
+    except Exception as e:
+        frappe.log_error(f"Error handling get_value dynamic tag {params}: {e}")
+        return None
+
+
+def link_value_tag(params, object, sync_connection, doc):
     """
     This function handles "value" tags, which are used to fetch the value of a field from a linked document.
     params: the name of the field which contains the document to fetch the value from, and the field to fetch the value from

@@ -89,19 +89,6 @@ def apply_quotes(value):
 def extract_object(object_map, object, sync_connection=None, doc=None):
     result = {}
     for key, value in object_map.items():
-        # if isinstance(value, str):
-        #     # check if the value is a JSONPath expression
-        #     if value.startswith("$"):
-        #         jsonpath_expr = parse(value)
-        #         try:
-        #             match = jsonpath_expr.find(object)
-        #         except Exception as e:
-        #             frappe.publish_realtime('show_alert', {'message': f"Error parsing JSONPath: {e}", 'indicator': 'orange'}, user=frappe.session.user)
-        #             frappe.log_error(f"Error parsing JSONPath: {e}")
-        #         if match:
-        #             result[key] = match[0].value
-        #         else:
-        #             result[key] = None
         if isinstance(value, str):
             # check if the value is a JSONPath expression
             if value.startswith("$"):

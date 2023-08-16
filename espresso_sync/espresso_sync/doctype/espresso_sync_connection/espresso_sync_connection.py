@@ -181,7 +181,7 @@ class EspressoSyncConnection(Document):
     def process_export(self, shot, parameters=None):
         doctype = shot.dt
         mapping_template = json.loads(shot.object_map_export)
-        self.pull.map = mapping_template
+        self.pull.map = json.dumps(mapping_template, indent=4)
         # get the last modified timestamp of the sync connection shot
         shot_last_modified = shot.modified
         last_export = shot.last_export
@@ -227,7 +227,7 @@ class EspressoSyncConnection(Document):
                 response = self.session.put(object_update_url, headers=self.get_request_headers(), json=parsed_data)
                 self.pull.request_type = 'PUT'
                 self.pull.request = json.dumps({'payload': parsed_data, 'headers': self.get_request_headers()}, indent=4)
-                self.pull.response = str(response.json())
+                self.pull.response = json.dumps(response.json(), indent=4)
                 self.pull.url = object_update_url
                 # handle bad response
                 if str(response.status_code).startswith('2'):
@@ -306,7 +306,7 @@ class EspressoSyncConnection(Document):
         modified_date_format = shot.modified_date_format
         object_map = json.loads(shot.object_map_import)
 
-        self.pull.map = object_map
+        self.pull.map = json.dumps(object_map, indent=4)
 
         external_id = ''
         if id_field:
@@ -343,20 +343,63 @@ class EspressoSyncConnection(Document):
                     except ValueError:
                         frappe.throw(f'Modified Date value {modified_date_field} could not be parsed as a date',
                                      title='Invalid Modified Date Field')
-        parsed_data = extract_object(object_map, import_object, self)
-        # doc = update_or_create_doc(shot, parsed_data, external_id, modified_date, save, espresso_sync_log)
-        doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
+        # if the object map is a list, then we need to loop through each item in the list
+        if isinstance(object_map, list):
+            for single_map in object_map:
+                parsed_data = extract_object(single_map, import_object, self)
+                doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
+        else:
+            parsed_data = extract_object(object_map, import_object, self)
+            doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
+        
         return doc
 
-    def update_or_create_doc(self, shot, parsed_data, external_id, modified_date, save=True, espresso_sync_log=None):
-        doc = None
-        doctype = shot.dt
+    def update_or_create_doc(self, shot, parsed_data, external_id, modified_date, save=True):
+        # check to see if the map contains a condition
+        if '{condition}' in parsed_data:
+            # conditions are specified as a list of logical tests, such as:
+            # "{condition}": [
+            #     "{{ billing.address_1 != shipping.address_1 }}",
+            #     "{{ billing.city != shipping.city }}"
+            # ]
+            # the condition is evaluated as true only if all of the tests are true
+            tests = parsed_data['{condition}']
+            # remove the condition from the parsed_data dict
+            del parsed_data['{condition}']
+            # check if all the tests in the condition are 'True' strings
+            if all(test == 'True' for test in tests):
+                pass
+            else:
+                # if any of the tests are not 'True', return
+                return None
+        
+        # check to see if the doctype is specified in the map
+        if '{doctype}' in parsed_data:
+            doctype = parsed_data['{doctype}']
+            # remove the doctype from the parsed_data dict
+            del parsed_data['{doctype}']
+            # Check if the custom field already exists for this doctype
+            custom_field_exists = frappe.db.exists(
+                'Custom Field', {'dt': doctype, 'fieldname': 'exclude_from_sync'})
+
+            # If the custom field does not exist, create it
+            if not custom_field_exists:
+                create_espresso_sync_id_custom_fields(doctype)
+        else:
+            doctype = shot.dt
+
+        # check if the map overrides the external_id
+        if '{external_id}' in parsed_data:
+            external_id = parsed_data['{external_id}']
+            # remove the external_id from the parsed_data dict
+            del parsed_data['{external_id}']
 
         # Check if a document with a matching Sync ID already exists
         sync_id_list = frappe.db.get_all('Espresso Sync ID', filters={
             'sync_connection': self.name, 'external_id': external_id},
             fields=['parent'])
 
+        doc = None
         # confirm that a matching document with a matching doctype exists
         if sync_id_list:
             for sync_id_entry in sync_id_list:
