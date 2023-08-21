@@ -415,6 +415,27 @@ class EspressoSyncConnection(Document):
             else:
                 # loop through every key in parsed_data and update the doc
                 for key in parsed_data:
+                    # check if the value is a list, if so, update the child table
+                    # TODO: handle child table updates, including new rows and row deletions
+                    if isinstance(parsed_data[key], list):
+                        # get the child table fieldname
+                        child_table_fieldname = key
+                        # get the child table doctype
+                        doctype = frappe.get_meta(doctype).get_field(
+                            child_table_fieldname).options
+                        # update the child table rows
+                        for child_table_row in doc.get(child_table_fieldname):
+                            # get the child table row name
+                            child_table_row_name = child_table_row.name
+                            # get the child table row doc
+                            child_table_row_doc = frappe.get_doc(
+                                doctype, child_table_row_name)
+                            # update the child table row doc
+                            for child_table_row_key in parsed_data[key][0]:
+                                child_table_row_doc.set(
+                                    child_table_row_key, parsed_data[key][0][child_table_row_key])
+                            # save the child table row doc
+                            child_table_row_doc.save()
                     doc.db_set(key, parsed_data[key])
 
             return
