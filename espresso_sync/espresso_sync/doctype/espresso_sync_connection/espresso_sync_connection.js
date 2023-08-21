@@ -19,7 +19,7 @@ frappe.realtime.on("show_alert", function (data) {
 
 frappe.realtime.on("import_progress", function (data) {
 	// use show_progress
-	frappe.show_progress("Processing " + data.doctype, data.progress, data.total);
+	frappe.show_progress("Processing " + data.doctype + "s", data.progress, data.total);
 	// hide progress when complete
 	if (data.progress == data.total) {
 		frappe.hide_progress();

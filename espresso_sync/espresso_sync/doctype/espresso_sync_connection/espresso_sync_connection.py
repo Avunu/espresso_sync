@@ -219,6 +219,8 @@ class EspressoSyncConnection(Document):
             doc_data = doc.as_dict()
             self.pull.document = str(doc.as_json())
             parsed_data = extract_object(mapping_template, doc_data, sync_connection=self, doc=doc_data)
+            if not parsed_data:
+                continue
             # Check if the document has a unique ID for the external system
             external_id = frappe.db.get_value(doctype='Espresso Sync ID', filters={'sync_connection': self.name, 'parent': doc.name}, fieldname='external_id')
             if external_id:
@@ -347,10 +349,12 @@ class EspressoSyncConnection(Document):
         if isinstance(object_map, list):
             for single_map in object_map:
                 parsed_data = extract_object(single_map, import_object, self)
-                doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
+                if parsed_data:
+                    doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
         else:
             parsed_data = extract_object(object_map, import_object, self)
-            doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
+            if parsed_data:
+                doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
         
         return doc
 
@@ -409,14 +413,13 @@ class EspressoSyncConnection(Document):
                     break
 
         if doc:
-            # check if the document has been modified after the external system
-            if modified_date and (doc.modified is None or doc.modified > modified_date or shot.modified > doc.modified):
-                return
-            else:
-                # update the existing doc
-                doc.update(parsed_data)
+            # # check if the document has been modified after the external system
+            # if modified_date and (doc.modified is None or doc.modified > modified_date or shot.modified > doc.modified):
+            #     return
+            # else:
+            # update the existing doc
+            doc.update(parsed_data)
 
-            return
         else:
             doc = frappe.new_doc(doctype)
             doc.update(parsed_data)

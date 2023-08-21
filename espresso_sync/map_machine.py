@@ -87,7 +87,7 @@ def apply_quotes(value):
     return value
 
 def extract_object(object_map, object, sync_connection=None, doc=None):
-     # 1. Check for {condition} key and evaluate its list
+    # Check for {condition} key and evaluate its list
     if "{condition}" in object_map:
         conditions = object_map.get('{condition}', [])
         for condition in conditions:
