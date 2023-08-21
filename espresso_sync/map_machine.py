@@ -87,8 +87,19 @@ def apply_quotes(value):
     return value
 
 def extract_object(object_map, object, sync_connection=None, doc=None):
+     # 1. Check for {condition} key and evaluate its list
+    if "{condition}" in object_map:
+        conditions = object_map.get('{condition}', [])
+        for condition in conditions:
+            test_result = frappe.render_template(condition, object)
+            if not bool(test_result):
+                return None
     result = {}
     for key, value in object_map.items():
+        # if it's a float or int, just return it
+        if isinstance(value, float) or isinstance(value, int):
+            result[key] = value
+        # if it's a string, process it
         if isinstance(value, str):
             # check if the value is a JSONPath expression
             if value.startswith("$"):
