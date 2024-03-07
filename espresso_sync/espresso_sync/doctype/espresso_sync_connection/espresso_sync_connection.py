@@ -140,6 +140,7 @@ class EspressoSyncConnection(Document):
                 response = self.session.request(shot.import_request_type, url, headers=headers, data=payload)
             else:
                 self.pull.request_type = 'GET'
+                url = shot.get_crud_uri(url, 'read')
                 response = self.session.get(url, headers=headers, params=payload)
             self.pull.response = json.dumps(response.json(), indent=4)
             # test if response is valid server response, if not, throw error
@@ -225,7 +226,7 @@ class EspressoSyncConnection(Document):
             external_id = frappe.db.get_value(doctype='Espresso Sync ID', filters={'sync_connection': self.name, 'parent': doc.name}, fieldname='external_id')
             if external_id:
                 # Update the existing object in the external system
-                object_update_url = shot.get_crud_uri(object_api_url, 'update', external_id)
+                object_update_url = shot.get_api_url(object_api_url, 'update', external_id)
                 response = self.session.put(object_update_url, headers=self.get_request_headers(), json=parsed_data)
                 self.pull.request_type = 'PUT'
                 self.pull.request = json.dumps({'payload': parsed_data, 'headers': self.get_request_headers()}, indent=4)
@@ -307,7 +308,6 @@ class EspressoSyncConnection(Document):
         modified_date_field = shot.modified_date_field_map
         modified_date_format = shot.modified_date_format
         object_map = json.loads(shot.object_map_import)
-
         self.pull.map = json.dumps(object_map, indent=4)
 
         external_id = ''
@@ -348,6 +348,7 @@ class EspressoSyncConnection(Document):
         # if the object map is a list, then we need to loop through each item in the list
         if isinstance(object_map, list):
             for single_map in object_map:
+                self.pull.map = json.dumps(single_map, indent=4)
                 parsed_data = extract_object(single_map, import_object, self)
                 if parsed_data:
                     doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
@@ -392,6 +393,9 @@ class EspressoSyncConnection(Document):
         else:
             doctype = shot.dt
 
+        # set the pull log doctype
+        self.pull.sync_doctype = doctype
+
         # check if the map overrides the external_id
         if '{external_id}' in parsed_data:
             external_id = parsed_data['{external_id}']
@@ -407,8 +411,8 @@ class EspressoSyncConnection(Document):
         # confirm that a matching document with a matching doctype exists
         if sync_id_list:
             for sync_id_entry in sync_id_list:
-                parent_exists = frappe.db.exists(doctype, sync_id_entry.parent)
-                if parent_exists:
+                doc_exists = frappe.db.exists(doctype, sync_id_entry.parent)
+                if doc_exists:
                     doc = frappe.get_doc(doctype, sync_id_entry.parent)
                     break
 
@@ -418,11 +422,30 @@ class EspressoSyncConnection(Document):
             #     return
             # else:
             # update the existing doc
-            doc.update(parsed_data)
-
+            try:
+                doc.update(parsed_data)
+                frappe.db.commit()
+                self.pull.sync_status = 'Success'
+                self.pull.sync_doc = doc.name
+            except Exception as e:
+                self.pull.sync_status = 'Failure'
+                self.pull.sync_doc = ''
+                self.pull.traceback = e
+            # save the pull log entry
+            finally:
+                self.pull.document = doc.as_json()
+                self.pull.save()
+            return doc
+        
         else:
             doc = frappe.new_doc(doctype)
             doc.update(parsed_data)
+
+            # check if a document with the same name already exists
+            if doc.name and frappe.db.exists(doctype, doc.name):
+                # if a document with the same name exists, rename the document
+                doc = frappe.get_doc(doctype, doc.name)
+                doc.update(parsed_data)
 
             # Create Espresso Sync ID child table entry
             doc.append('espresso_sync_ids', {

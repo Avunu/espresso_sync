@@ -13,7 +13,7 @@ class EspressoSyncConnectionShot(Document):
 			case 'create':
 				return get_create_uri(url)
 			case 'read':
-				return get_read_uri(url)
+				return get_read_uri(self, url)
 			case 'update':
 				return get_update_uri(url, external_id)
 			case 'delete':
@@ -41,7 +41,9 @@ class EspressoSyncConnectionShot(Document):
 def get_create_uri(url):
 	return url
 
-def get_read_uri(url):
+def get_read_uri(self, url):
+	if self.override_uris:
+		return url.replace(self.uri, self.get_uri)
 	return url
 
 def get_update_uri(url, external_id):
