@@ -1,178 +1,213 @@
 # Espresso Sync Object Mapping Documentation
 
-Espresso Sync provides a flexible way to map JSON objects from external systems to Frappe documents and vice versa. It uses three types of expressions - Jinja templates, JSONPath expressions, and Espresso Sync Dynamic Tags - along with Mapping Functions to provide a wide range of possibilities.
+Espresso Sync provides a flexible way to map JSON objects from external systems to Frappe documents and vice versa. As of this version, Espresso Sync uses **JSONata** as its primary object mapping syntax, offering a powerful and standardized approach to data transformation.
 
-## Jinja Templates
+## JSONata Expressions
 
-Jinja templates are enclosed in double curly brackets `{{ }}`. They are a powerful tool for dynamic data processing, allowing for conditional formatting, evaluation of expressions, and even some mathematical operations.
+JSONata is a lightweight query and transformation language for JSON data. It provides a comprehensive set of operators and functions for extracting, transforming, and reshaping JSON data.
 
-### Basic Example
+### Basic Field Access
 
 ```json
-"customer": "{{ billing.company if billing.company else billing.first_name ~ ' ' ~ billing.last_name }}-{{ billing.city }}"
+{
+  "customer_name": "billing.company",
+  "project_name": "name"
+}
 ```
 
-In this example, if `billing.company` is present, it's used as the customer's name. Otherwise, the first and last name from `billing` are concatenated with a space in between. The result is then appended with a '-' and the `billing.city`.
+### Conditional Logic
+
+JSONata supports powerful conditional expressions using the ternary operator:
+
+```json
+{
+  "customer": "billing.company ? billing.company : (billing.first_name & ' ' & billing.last_name)"
+}
+```
+
+### Array Transformations
+
+Transform arrays of objects with ease:
+
+```json
+{
+  "items": "line_items.{
+    'item_code': sku,
+    'qty': quantity,
+    'rate': price,
+    'description': name
+  }"
+}
+```
+
+### Complete Object Transformation
+
+You can define an entire object mapping as a single JSONata expression:
+
+```json
+{
+  "customer_name": "billing.company ? billing.company : name",
+  "customer_city": "billing.city",
+  "total_items": "$count(line_items)",
+  "items": "line_items.{
+    'item_code': sku,
+    'qty': quantity,
+    'rate': price,
+    'description': name
+  }"
+}
+```
+
+### String Operations
+
+JSONata provides powerful string manipulation capabilities:
+
+```json
+{
+  "full_name": "billing.first_name & ' ' & billing.last_name",
+  "email_domain": "$substringAfter(email, '@')",
+  "formatted_phone": "$replace(phone, /[^\d]/g, '')"
+}
+```
 
 ### Mathematical Operations
 
-Jinja templates support basic mathematical operations. For example, multiplying a variable by 100:
+Perform calculations directly in your mappings:
 
 ```json
-"amount": "{{ billing_rate * 100 }}"
+{
+  "total_amount": "$sum(line_items.price)",
+  "tax_amount": "subtotal * 0.08",
+  "discount_percent": "$round((original_price - discounted_price) / original_price * 100, 2)"
+}
 ```
 
-In this case, the value of `billing_rate` is multiplied by 100 before it's assigned to the `amount`.
+### Filtering and Sorting
 
-### Returning Numbers
-
-To return a number instead of a string from a Jinja template, you can use a '#' at the beginning of your template:
+Filter and sort data as part of your transformation:
 
 ```json
-"amount": "#{{ billing_rate * 100 if billing_rate else 0 | int }}"
+{
+  "high_value_items": "line_items[price > 20].{
+    'item_code': sku,
+    'price': price
+  }",
+  "sorted_items": "line_items^(>price).{
+    'item_code': sku,
+    'price': price
+  }"
+}
 ```
 
-In this case, the `#` symbol is a special indicator that tells the system to treat the result of the template as a number. If `billing_rate` is present, it's multiplied by 100, and the result is returned as an integer number due to the `int` filter. If `billing_rate` is not present, 0 is returned.
+## Dynamic Tags (Legacy Support)
 
-### Formatting
+For backward compatibility, Espresso Sync still supports dynamic tags within JSONata expressions. These are enclosed in single curly brackets `{ }` and provide access to Frappe database values.
 
-You can also use Jinja templates to format values. For example, to format a number as a floating-point number with two decimal places:
+### Supported Dynamic Tags
+
+- `{doc:Doctype:fieldname}` - Fetches a value from a single document
+- `{id:linkfield}` - Gets the external ID of a linked document  
+- `{link:Doctype:JSONataExpression}` - Finds a document by external ID
+- `{link_value:linkfield:valuefield}` - Gets a field value from a linked document
+- `{get_value:Doctype:fieldname:filters}` - Queries the database with filters
+
+### Example with Dynamic Tags
 
 ```json
-"amount": "{{ '%.2f'|format(billing_rate) }}"
+{
+  "default_price_list": "{doc:Selling Settings:default_price_list}",
+  "customer": "{link:Customer:billing.customer_id}",
+  "project_id": "{id:project}"
+}
 ```
 
-In this example, `billing_rate` is formatted as a floating-point number with two decimal places. The `format` filter applies the specified string formatting to `billing_rate`.
-
-Jinja templates can be a powerful tool in formatting and manipulating your data before export. Their flexibility allows you to handle a wide range of scenarios in data processing.
-
-## JSONPath Expressions
-
-JSONPath expressions allow for navigating the object tree and they start with a `$`.
+### Combining JSONata with Dynamic Tags
 
 ```json
-"project_name": "$.name"
+{
+  "customer_info": "{link:Customer:billing.customer_id}",
+  "line_items": "line_items.{
+    'item_code': sku,
+    'qty': quantity,
+    'rate': price,
+    'tax_rate': '{doc:Tax Settings:default_tax_rate}'
+  }"
+}
 ```
 
-## Mapping Functions
+## Migration from Legacy Syntax
 
-Mapping Functions provide additional transformation and extraction capabilities, beyond the built-in mechanisms provided by Jinja templates and JSONPath expressions. Currently, Espresso Sync supports two mapping functions: `match` and `foreach`.
+### Old Jinja Template Syntax
 
-### Match Function
-
-The `match` function matches an input value (specified by a JSONPath expression) with one of the predefined cases and returns the corresponding output.
-
-Here's a breakdown of its structure:
-
-- `match`: The main function identifier.
-
-- `match-on`: A JSONPath expression that points to the value to be matched.
-
-- `cases`: A dictionary of possible input values (keys) and their corresponding output values (values).
-
+**Before:**
 ```json
-"status": {
-  "match": {
-    "match-on": "$.status",
-    "cases": {
-      "pending": "Draft",
-      "processing": "To Deliver and Bill",
-      "completed": "Delivered and Billed",
-      "canceled": "Cancelled",
-      "refunded": "Refunded",
-      "failed": "Cancelled"
+{
+  "customer": "{{ billing.company if billing.company else billing.first_name ~ ' ' ~ billing.last_name }}"
+}
+```
+
+**After (JSONata):**
+```json
+{
+  "customer": "billing.company ? billing.company : (billing.first_name & ' ' & billing.last_name)"
+}
+```
+
+### Old JSONPath + Foreach Syntax
+
+**Before:**
+```json
+{
+  "items": {
+    "foreach": {
+      "objects": "$.line_items",
+      "map": {
+        "item_code": "$.sku",
+        "qty": "$.quantity"
+      }
     }
   }
 }
 ```
 
-In this example, the `match` function uses the value from `$.status` and translates it to a corresponding status in the Frappe system based on the provided cases.
-
-### Foreach Function
-
-The `foreach` function iterates over an array of objects (specified by a JSONPath expression) and maps each object based on the provided map.
-
-Here's a breakdown of its structure:
-
-- `foreach`: The main function identifier.
-
-- `objects`: A JSONPath expression that points to the array of objects to iterate over.
-
-- `map`: A dictionary that describes how each object in the array should be mapped.
-
+**After (JSONata):**
 ```json
-"items": {
-  "foreach": {
-    "objects": "$.line_items",
-    "map": {
-      "item_code": "{{ sku if sku else variation_id if variation_id else product_id }}",
-      "qty": "$.quantity",
-      "rate": "$.price",
-      "description": "$.name"
+{
+  "items": "line_items.{
+    'item_code': sku,
+    'qty': quantity
+  }"
+}
+```
+
+### Old Match Function Syntax
+
+**Before:**
+```json
+{
+  "status": {
+    "match": {
+      "match-on": "$.status",
+      "cases": {
+        "pending": "Draft",
+        "processing": "To Deliver and Bill"
+      }
     }
   }
 }
 ```
 
-In this example, the `foreach` function iterates over the array from `$.line_items` and for each item in the array, it creates a new object with properties `item_code`, `qty`, `rate`, and `description` mapped as described in the `map`.
-
-
-## Espresso Sync Dynamic Tags
-
-Espresso Sync dynamic tags are enclosed in single curly brackets `{ }` and provide a way to fetch data directly from Frappe database or linked documents.
-
-- `doc`: Fetches a single document value from the database. The format is `{doc:Doctype:fieldname}` where `Doctype` is the document type and `fieldname` is the field of the document to fetch.
-
-For example, to fetch the default price list from the Selling Settings:
-
+**After (JSONata):**
 ```json
-"default_price_list": "{doc:Selling Settings:default_price_list}"
+{
+  "status": "status = 'pending' ? 'Draft' : 
+             status = 'processing' ? 'To Deliver and Bill' : 
+             'Unknown'"
+}
 ```
 
-- `id`: Fetches the external ID of a linked document. The format is `{id:linkfield}` where `linkfield` is the name of the link field connecting the current document to a related document.
+## JSONata Resources
 
-For example, to fetch the external project ID from a Sales Order:
-
-```json
-"project_id": "{id:project}"
-```
-
-- `link`: Fetches the linked document name based on its external ID. The format is `{link:Doctype:JSONPath}` where `Doctype` is the document type and `JSONPath` is the JSONPath expression to find the external ID in the object.
-
-For example, to fetch the customer name from a Sales Order based on the external customer ID:
-
-```json
-"customer": "{link:Customer:$.clientId}"
-```
-
-- `value`: Fetches the value of a field from a linked document. The format is `{value:linkfield:valuefield}` where `linkfield` is the name of the link field connecting the current document to a related document and `valuefield` is the name of the field to fetch from the linked document.
-
-For example, to fetch the customer's email address from a Sales Order:
-
-```json
-"customer_email": "{value:customer:email_id}"
-```
-
-<!-- ### Custom Metadata
-
-Espresso Sync allows you to define and store custom metadata for each object that is imported and/or exported. This metadata can be used to store additional information that's important to keep associated with the object on export, such as the ID of an image in an external system.
-
-To define custom metadata, you can use the `meta` key in the mapping object. The format is `{meta:field}` where `field` is the name of the field and `type` is the data type of the metadata value.
-
-Type is auto-detected, and can be one of the following:
-- `array`
-- `boolean`
-- `number`
-- `string` (default)
-
-For example, to store the ID of an image from an external object (on import):
-
-```json
-"{meta:image_id}": "$.imageId"
-```
-
-To fetch that same value in an export mapping:
-
-```json
-"image_id": "{meta:image_id}"
-``` -->
+For comprehensive documentation on JSONata capabilities, visit:
+- [JSONata Documentation](https://docs.jsonata.org/)
+- [JSONata Exerciser](https://try.jsonata.org/) - Interactive playground for testing expressions

@@ -2,6 +2,7 @@ import frappe
 import re
 from jsonpath_ng import jsonpath, parse
 from espresso_sync.dynamic_tags import extract_dynamic_tag
+from espresso_sync.jsonata_mapper import extract_object_jsonata
 
 
 # This function builds a list of all possible permutations of a parameter string based on dynamic tags in the string
@@ -87,6 +88,18 @@ def apply_quotes(value):
     return value
 
 def extract_object(object_map, object, sync_connection=None, doc=None):
+    """
+    Main object mapping function - now delegates to JSONata-based implementation.
+    
+    This maintains backward compatibility while providing JSONata functionality.
+    """
+    return extract_object_jsonata(object_map, object, sync_connection, doc)
+
+
+def extract_object_legacy(object_map, object, sync_connection=None, doc=None):
+    """
+    Original legacy object mapping function (kept for reference and potential rollback).
+    """
     # Check for {condition} key and evaluate its list
     if "{condition}" in object_map:
         conditions = object_map.get('{condition}', [])
@@ -131,12 +144,12 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
                         objects_key = value["foreach"]["objects"]
                         nested_objects = object.get(objects_key, [])
                         nested_object_map = value["foreach"]["map"]
-                        result[key] = [extract_object(nested_object_map, obj, sync_connection, doc) for obj in nested_objects]
+                        result[key] = [extract_object_legacy(nested_object_map, obj, sync_connection, doc) for obj in nested_objects]
                     # non-function dicts, pass through to extract_object
                     else:
-                        result[key] = extract_object(value, object, sync_connection, doc)
+                        result[key] = extract_object_legacy(value, object, sync_connection, doc)
                 elif isinstance(value, list):
-                    result[key] = [extract_object(item, object, sync_connection, doc) for item in value]
+                    result[key] = [extract_object_legacy(item, object, sync_connection, doc) for item in value]
     return result
 
 
