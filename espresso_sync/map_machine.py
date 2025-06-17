@@ -1,5 +1,6 @@
 import frappe
 import re
+import jsonata
 from jsonpath_ng import jsonpath, parse
 from espresso_sync.dynamic_tags import extract_dynamic_tag
 
@@ -86,57 +87,91 @@ def apply_quotes(value):
             value = '"' + value + '"'
     return value
 
+
+def evaluate_jsonata(expression, data):
+    """
+    Evaluate a JSONata expression against the given data.
+    Returns the result or None if evaluation fails.
+    """
+    try:
+        expr = jsonata.Jsonata(expression)
+        return expr.evaluate(data)
+    except Exception as e:
+        frappe.log_error(f"Error evaluating JSONata expression '{expression}': {e}")
+        return None
+
+
 def extract_object(object_map, object, sync_connection=None, doc=None):
+    """
+    Extract and transform object data using JSONata expressions.
+    Supports mixed mode with Frappe dynamic tags for backward compatibility.
+    """
     # Check for {condition} key and evaluate its list
     if "{condition}" in object_map:
         conditions = object_map.get('{condition}', [])
         for condition in conditions:
+            # For backwards compatibility, still support Jinja conditions
             test_result = frappe.render_template(condition, object)
             if not bool(test_result):
                 return None
+    
     result = {}
     for key, value in object_map.items():
-        # if it's a float or int, just return it
-        if isinstance(value, float) or isinstance(value, int):
+        # Skip condition key as it's already processed
+        if key == "{condition}":
+            continue
+            
+        # Handle simple value types
+        if isinstance(value, (float, int, bool, type(None))):
             result[key] = value
-        # if it's a string, process it
+            continue
+            
+        # Handle string values - this is where the main JSONata logic goes
         if isinstance(value, str):
-            # check if the value is a JSONPath expression
-            if value.startswith("$"):
-                result[key] = extract_jsonpath(value, object)
-            # detect dynamic tags as single-bracketed strings (exclude jinja delimiters)
-            elif value.startswith("{") and not value[1] in ["%", "#", "{"]:
-                # process it as a dynamic tag
+            # Check if it's a Frappe dynamic tag (preserve for Frappe integration)
+            if value.startswith("{") and not value[1] in ["%", "#", "{"]:
                 result[key] = extract_dynamic_tag(value, object, sync_connection, doc)
+            # Check if it's a legacy numeric template (for backwards compatibility)
+            elif value.startswith("#"):
+                template_value = value[1:]  # remove the '#'
+                template_result = frappe.render_template(template_value, object)
+                result[key] = float(template_result) if '.' in template_result else int(template_result)
+            # Everything else is treated as a JSONata expression
             else:
-                # check if the template should be numeric (starts with #)
-                if value.startswith("#"):
-                    template_value = value[1:]  # remove the '#'
-                    template_result = frappe.render_template(template_value, object)
-                    result[key] = float(template_result) if '.' in template_result else int(template_result)
-                else:
-                    # process it as a jinja template 
-                    result[key] = frappe.render_template(value, object)
+                result[key] = evaluate_jsonata(value, object)
+                
+        # Handle dictionary values (nested objects or legacy function objects)
         elif isinstance(value, dict):
-            for key in object_map:
-                value = object_map[key]
-                if isinstance(value, dict):
-                    # function dicts
-                    if "match" in value:
-                        match_key = value["match"]["match-on"]
-                        match_value = object.get(match_key)
-                        cases = value["match"]["cases"]
-                        result[key] = cases.get(match_value)
-                    elif "foreach" in value:
-                        objects_key = value["foreach"]["objects"]
-                        nested_objects = object.get(objects_key, [])
-                        nested_object_map = value["foreach"]["map"]
-                        result[key] = [extract_object(nested_object_map, obj, sync_connection, doc) for obj in nested_objects]
-                    # non-function dicts, pass through to extract_object
-                    else:
-                        result[key] = extract_object(value, object, sync_connection, doc)
-                elif isinstance(value, list):
-                    result[key] = [extract_object(item, object, sync_connection, doc) for item in value]
+            # Check for legacy mapping functions for backward compatibility
+            if "match" in value:
+                # Legacy match function - convert to JSONata equivalent
+                match_on = value["match"]["match-on"]
+                cases = value["match"]["cases"]
+                
+                # Extract the value to match on using JSONata
+                match_value = evaluate_jsonata(match_on, object)
+                result[key] = cases.get(str(match_value)) if match_value is not None else None
+                
+            elif "foreach" in value:
+                # Legacy foreach function - convert to array processing
+                objects_expr = value["foreach"]["objects"]
+                nested_object_map = value["foreach"]["map"]
+                
+                # Get the array using JSONata
+                nested_objects = evaluate_jsonata(objects_expr, object)
+                if isinstance(nested_objects, list):
+                    result[key] = [extract_object(nested_object_map, obj, sync_connection, doc) for obj in nested_objects]
+                else:
+                    result[key] = []
+                    
+            else:
+                # Regular nested object mapping
+                result[key] = extract_object(value, object, sync_connection, doc)
+                
+        # Handle list values
+        elif isinstance(value, list):
+            result[key] = [extract_object(item, object, sync_connection, doc) for item in value]
+            
     return result
 
 
