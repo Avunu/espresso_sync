@@ -148,6 +148,10 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
                 match_on = value["match"]["match-on"]
                 cases = value["match"]["cases"]
                 
+                # Handle legacy JSONPath syntax by removing the '$.' prefix if present
+                if match_on.startswith("$."):
+                    match_on = match_on[2:]  # Remove '$.' prefix for JSONata
+                
                 # Extract the value to match on using JSONata
                 match_value = evaluate_jsonata(match_on, object)
                 result[key] = cases.get(str(match_value)) if match_value is not None else None
@@ -156,6 +160,10 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
                 # Legacy foreach function - convert to array processing
                 objects_expr = value["foreach"]["objects"]
                 nested_object_map = value["foreach"]["map"]
+                
+                # Handle legacy JSONPath syntax by removing the '$.' prefix if present
+                if objects_expr.startswith("$."):
+                    objects_expr = objects_expr[2:]  # Remove '$.' prefix for JSONata
                 
                 # Get the array using JSONata
                 nested_objects = evaluate_jsonata(objects_expr, object)
@@ -176,6 +184,8 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
 
 
 # Helper function to evaluate a JSONPath expression
+# DEPRECATED: This function is kept for backward compatibility only
+# New code should use JSONata expressions instead
 def extract_jsonpath(expression, data):
     # Handle JSONPath expression with the || operator
     if "||" in expression:
