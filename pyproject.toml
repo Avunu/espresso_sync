@@ -1,0 +1,19 @@
+[project]
+name = "espresso_sync"
+authors = [
+    { name = "Avunu LLC", email = "mail@avu.nu"}
+]
+description = "A General Purpose 2-Way Sync Engine for Importing and Exporting data between Frappe sites and external APIs."
+requires-python = ">=3.10"
+readme = "README.md"
+dynamic = ["version"]
+# From requirements.txt, which setup.py read at build time. frappe itself is
+# deliberately absent: it is the bench, not a dependency of an app in it.
+dependencies = [
+    "jsonpath_ng",
+    "crontab",
+]
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
