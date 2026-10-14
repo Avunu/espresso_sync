@@ -12,6 +12,7 @@ dynamic = ["version"]
 dependencies = [
     "jsonpath_ng",
     "crontab",
+    "jsonata>=0.2.5",
 ]
 
 [build-system]
