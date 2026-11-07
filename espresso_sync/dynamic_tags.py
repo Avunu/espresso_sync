@@ -111,25 +111,6 @@ def link_value_tag(params, object, sync_connection, doc):
 		return None
 
 
-# def meta_tag(params, object, sync_connection, doc):
-#     """
-#     This function handles "meta" tags.
-#     Example: "{meta:image_id}" - fetches the value of the image_id meta field associated with the Espresso Sync Metadata table for the sync connection and doc.
-#     """
-#     try:
-#         return frappe.db.get_value(
-#             doctype="Espresso Sync Metadata",
-#             filters={'sync_connection': sync_connection.name,
-#                      'parent': doc.name,
-#                      'key': params},
-#             fieldname='value'
-#         )
-
-#     except Exception as e:
-#         frappe.log_error(f"Error handling dynamic tag {params}: {e}")
-#         return None
-
-
 def extract_dynamic_tag(tag, object, sync_connection, doc):
 	"""
 	This function identifies the tag type and calls the respective handler function.
@@ -148,7 +129,6 @@ def extract_dynamic_tag(tag, object, sync_connection, doc):
 		"id": id_tag,
 		"link_value": link_value_tag,
 		"link": link_tag,
-		# "docs": docs_tag,
 	}
 	if tag_type in handlers:
 		try:
@@ -158,28 +138,4 @@ def extract_dynamic_tag(tag, object, sync_connection, doc):
 			return None
 	else:
 		frappe.log_error(f"Unknown dynamic tag type {tag_type}")
-		return None
-
-
-def docs_tag(params, object, sync_connection, doc):
-	# Handle the dyno tag as a list of docs
-	# Get the doctype from the dynamic tag
-	doctype = params.split(":")[1]
-	# dynamic_tag_doc_list = frappe.get_all(doctype="Espresso Sync ID", filters={'sync_connection': sync_connection.name, 'parenttype': doctype}, fields=['external_id'])
-
-	# Get the list of doc names from the doctype
-	try:
-		doc_names = frappe.db.get_list(doctype, pluck="name", limit=10)
-		# Get the list of external IDs from the Espresso Sync ID doctype
-		return frappe.db.get_list(
-			"Espresso Sync ID",
-			filters={
-				"sync_connection": sync_connection.name,
-				"parenttype": doctype,
-				"parent": ["in", doc_names],
-			},
-			fields=["external_id"],
-		)
-	except Exception as e:
-		frappe.log_error(f"Error handling docs dynamic tag {params}: {e}")
 		return None

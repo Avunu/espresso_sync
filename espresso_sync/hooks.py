@@ -7,19 +7,3 @@ app_publisher = "Avunu LLC"
 app_description = "Two-way sync between Frappe documents and external REST APIs"
 app_email = "mail@avu.nu"
 app_license = "MIT"
-
-# app_include_css = "/assets/espresso_sync/css/espresso_sync_custom.css"
-
-# include css file on DocType "Espresso Sync Connection"
-# doctype_css = {
-#     "Espresso Sync Connection": "public/css/espresso_sync_connection.css"
-# }
-
-scheduler_events = {
-	"all": ["espresso_sync.sync_scheduler.sync_all"],
-	"hourly": ["espresso_sync.sync_scheduler.sync_hourly"],
-	"daily": ["espresso_sync.sync_scheduler.sync_daily"],
-	"weekly": ["espresso_sync.sync_scheduler.sync_weekly"],
-	"monthly": ["espresso_sync.sync_scheduler.sync_monthly"],
-	"cron": {"*/5 * * * *": ["espresso_sync.sync_scheduler.sync_cron"]},
-}

@@ -54,11 +54,7 @@
 			}
 		},
 		{
-			"files": [
-				"espresso_sync/espresso_sync/doctype/espresso_sync_batch/espresso_sync_batch.js",
-				"espresso_sync/espresso_sync/doctype/espresso_sync_connection/espresso_sync_connection.js",
-				"espresso_sync/espresso_sync/doctype/espresso_sync_pull_log/espresso_sync_pull_log.js"
-			],
+			"files": ["espresso_sync/espresso_sync/doctype/espresso_sync_connection/espresso_sync_connection.js"],
 			"globals": {
 				"frappe": "readonly",
 				"__": "readonly",
