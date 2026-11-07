@@ -15,11 +15,16 @@ Rules:
   signature, session or cookie have their value replaced;
 - URLs: the user-info part (``https://user:pass@host``) is replaced, and so is
   the value of every query parameter whose name matches the same pattern;
-- free text (request text that is not JSON, response, traceback): the value
-  after any of those header names (``Authorization: Basic ...``,
-  ``'X-Api-Key': '...'``) and URL user-info are masked, and every literal
-  occurrence of the Connection's API secret (and, for Basic auth, the
-  ``key:secret`` pair and its base64 form) is replaced in every field.
+- response, traceback and the imported object are read as JSON when they
+  parse and get the same key-based masking as the request; otherwise, like
+  any other free text, the value after one of those names
+  (``Authorization: Basic ...``, ``'X-Api-Key': '...'``,
+  ``"access_token": "..."``, ``client_secret=...``) and URL user-info are
+  masked;
+- every literal occurrence of the Connection's API secret (and, for Basic
+  auth, the ``key:secret`` pair and its base64 form), also JSON-escaped,
+  repr-escaped and URL-encoded, is replaced in every field, including the
+  local document and the map.
 """
 
 import base64
@@ -27,18 +32,21 @@ import copy
 import json
 import re
 from functools import lru_cache
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, quote_plus, urlsplit, urlunsplit
 
 import frappe
 
 REDACTED = "[redacted]"
 
 SENSITIVE_HEADERS = frozenset({"authorization", "proxy-authorization"})
-SENSITIVE_NAME = re.compile(
-	r"auth(?!or)|api[-_]?key|access[-_]?key|private[-_]?key|secret|^key$|token|passw|credential"
-	r"|signature|session|cookie",
-	re.IGNORECASE,
+_SENSITIVE_WORD = (
+	r"auth(?!or)|api[-_]?key|access[-_]?key|private[-_]?key|secret|token|passw|credential"
+	r"|signature|session|cookie"
 )
+SENSITIVE_NAME = re.compile(rf"{_SENSITIVE_WORD}|^key$", re.IGNORECASE)
+# the same names inside free text: the whole word around the match, or `key`
+# (bounded, so a long token-like word cannot make the search quadratic)
+_SENSITIVE_NAME_IN_TEXT = rf"[\w-]{{0,40}}(?:{_SENSITIVE_WORD})[\w-]{{0,40}}|key(?![\w-])"
 URL_USERINFO = re.compile(r"(\b[a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#@\s\"']+@")
 URL_ONLY = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://\S*$")
 
@@ -46,7 +54,24 @@ URL_ONLY = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://\S*$")
 # every occurrence of a two-character string would destroy the log.
 MIN_SECRET_LENGTH = 6
 
-PULL_LOG_TEXT_FIELDS = ("url", "request", "response", "traceback")
+# fields holding data sent to or received from the API
+PULL_LOG_TEXT_FIELDS = ("url", "request", "response", "traceback", "object")
+# local data (the document written, the map used): only literal secrets are
+# replaced, so a field that merely looks like a credential stays readable
+PULL_LOG_LOCAL_FIELDS = ("document", "map")
+PULL_LOG_FIELDS = PULL_LOG_TEXT_FIELDS + PULL_LOG_LOCAL_FIELDS
+
+
+def _encoded_forms(value):
+	"""`value` as it appears inside JSON text, a Python repr or a URL."""
+	return {
+		value,
+		json.dumps(value)[1:-1],
+		json.dumps(value, ensure_ascii=False)[1:-1],
+		repr(value)[1:-1],
+		quote(value, safe=""),
+		quote_plus(value),
+	}
 
 
 def connection_secrets(connection_name):
@@ -60,11 +85,11 @@ def connection_secrets(connection_name):
 	if connection.auth_type == "Header-based" and connection.api_key:
 		header_names.add(connection.api_key.strip().lower())
 	if secret:
-		secrets.add(secret)
+		secrets.update(_encoded_forms(secret))
 		if connection.auth_type == "Basic":
 			pair = f"{connection.api_key}:{secret}"
-			secrets.add(pair)
-			secrets.add(base64.b64encode(pair.encode()).decode())
+			secrets.update(_encoded_forms(pair))
+			secrets.update(_encoded_forms(base64.b64encode(pair.encode()).decode()))
 	return header_names, {s for s in secrets if len(s) >= MIN_SECRET_LENGTH}
 
 
@@ -75,27 +100,47 @@ def is_sensitive_name(name, header_names=()):
 
 @lru_cache(maxsize=64)
 def _header_value_pattern(header_names):
-	"""Match `<sensitive header>: value` / `'<header>': 'value'` in unstructured text."""
+	"""Match `<sensitive name>: value`, `'<name>': 'value'` or `name=value` in unstructured text."""
 	names = sorted(SENSITIVE_HEADERS | set(header_names), key=len, reverse=True)
+	names = "|".join([*(re.escape(name) for name in names), _SENSITIVE_NAME_IN_TEXT])
+	scheme = r"(?:Basic|Bearer|Token|Digest)\s+"
 	return re.compile(
-		r"((?<![\w-])(?:%s)[\"']?\s*[:=]\s*[\"']?)"
-		r"(?!(?:(?:Basic|Bearer|Token|Digest)\s+)?\[redacted\])"
-		r"((?:Basic|Bearer|Token|Digest)\s+)?[^\"'\s,}]+"
-		% "|".join(re.escape(name) for name in names),
+		rf"((?<![\w-])(?:{names})[\"']?\s*[:=]\s*)"
+		# a quoted value up to its closing quote, or a bare value up to a separator;
+		# a nested object or list is left to the names inside it
+		rf"(?:(?P<quote>[\"'])(?P<qscheme>{scheme})?(?P<quoted>(?:\\.|(?!(?P=quote)).)*)(?P=quote)"
+		rf"|(?P<scheme>{scheme})?(?![{{\[])(?P<bare>[^\"'\s,;&}}]+))",
 		re.IGNORECASE,
 	)
 
 
-def redact_text(text, secrets=(), header_names=()):
+def _mask_value(match):
+	quote_char = match.group("quote")
+	if quote_char:
+		value, scheme = match.group("quoted"), match.group("qscheme") or ""
+	else:
+		value, scheme = match.group("bare"), match.group("scheme") or ""
+	if value == REDACTED:
+		return match.group(0)
+	masked = f"{scheme}{REDACTED}"
+	return f"{match.group(1)}{quote_char}{masked}{quote_char}" if quote_char else f"{match.group(1)}{masked}"
+
+
+def redact_literals(text, secrets=()):
 	if not isinstance(text, str) or not text:
 		return text
 	# longest first so the base64 form of key:secret is replaced as a whole
 	for secret in sorted(secrets, key=len, reverse=True):
 		text = text.replace(secret, REDACTED)
+	return text
+
+
+def redact_text(text, secrets=(), header_names=()):
+	if not isinstance(text, str) or not text:
+		return text
+	text = redact_literals(text, secrets)
 	text = URL_USERINFO.sub(rf"\g<1>{REDACTED}@", text)
-	return _header_value_pattern(frozenset(header_names)).sub(
-		lambda m: f"{m.group(1)}{m.group(2) or ''}{REDACTED}", text
-	)
+	return _header_value_pattern(frozenset(header_names)).sub(_mask_value, text)
 
 
 def redact_url(url, secrets=()):
@@ -171,12 +216,21 @@ def redact_request(request, header_names=(), secrets=()):
 	return json.dumps(redacted, indent=4, default=str)
 
 
-def redact_pull_log_values(values, connection_name=None, secrets_cache=None):
-	"""Return a copy of the Pull Log text fields in ``values`` with secrets masked.
+def _as_text(value):
+	if value is None or isinstance(value, str):
+		return value
+	if isinstance(value, (dict, list)):
+		return json.dumps(value, indent=4, default=str)
+	# e.g. an exception assigned to the traceback
+	return frappe.utils.cstr(value)
 
-	``values`` is a mapping holding any of url, request, response and traceback;
-	only the keys it contains are returned. ``secrets_cache`` (a dict) avoids
-	decrypting the same Connection secret once per row.
+
+def redact_pull_log_values(values, connection_name=None, secrets_cache=None):
+	"""Return a copy of the Pull Log fields in ``values`` with secrets masked.
+
+	``values`` is a mapping holding any of PULL_LOG_FIELDS; only the keys it
+	contains are returned. ``secrets_cache`` (a dict) avoids decrypting the
+	same Connection secret once per row.
 	"""
 	if secrets_cache is not None and connection_name in secrets_cache:
 		header_names, secrets = secrets_cache[connection_name]
@@ -186,14 +240,20 @@ def redact_pull_log_values(values, connection_name=None, secrets_cache=None):
 			secrets_cache[connection_name] = (header_names, secrets)
 
 	redacted = {}
-	for field in PULL_LOG_TEXT_FIELDS:
+	for field in PULL_LOG_FIELDS:
 		if field not in values:
 			continue
 		value = values[field]
+		if field == "request":
+			# a dict is kept as a dict: the caller may serialise it differently
+			redacted[field] = redact_request(value, header_names, secrets)
+			continue
+		value = _as_text(value)
 		if field == "url":
 			redacted[field] = redact_url(value, secrets)
-		elif field == "request":
-			redacted[field] = redact_request(value, header_names, secrets)
+		elif field in PULL_LOG_LOCAL_FIELDS:
+			redacted[field] = redact_literals(value, secrets)
 		else:
-			redacted[field] = redact_text(value, secrets, header_names)
+			# JSON when it parses, free text otherwise
+			redacted[field] = redact_request(value, header_names, secrets)
 	return redacted

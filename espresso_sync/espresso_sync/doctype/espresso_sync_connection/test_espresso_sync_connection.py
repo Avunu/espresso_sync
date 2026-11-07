@@ -157,6 +157,25 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 	def test_desk_user_is_refused_even_with_share(self):
 		self.assert_refused(DESK_USER)
 
+		# nor can the share be used to change where the credentials are sent
+		doc = frappe.get_doc("Espresso Sync Connection", self.connection.name).as_dict()
+		doc["api_domain"] = "attacker.example.invalid"
+		frappe.set_user(DESK_USER)
+		self.assertTrue(frappe.has_permission("Espresso Sync Connection", "write", self.connection.name))
+		with self.assertRaises(frappe.PermissionError):
+			frappe.client.save(doc)
+		frappe.set_user("Administrator")
+		self.assertEqual(
+			frappe.db.get_value("Espresso Sync Connection", self.connection.name, "api_domain"), "api.example.invalid"
+		)
+
+		frappe.set_user(MANAGER_USER)
+		frappe.client.save(doc)
+		self.assertEqual(
+			frappe.db.get_value("Espresso Sync Connection", self.connection.name, "api_domain"),
+			"attacker.example.invalid",
+		)
+
 	def assert_refused(self, user):
 		with patch.object(requests.Session, "request", return_value=fake_response([{"title": "x"}])) as request:
 			for name, call in self.endpoints().items():
@@ -195,6 +214,41 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.assertEqual(request.call_count, 2)
 		for call in request.call_args_list:
 			self.assertEqual(call.kwargs.get("timeout"), REQUEST_TIMEOUT)
+
+	def test_error_response_does_not_show_the_credentials(self):
+		connection = frappe.get_doc("Espresso Sync Connection", self.connection.name)
+		encoded = connection.get_request_headers()["Authorization"].split()[1]
+		frappe.local.message_log = []
+		with (
+			patch.object(requests.Session, "request", return_value=fake_response({"echo": encoded}, 401)),
+			self.assertRaises(frappe.ValidationError),
+		):
+			connection.pull_import_data(connection.shots[0])
+		shown = json.dumps(frappe.local.message_log)
+		self.assertIn("Invalid Server Response for https://api.example.invalid", shown)
+		self.assertNotIn(encoded, shown)
+		self.assertNotIn("hunter2-secret-value", shown)
+
+	def test_failed_pull_log_does_not_log_the_credentials(self):
+		connection = frappe.get_doc("Espresso Sync Connection", self.connection.name)
+		encoded = connection.get_request_headers()["Authorization"].split()[1]
+		connection.pull.sync_doctype = "ToDo"
+		# a link that does not exist fails insert() before the Pull Log validates
+		connection.pull.sync_doc = "does-not-exist"
+		connection.pull.request = {"payload": None, "headers": connection.get_request_headers()}
+		connection.pull.response = json.dumps({"echo": encoded})
+		connection.pull.save()
+
+		error = frappe.get_all(
+			"Error Log",
+			filters={"method": "Error saving pull log"},
+			fields=["error"],
+			order_by="creation desc",
+			limit=1,
+		)[0].error
+		self.assertIn(connection.name, error)
+		self.assertNotIn(encoded, error)
+		self.assertNotIn("hunter2-secret-value", error)
 
 	def test_export_requests_use_a_timeout(self):
 		source = inspect_source()

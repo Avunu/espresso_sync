@@ -10,6 +10,7 @@ import frappe
 import requests
 from dateutil.parser import parse as parse_date
 from espresso_sync.map_machine import extract_object, tamp_dynamic_parameter
+from espresso_sync.redaction import PULL_LOG_FIELDS, redact_pull_log_values
 from espresso_sync.requests_machine import REQUEST_TIMEOUT, RateLimitedSession
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 from frappe.model.document import Document
@@ -52,9 +53,19 @@ class PullLog(Document):
         pull_log.response = self.response
         pull_log.traceback = self.traceback
         try:
+            # the Pull Log redacts itself in validate, but insert() can fail before that
+            pull_log.update(redact_pull_log_values(
+                {field: pull_log.get(field) for field in PULL_LOG_FIELDS}, self.sync_connection))
             pull_log.insert()
         except Exception as e:
-            frappe.log_error(f'Error saving pull log', f'error: {e}\ntraceback: {frappe.get_traceback()}\npull_log: {pull_log.as_dict()}')
+            # never the field values: they can hold the credentials of the request
+            error = f'error: {e}\ntraceback: {frappe.get_traceback()}'
+            try:
+                error = redact_pull_log_values({'traceback': error}, self.sync_connection)['traceback']
+            except Exception:
+                error = f'error: {type(e).__name__}'
+            frappe.log_error('Error saving pull log', f'{error}\nsync_connection: {self.sync_connection}'
+                             f'\nsync_doctype: {self.sync_doctype}\nsync_doc: {self.sync_doc}')
 
 class EspressoSyncConnection(Document):
     def __init__(self, *args, **kwargs):
@@ -67,6 +78,9 @@ class EspressoSyncConnection(Document):
             self.session = requests.Session()
 
     def validate(self):
+        # a share must not let anyone else change where the credentials are sent
+        if not self.flags.ignore_permissions:
+            frappe.only_for("System Manager")
         if self.pull_shot:
             # self.validate_espresso_api()
             self.create_custom_fields()
@@ -145,7 +159,9 @@ class EspressoSyncConnection(Document):
             self.pull.response = json.dumps(response.json(), indent=4)
             # test if response is valid server response, if not, throw error
             if not str(response.status_code).startswith('2'):
-                frappe.throw(response.text, title=f'Invalid Server Response for {call_string}')
+                # call_string holds the request headers, i.e. the credentials
+                shown = redact_pull_log_values({'url': url, 'response': response.text}, self.name)
+                frappe.throw(shown['response'], title=f"Invalid Server Response for {shown['url']}")
                 # put the error in the pull log
                 self.pull.sync_status = 'Failure'
                 self.pull.traceback = response.text
