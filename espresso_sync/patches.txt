@@ -1,0 +1,4 @@
+[pre_model_sync]
+
+[post_model_sync]
+espresso_sync.patches.redact_pull_log_secrets

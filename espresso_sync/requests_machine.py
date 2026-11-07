@@ -1,6 +1,9 @@
 import time
 import requests
 
+# (connect, read) seconds for every call to an external API
+REQUEST_TIMEOUT = (10, 60)
+
 
 class RateLimitedSession:
     def __init__(self, max_requests_per_minute):
@@ -20,6 +23,7 @@ class RateLimitedSession:
             self.time_first_request_was_made = time.time()
             self.requests_made = 0
 
+        kwargs.setdefault('timeout', REQUEST_TIMEOUT)
         response = self.session.request(*args, **kwargs)
         self.requests_made += 1
         return response
