@@ -1,17 +1,16 @@
 # Copyright (c) 2023, Avunu LLC and Contributors
 # See license.txt
 
+import ast
 import json
 from unittest.mock import MagicMock, patch
 
 import frappe
+import frappe.client
+import frappe.handler
 import requests
 from frappe.share import add as share_doc
-
-try:
-	from frappe.tests import IntegrationTestCase
-except ImportError:  # frappe < 16
-	from frappe.tests.utils import FrappeTestCase as IntegrationTestCase
+from frappe.tests import IntegrationTestCase
 
 from espresso_sync import sync_machine
 from espresso_sync.espresso_sync.doctype.espresso_sync_connection import espresso_sync_connection as esc
@@ -38,7 +37,9 @@ def make_user(email, roles=()):
 	return user
 
 
-def make_connection(name="ES Permission Test", auth_type="Basic", api_key="sync-user", secret="hunter2-secret-value"):
+def make_connection(
+	name="ES Permission Test", auth_type="Basic", api_key="sync-user", secret="hunter2-secret-value"
+):
 	if frappe.db.exists("Espresso Sync Connection", name):
 		frappe.delete_doc("Espresso Sync Connection", name, force=True)
 	connection = frappe.get_doc(
@@ -63,7 +64,7 @@ def make_connection(name="ES Permission Test", auth_type="Basic", api_key="sync-
 		}
 	).insert(ignore_permissions=True)
 	# reload: the controller binds its Pull Log to the name it had when loaded
-	return frappe.get_doc("Espresso Sync Connection", connection.name)
+	return esc.get_connection(str(connection.name))
 
 
 def fake_response(payload, status_code=200):
@@ -74,6 +75,12 @@ def fake_response(payload, status_code=200):
 	return response
 
 
+def inspect_source():
+	import inspect
+
+	return inspect.getsource(esc)
+
+
 class TestEspressoSyncConnection(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -82,9 +89,11 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			frappe.get_doc({"doctype": "Role", "role_name": DESK_ROLE, "desk_access": 1}).insert(
 				ignore_permissions=True
 			)
-		make_user(WEBSITE_USER)
-		make_user(DESK_USER, [DESK_ROLE])
-		make_user(MANAGER_USER, ["System Manager"])
+		cls.users = [
+			make_user(WEBSITE_USER),
+			make_user(DESK_USER, [DESK_ROLE]),
+			make_user(MANAGER_USER, ["System Manager"]),
+		]
 
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -92,7 +101,9 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.shot_name = self.connection.shots[0].name
 		# get_sample_data substitutes the URL against one existing document
 		if not frappe.db.exists("ToDo", {"description": "espresso sync test"}):
-			frappe.get_doc({"doctype": "ToDo", "description": "espresso sync test"}).insert(ignore_permissions=True)
+			frappe.get_doc({"doctype": "ToDo", "description": "espresso sync test"}).insert(
+				ignore_permissions=True
+			)
 		# a System Manager could share the Connection with someone; that must not
 		# be enough to reach the endpoints
 		share_doc("Espresso Sync Connection", self.connection.name, DESK_USER, read=1, write=1, notify=0)
@@ -144,11 +155,7 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			for module in (esc, sync_machine)
 			for name, fn in inspect.getmembers(module, inspect.isfunction)
 			if fn in frappe.whitelisted
-		} | {
-			name
-			for name, fn in vars(esc.EspressoSyncConnection).items()
-			if fn in frappe.whitelisted
-		}
+		} | {name for name, fn in vars(esc.EspressoSyncConnection).items() if fn in frappe.whitelisted}
 		self.assertEqual(whitelisted, set(self.endpoints()))
 
 	def test_website_user_is_refused(self):
@@ -166,7 +173,8 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			frappe.client.save(doc)
 		frappe.set_user("Administrator")
 		self.assertEqual(
-			frappe.db.get_value("Espresso Sync Connection", self.connection.name, "api_domain"), "api.example.invalid"
+			frappe.db.get_value("Espresso Sync Connection", self.connection.name, "api_domain"),
+			"api.example.invalid",
 		)
 
 		frappe.set_user(MANAGER_USER)
@@ -177,12 +185,13 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		)
 
 	def assert_refused(self, user):
-		with patch.object(requests.Session, "request", return_value=fake_response([{"title": "x"}])) as request:
+		with patch.object(
+			requests.Session, "request", return_value=fake_response([{"title": "x"}])
+		) as request:
 			for name, call in self.endpoints().items():
 				frappe.set_user(user)
-				with self.subTest(endpoint=name, user=user):
-					with self.assertRaises(frappe.PermissionError):
-						call()
+				with self.subTest(endpoint=name, user=user), self.assertRaises(frappe.PermissionError):
+					call()
 				frappe.set_user("Administrator")
 		request.assert_not_called()
 
@@ -198,15 +207,19 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 
 		frappe.set_user(MANAGER_USER)
 		self.assertEqual(
-			esc.render_sample(json.dumps({"out": "{get_value:User:name:name=Administrator}"}), json.dumps({})),
+			esc.render_sample(
+				json.dumps({"out": "{get_value:User:name:name=Administrator}"}), json.dumps({})
+			),
 			{"out": "Administrator"},
 		)
 		self.assertIn("status", [f["fieldname"] for f in esc.get_doctype_fields("ToDo")])
 
 	def test_requests_use_a_timeout(self):
-		connection = frappe.get_doc("Espresso Sync Connection", self.connection.name)
+		connection = esc.get_connection(self.connection.name)
 		shot = connection.shots[0]
-		with patch.object(requests.Session, "request", return_value=fake_response([{"title": "x"}])) as request:
+		with patch.object(
+			requests.Session, "request", return_value=fake_response([{"title": "x"}])
+		) as request:
 			connection.pull_import_data(shot)
 			shot.override_import_request = 1
 			shot.import_request_type = "POST"
@@ -216,7 +229,7 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			self.assertEqual(call.kwargs.get("timeout"), REQUEST_TIMEOUT)
 
 	def test_error_response_does_not_show_the_credentials(self):
-		connection = frappe.get_doc("Espresso Sync Connection", self.connection.name)
+		connection = esc.get_connection(self.connection.name)
 		encoded = connection.get_request_headers()["Authorization"].split()[1]
 		frappe.local.message_log = []
 		with (
@@ -230,7 +243,7 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.assertNotIn("hunter2-secret-value", shown)
 
 	def test_failed_pull_log_does_not_log_the_credentials(self):
-		connection = frappe.get_doc("Espresso Sync Connection", self.connection.name)
+		connection = esc.get_connection(self.connection.name)
 		encoded = connection.get_request_headers()["Authorization"].split()[1]
 		connection.pull.sync_doctype = "ToDo"
 		# a link that does not exist fails insert() before the Pull Log validates
@@ -251,12 +264,19 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.assertNotIn("hunter2-secret-value", error)
 
 	def test_export_requests_use_a_timeout(self):
-		source = inspect_source()
-		for verb in ("put", "post", "get"):
-			for line in [l for l in source.splitlines() if f"self.session.{verb}(" in l]:
-				self.assertIn("timeout=REQUEST_TIMEOUT", line)
-		for line in [l for l in source.splitlines() if "self.session.request(" in l]:
-			self.assertIn("timeout=REQUEST_TIMEOUT", line)
+		calls = [
+			node
+			for node in ast.walk(ast.parse(inspect_source()))
+			if isinstance(node, ast.Call)
+			and isinstance(node.func, ast.Attribute)
+			and node.func.attr in ("get", "post", "put", "request")
+			and ast.unparse(node.func.value) == "self.session"
+		]
+		self.assertGreaterEqual(len(calls), 4)
+		for call in calls:
+			with self.subTest(call=ast.unparse(call)):
+				timeout = [k.value for k in call.keywords if k.arg == "timeout"]
+				self.assertEqual([ast.unparse(v) for v in timeout], ["REQUEST_TIMEOUT"])
 
 	def test_rate_limited_session_defaults_the_timeout(self):
 		session = RateLimitedSession(60)
@@ -267,7 +287,87 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.assertEqual(request.call_args_list[1].kwargs["timeout"], 5)
 
 
-def inspect_source():
-	import inspect
+class TestExport(IntegrationTestCase):
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.connection = make_connection("ES Export Test")
+		self.shot = self.connection.shots[0]
+		self.shot.object_map_export = json.dumps({"title": "description"})
+		self.docs = {}
+		for name in ("ES-A", "ES-B", "ES-C"):
+			doc = MagicMock()
+			doc.doctype = "ToDo"
+			doc.name = name
+			doc.as_dict.return_value = frappe._dict(name=name, description=f"todo {name}")
+			doc.as_json.return_value = "{}"
+			self.docs[name] = doc
+		# records the order of doc.save() and frappe.db.commit()
+		self.order = MagicMock()
+		self.docs["ES-A"].save = self.order.save
 
-	return inspect.getsource(esc)
+	def export(self, responses):
+		"""Run process_export over the three documents, the POSTs answering with
+		`responses`; return the (document, status) of every Pull Log saved."""
+		connection, docs = self.connection, self.docs
+		get_doc = frappe.get_doc
+		get_value = frappe.db.get_value
+		logs = []
+		with (
+			patch.object(frappe, "get_list", return_value=list(docs)),
+			patch.object(
+				frappe,
+				"get_doc",
+				side_effect=lambda *args, **kwargs: (
+					docs[args[1]] if len(args) == 2 and args[1] in docs else get_doc(*args, **kwargs)
+				),
+			),
+			patch.object(
+				frappe.db,
+				"get_value",
+				side_effect=lambda *args, **kwargs: (
+					None if kwargs.get("doctype") == "Espresso Sync ID" else get_value(*args, **kwargs)
+				),
+			),
+			patch.object(frappe.db, "commit", self.order.commit),
+			patch.object(connection.session, "post", side_effect=responses) as post,
+			patch.object(
+				connection.pull,
+				"save",
+				side_effect=lambda: logs.append((connection.pull.sync_doc, connection.pull.sync_status)),
+			),
+		):
+			connection.process_export(self.shot)  # must not raise
+		self.post = post
+		return logs
+
+	def test_a_failed_export_keeps_the_ids_already_created(self):
+		not_json = fake_response(None, 502)
+		not_json.json.side_effect = requests.JSONDecodeError("Expecting value", "<html>", 0)
+		not_json.text = "<html>Bad Gateway</html>"
+		logs = self.export([fake_response({"id": 123}, 201), not_json, requests.Timeout("read timed out")])
+
+		self.docs["ES-A"].append.assert_called_once_with(
+			"espresso_sync_ids", {"sync_connection": self.connection.name, "external_id": 123}
+		)
+		# the ID is committed as soon as it is saved, before the next request
+		self.assertEqual([c[0] for c in self.order.mock_calls], ["save", "commit"])
+		self.docs["ES-B"].append.assert_not_called()
+		self.docs["ES-C"].append.assert_not_called()
+		self.assertEqual(logs, [("ES-A", "Success"), ("ES-B", "Failure"), ("ES-C", "Failure")])
+
+	def test_each_document_gets_its_own_url(self):
+		self.shot.uri = "todos/{id:description}"
+		with patch(
+			"espresso_sync.map_machine.extract_dynamic_tag",
+			side_effect=lambda tag, object, sync_connection, doc: (
+				None if doc["name"] == "ES-B" else f"x-{doc['name']}"
+			),
+		):
+			logs = self.export([fake_response({}, 201), fake_response({}, 201)])
+
+		# ES-B has no value for its tag: it is not sent, and ES-C keeps its own URL
+		self.assertEqual(
+			[c.args[0] for c in self.post.call_args_list],
+			["https://api.example.invalid/v1/todos/x-ES-A", "https://api.example.invalid/v1/todos/x-ES-C"],
+		)
+		self.assertEqual(logs, [("ES-A", "Success"), ("ES-B", "Failure"), ("ES-C", "Success")])

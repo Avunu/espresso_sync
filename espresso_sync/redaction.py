@@ -82,12 +82,13 @@ def connection_secrets(connection_name):
 
 	connection = frappe.get_doc("Espresso Sync Connection", connection_name)
 	secret = connection.get_password("api_secret", raise_exception=False)
-	if connection.auth_type == "Header-based" and connection.api_key:
-		header_names.add(connection.api_key.strip().lower())
+	auth_type, api_key = connection.get("auth_type"), connection.get("api_key")
+	if auth_type == "Header-based" and api_key:
+		header_names.add(api_key.strip().lower())
 	if secret:
 		secrets.update(_encoded_forms(secret))
-		if connection.auth_type == "Basic":
-			pair = f"{connection.api_key}:{secret}"
+		if auth_type == "Basic":
+			pair = f"{api_key}:{secret}"
 			secrets.update(_encoded_forms(pair))
 			secrets.update(_encoded_forms(base64.b64encode(pair.encode()).decode()))
 	return header_names, {s for s in secrets if len(s) >= MIN_SECRET_LENGTH}

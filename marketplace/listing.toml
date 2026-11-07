@@ -1,0 +1,10 @@
+# The app's registry listing (docs/app-standards/marketplace.md); frappe-listing check validates it.
+schema = 1
+title = "Espresso Sync"
+tagline = "Two-way sync between Frappe documents and external REST APIs"
+type = "integration"
+category = "Integrations"
+categories = ["Integrations", "Data Management"]
+website = "https://avunu.net/open-source/espresso_sync/"
+documentation = "https://docs.avunu.net/espresso-sync/"
+apps_screen = false
