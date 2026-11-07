@@ -18,23 +18,25 @@ def apply_quotes(value):
 
 
 # This function builds a list of all possible permutations of a parameter string based on dynamic tags in the string
-def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=None, doc=None):
-	if doc_names is None:
+def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=None):
+	if not doc_names:
 		doc_names = [""]
 	finished_parameters = []
 	# loop over exported docs (if any)
 	# if no docs are passed, loop over a single empty dict
 	i = 0
 	for doc_name in doc_names:
+		# the document the tags read: {id:<field>} and the Jinja tags use its values
+		doc_data = frappe.get_doc(shot.dt, doc_name).as_dict() if doc_name else frappe._dict()
 		# Start with the original parameter
 		half_tamped_parameters = [parameter]
 		while half_tamped_parameters and i < 1000:
 			i += 1
-			# Take the last parameter from the list
-			parameter = half_tamped_parameters.pop()
+			# Take the last parameter from the list (`parameter` stays the template for the next document)
+			current = half_tamped_parameters.pop()
 			# Find the first dynamic parameter in the parameter string
 			# first_dynamic_tag = re.search(r'{(.*?)}', parameter)
-			first_dynamic_tag = re.search(r"(\{[i|d|l|{|#|%].*\})", parameter)
+			first_dynamic_tag = re.search(r"(\{[i|d|l|{|#|%].*\})", current)
 			# first_dynamic_tag = re.search(r'\"(\{.*\})\"', parameter)
 
 			if first_dynamic_tag:
@@ -44,10 +46,10 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=None, doc
 				if dynamic_tag.startswith("{") and dynamic_tag[1] not in ["%", "#", "{"]:
 					if dynamic_tag.startswith("{id:"):
 						# Handle the dyno tag as a doc id
-						doc_id = extract_dynamic_tag(dynamic_tag, None, sync_connection, doc)
+						doc_id = extract_dynamic_tag(dynamic_tag, None, sync_connection, doc_data)
 						if doc_id:
 							doc_id = apply_quotes(doc_id)
-							new_parameter = parameter.replace(first_dynamic_tag.group(0), doc_id)
+							new_parameter = current.replace(first_dynamic_tag.group(0), doc_id)
 							# Add the new parameter to the half_tamped_parameters list
 							half_tamped_parameters.append(new_parameter)
 						else:
@@ -77,7 +79,7 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=None, doc
 						if dynamic_tag_doc_list:
 							for external_id in dynamic_tag_doc_list:
 								external_id["external_id"] = apply_quotes(external_id["external_id"])
-								new_parameter = parameter.replace(
+								new_parameter = current.replace(
 									first_dynamic_tag.group(0), external_id["external_id"]
 								)
 								# Add the new parameter to the half_tamped_parameters list
@@ -95,13 +97,11 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=None, doc
 				else:
 					# Handle the dyno tag as jinja
 					try:
-						# Get the doc data from the dynamic tag
-						doc_data = frappe.get_doc(shot.dt, doc_name).as_dict() if doc_name else {}
 						# Legacy map, authored by a System Manager; removed with the legacy executor.
 						jinja_value = frappe.render_template(dynamic_tag, doc_data)  # nosemgrep: frappe-ssti
 						jinja_value = apply_quotes(jinja_value)
 						# Replace the dynamic parameter with the value
-						new_parameter = parameter.replace(first_dynamic_tag.group(0), jinja_value)
+						new_parameter = current.replace(first_dynamic_tag.group(0), jinja_value)
 						# Add the new parameter to the half_tamped_parameters list
 						half_tamped_parameters.append(new_parameter)
 					except Exception as e:
@@ -115,7 +115,7 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=None, doc
 						)
 			# If there are no dynamic parameters, add the parameter to the finished_parameters list
 			else:
-				finished_parameters.append(parameter)
+				finished_parameters.append(current)
 			if i > 1000:
 				message = f"Too many parameter variations on shot {shot.dt}: stopped after 1000"
 				frappe.publish_realtime(
@@ -197,6 +197,10 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
 
 				# Extract the value to match on using JSONata
 				match_value = evaluate_jsonata(match_on, object)
+				# a whole number read from a document arrives as a float (Decimal("3") is 3.0):
+				# match it against the case "3"
+				if isinstance(match_value, float) and match_value.is_integer():
+					match_value = int(match_value)
 				result[key] = cases.get(str(match_value)) if match_value is not None else None
 
 			elif "foreach" in value:

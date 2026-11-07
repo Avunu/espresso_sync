@@ -285,3 +285,89 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			session.post("https://api.example.invalid/x", timeout=5)
 		self.assertEqual(request.call_args_list[0].kwargs["timeout"], REQUEST_TIMEOUT)
 		self.assertEqual(request.call_args_list[1].kwargs["timeout"], 5)
+
+
+class TestExport(IntegrationTestCase):
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.connection = make_connection("ES Export Test")
+		self.shot = self.connection.shots[0]
+		self.shot.object_map_export = json.dumps({"title": "description"})
+		self.docs = {}
+		for name in ("ES-A", "ES-B", "ES-C"):
+			doc = MagicMock()
+			doc.doctype = "ToDo"
+			doc.name = name
+			doc.as_dict.return_value = frappe._dict(name=name, description=f"todo {name}")
+			doc.as_json.return_value = "{}"
+			self.docs[name] = doc
+		# records the order of doc.save() and frappe.db.commit()
+		self.order = MagicMock()
+		self.docs["ES-A"].save = self.order.save
+
+	def export(self, responses):
+		"""Run process_export over the three documents, the POSTs answering with
+		`responses`; return the (document, status) of every Pull Log saved."""
+		connection, docs = self.connection, self.docs
+		get_doc = frappe.get_doc
+		get_value = frappe.db.get_value
+		logs = []
+		with (
+			patch.object(frappe, "get_list", return_value=list(docs)),
+			patch.object(
+				frappe,
+				"get_doc",
+				side_effect=lambda *args, **kwargs: (
+					docs[args[1]] if len(args) == 2 and args[1] in docs else get_doc(*args, **kwargs)
+				),
+			),
+			patch.object(
+				frappe.db,
+				"get_value",
+				side_effect=lambda *args, **kwargs: (
+					None if kwargs.get("doctype") == "Espresso Sync ID" else get_value(*args, **kwargs)
+				),
+			),
+			patch.object(frappe.db, "commit", self.order.commit),
+			patch.object(connection.session, "post", side_effect=responses) as post,
+			patch.object(
+				connection.pull,
+				"save",
+				side_effect=lambda: logs.append((connection.pull.sync_doc, connection.pull.sync_status)),
+			),
+		):
+			connection.process_export(self.shot)  # must not raise
+		self.post = post
+		return logs
+
+	def test_a_failed_export_keeps_the_ids_already_created(self):
+		not_json = fake_response(None, 502)
+		not_json.json.side_effect = requests.JSONDecodeError("Expecting value", "<html>", 0)
+		not_json.text = "<html>Bad Gateway</html>"
+		logs = self.export([fake_response({"id": 123}, 201), not_json, requests.Timeout("read timed out")])
+
+		self.docs["ES-A"].append.assert_called_once_with(
+			"espresso_sync_ids", {"sync_connection": self.connection.name, "external_id": 123}
+		)
+		# the ID is committed as soon as it is saved, before the next request
+		self.assertEqual([c[0] for c in self.order.mock_calls], ["save", "commit"])
+		self.docs["ES-B"].append.assert_not_called()
+		self.docs["ES-C"].append.assert_not_called()
+		self.assertEqual(logs, [("ES-A", "Success"), ("ES-B", "Failure"), ("ES-C", "Failure")])
+
+	def test_each_document_gets_its_own_url(self):
+		self.shot.uri = "todos/{id:description}"
+		with patch(
+			"espresso_sync.map_machine.extract_dynamic_tag",
+			side_effect=lambda tag, object, sync_connection, doc: (
+				None if doc["name"] == "ES-B" else f"x-{doc['name']}"
+			),
+		):
+			logs = self.export([fake_response({}, 201), fake_response({}, 201)])
+
+		# ES-B has no value for its tag: it is not sent, and ES-C keeps its own URL
+		self.assertEqual(
+			[c.args[0] for c in self.post.call_args_list],
+			["https://api.example.invalid/v1/todos/x-ES-A", "https://api.example.invalid/v1/todos/x-ES-C"],
+		)
+		self.assertEqual(logs, [("ES-A", "Success"), ("ES-B", "Failure"), ("ES-C", "Success")])

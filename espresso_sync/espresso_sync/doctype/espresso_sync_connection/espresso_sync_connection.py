@@ -259,7 +259,6 @@ class EspressoSyncConnection(Document):
 		doc_names = frappe.get_list(doctype, filters=filters, pluck="name")
 		# loop through the docs
 		api_url = shot.get_api_url()
-		api_urls = tamp_dynamic_parameter(api_url, shot, self, doc_names)
 		for doc_name in doc_names:
 			self.pull.sync_doc = doc_name
 			# ensure this doc is not excluded from sync
@@ -269,10 +268,21 @@ class EspressoSyncConnection(Document):
 				fieldname="dont_sync",
 			):
 				continue
-			# index position of the current doc in the loop
-			doc_index = doc_names.index(doc_name)
-			# run the self.session, pairing the url with the current doc in the loop based on index position
-			object_api_url = api_urls[doc_index]
+			# the URL for this document alone: a tag that gives no value (or several) must not
+			# send it to another document's URL
+			api_urls = tamp_dynamic_parameter(api_url, shot, self, [doc_name])
+			if len(api_urls) != 1:
+				self.pull.sync_status = "Failure"
+				self.pull.url, self.pull.request_type, self.pull.request, self.pull.response = (
+					api_url,
+					"",
+					"{}",
+					"{}",
+				)
+				self.pull.traceback = f"The URL gave {len(api_urls)} variations for {doc_name}, not one"
+				self.pull.save()
+				continue
+			object_api_url = api_urls[0]
 			doc = frappe.get_doc(doctype, doc_name)
 			doc_data = doc.as_dict()
 			self.pull.document = str(doc.as_json())
@@ -285,78 +295,84 @@ class EspressoSyncConnection(Document):
 				filters={"sync_connection": self.name, "parent": doc.name},
 				fieldname="external_id",
 			)
-			if external_id:
-				# Update the existing object in the external system
-				object_update_url = shot.get_crud_uri(object_api_url, "update", external_id)
-				response = self.session.put(
-					object_update_url,
-					headers=self.get_request_headers(),
-					json=parsed_data,
-					timeout=REQUEST_TIMEOUT,
+			try:
+				self.export_doc(shot, doc, parsed_data, object_api_url, external_id)
+			except (requests.RequestException, ValueError) as e:
+				# a timeout or a body that is not JSON fails this document only: the others,
+				# and the external IDs already stored for them, are kept
+				self.pull.sync_status = "Failure"
+				self.pull.traceback = f"{type(e).__name__}: {e}"
+				frappe.publish_realtime(
+					"show_alert",
+					{"message": f"Error exporting {doctype}: {doc.name}", "indicator": "orange"},
+					user=frappe.session.user,
 				)
-				self.pull.request_type = "PUT"
-				self.pull.request = json.dumps(
-					{"payload": parsed_data, "headers": self.get_request_headers()}, indent=4
-				)
-				self.pull.response = json.dumps(response.json(), indent=4)
-				self.pull.url = object_update_url
-				# handle bad response
-				if str(response.status_code).startswith("2"):
-					self.pull.sync_status = "Success"
-				else:
-					self.pull.sync_status = "Failure"
-					frappe.publish_realtime(
-						"show_alert",
-						{"message": f"Error exporting {doctype}: {doc.name}", "indicator": "orange"},
-						user=frappe.session.user,
-					)
-					frappe.log_error(f"Error exporting {doctype}: {doc.name}", response.text)
-					# put the error in the pull log
-					self.pull.sync_status = "Failure"
-					self.pull.traceback = response.text
-					self.pull.save()
-					# TODO: figure out task updates since they are all erroring here on an undefined response
-			else:
-				# Create a new object in the external system
-				object_create_url = shot.get_crud_uri(object_api_url, "create")
-				response = self.session.post(
-					object_create_url,
-					headers=self.get_request_headers(),
-					json=parsed_data,
-					timeout=REQUEST_TIMEOUT,
-				)
-				self.pull.request_type = "POST"
-				self.pull.request = json.dumps(
-					{"payload": parsed_data, "headers": self.get_request_headers()}, indent=4
-				)
-				self.pull.response = str(response.json())
-				self.pull.url = object_create_url
-				# If the external system returns a unique ID, store it in the espresso_sync_id field
-				if str(response.status_code).startswith("2"):
-					self.pull.sync_status = "Success"
-					response_data = response.json()
-					if "id" in response_data:
-						external_id = response_data["id"]
-						# frappe.db.set_value('Espresso Sync ID', {
-						#                     'sync_connection': self.name, 'parent': doc.name}, 'external_id', external_id)
-						# Add the Espresso Sync ID to the document
-						doc.append(
-							"espresso_sync_ids", {"sync_connection": self.name, "external_id": external_id}
-						)
-						# Save the document
-						doc.save()
-				else:
-					self.pull.sync_status = "Failure"
-					frappe.publish_realtime(
-						"show_alert",
-						{"message": f"Error creating {doctype} in external system", "indicator": "orange"},
-						user=frappe.session.user,
-					)
-					self.pull.traceback = response.text
 			self.pull.save()
 		# update the last_export timestamp
 		frappe.db.set_value("Espresso Sync Connection Shot", shot.name, "last_export", frappe.utils.now())
 		return
+
+	def export_doc(self, shot, doc, parsed_data, object_api_url, external_id):
+		"""Send one document to the external system: a PUT when it already has an
+		external ID on this Connection, a POST otherwise."""
+		doctype = doc.doctype
+		headers = self.get_request_headers()
+		self.pull.request = json.dumps({"payload": parsed_data, "headers": headers}, indent=4)
+		self.pull.response = "{}"
+		if external_id:
+			# Update the existing object in the external system
+			object_update_url = shot.get_crud_uri(object_api_url, "update", external_id)
+			self.pull.request_type = "PUT"
+			self.pull.url = object_update_url
+			response = self.session.put(
+				object_update_url, headers=headers, json=parsed_data, timeout=REQUEST_TIMEOUT
+			)
+			self.pull.response = json.dumps(response.json(), indent=4)
+			# handle bad response
+			if str(response.status_code).startswith("2"):
+				self.pull.sync_status = "Success"
+			else:
+				self.pull.sync_status = "Failure"
+				frappe.publish_realtime(
+					"show_alert",
+					{"message": f"Error exporting {doctype}: {doc.name}", "indicator": "orange"},
+					user=frappe.session.user,
+				)
+				frappe.log_error(f"Error exporting {doctype}: {doc.name}", response.text)
+				# put the error in the pull log
+				self.pull.traceback = response.text
+				self.pull.save()
+				# TODO: figure out task updates since they are all erroring here on an undefined response
+			return
+		# Create a new object in the external system
+		object_create_url = shot.get_crud_uri(object_api_url, "create")
+		self.pull.request_type = "POST"
+		self.pull.url = object_create_url
+		response = self.session.post(
+			object_create_url, headers=headers, json=parsed_data, timeout=REQUEST_TIMEOUT
+		)
+		response_data = response.json()
+		self.pull.response = str(response_data)
+		# If the external system returns a unique ID, store it in the espresso_sync_id field
+		if str(response.status_code).startswith("2"):
+			self.pull.sync_status = "Success"
+			if "id" in response_data:
+				# Add the Espresso Sync ID to the document
+				doc.append(
+					"espresso_sync_ids", {"sync_connection": self.name, "external_id": response_data["id"]}
+				)
+				doc.save()
+				# The object now exists in the external system: a later error in this sync
+				# must not roll back its ID, or the next sync would create it again.
+				frappe.db.commit()  # nosemgrep: frappe-manual-commit -- external side effect already happened; persisting the external id prevents duplicate creation
+		else:
+			self.pull.sync_status = "Failure"
+			frappe.publish_realtime(
+				"show_alert",
+				{"message": f"Error creating {doctype} in external system", "indicator": "orange"},
+				user=frappe.session.user,
+			)
+			self.pull.traceback = response.text
 
 	def process_import(self, shot, payload=None):
 		# pull the import data from the API
