@@ -16,12 +16,6 @@ PULL_LOG_ERROR_TITLE = "Error saving pull log"
 LOGGED_CONNECTION = re.compile(r"""['"]sync_connection['"]:\s*['"]([^'"]*)['"]""")
 
 
-def execute():
-	secrets_cache = {}
-	scrub_pull_logs(secrets_cache)
-	scrub_pull_log_error_logs(secrets_cache)
-
-
 def batches(doctype, fields, filters=None):
 	last_name = ""
 	while True:
@@ -55,6 +49,14 @@ def scrub_pull_log_error_logs(secrets_cache):
 		for row in rows:
 			match = LOGGED_CONNECTION.search(row.error or "")
 			connection_name = match.group(1) if match else None
-			error = redact_pull_log_values({"traceback": row.error}, connection_name, secrets_cache)["traceback"]
+			error = redact_pull_log_values({"traceback": row.error}, connection_name, secrets_cache)[
+				"traceback"
+			]
 			if error != row.error:
 				frappe.db.set_value(doctype, row.name, "error", error, update_modified=False)
+
+
+def execute():
+	secrets_cache = {}
+	scrub_pull_logs(secrets_cache)
+	scrub_pull_log_error_logs(secrets_cache)

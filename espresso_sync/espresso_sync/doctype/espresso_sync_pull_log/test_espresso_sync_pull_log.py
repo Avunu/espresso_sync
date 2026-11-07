@@ -39,7 +39,8 @@ def latest_pull_log(connection_name):
 
 def pull_log_text(doc):
 	return " ".join(
-		str(doc.get(f) or "") for f in ("url", "request", "response", "traceback", "object", "document", "map")
+		str(doc.get(f) or "")
+		for f in ("url", "request", "response", "traceback", "object", "document", "map")
 	)
 
 
@@ -131,7 +132,9 @@ class TestRedactionHelper(IntegrationTestCase):
 		from urllib.parse import quote
 
 		secret = 'ab"c\\d/ef-é'
-		connection = make_connection("ES Redaction Encoded", auth_type="Header-based", api_key="X-Shop", secret=secret)
+		connection = make_connection(
+			"ES Redaction Encoded", auth_type="Header-based", api_key="X-Shop", secret=secret
+		)
 		values = {
 			"response": "echo " + json.dumps({"echo": secret}),
 			"traceback": "echo " + repr(secret),
@@ -146,7 +149,9 @@ class TestRedactionHelper(IntegrationTestCase):
 
 class TestEspressoSyncPullLog(IntegrationTestCase):
 	def test_new_pull_log_is_redacted_basic_auth(self):
-		connection = make_connection("ES Redaction Basic", auth_type="Basic", api_key="sync-user", secret=SECRET)
+		connection = make_connection(
+			"ES Redaction Basic", auth_type="Basic", api_key="sync-user", secret=SECRET
+		)
 		headers = connection.get_request_headers()
 		encoded = base64.b64encode(f"sync-user:{SECRET}".encode()).decode()
 		self.assertEqual(headers["Authorization"], f"Basic {encoded}")
@@ -187,7 +192,9 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 		self.assertEqual(json.loads(log.request)["payload"], {"q": 1})
 
 	def test_new_pull_log_redacts_object_and_document(self):
-		connection = make_connection("ES Redaction Object", auth_type="Basic", api_key="sync-user", secret=SECRET)
+		connection = make_connection(
+			"ES Redaction Object", auth_type="Basic", api_key="sync-user", secret=SECRET
+		)
 		encoded = base64.b64encode(f"sync-user:{SECRET}".encode()).decode()
 		connection.pull.sync_doctype = "ToDo"
 		connection.pull.object = json.dumps({"id": 1, "auth": f"Basic {encoded}", "echo": SECRET}, indent=4)
@@ -203,7 +210,9 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 		self.assertEqual(log.traceback, f"failed with {REDACTED}")
 
 	def test_patch_scrubs_existing_rows(self):
-		connection = make_connection("ES Redaction Patch", auth_type="Basic", api_key="sync-user", secret=SECRET)
+		connection = make_connection(
+			"ES Redaction Patch", auth_type="Basic", api_key="sync-user", secret=SECRET
+		)
 		encoded = base64.b64encode(f"sync-user:{SECRET}".encode()).decode()
 		header_conn = make_connection(
 			"ES Redaction Patch Header", auth_type="Header-based", api_key="X-Shop-Header", secret=SECRET
@@ -211,7 +220,11 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 
 		def seed(connection_name, values):
 			log = frappe.get_doc(
-				{"doctype": "Espresso Sync Pull Log", "sync_connection": connection_name, "sync_doctype": "ToDo"}
+				{
+					"doctype": "Espresso Sync Pull Log",
+					"sync_connection": connection_name,
+					"sync_doctype": "ToDo",
+				}
 			).insert(ignore_permissions=True)
 			# write the plaintext the way rows were stored before redaction existed
 			frappe.db.set_value("Espresso Sync Pull Log", log.name, values, update_modified=False)
@@ -222,7 +235,10 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 			{
 				"url": "https://sync-user:pw@api.example.invalid/v1/todos?api_key=abc",
 				"request": json.dumps(
-					{"payload": None, "headers": {"Authorization": f"Basic {encoded}", "Content-Type": "application/json"}},
+					{
+						"payload": None,
+						"headers": {"Authorization": f"Basic {encoded}", "Content-Type": "application/json"},
+					},
 					indent=4,
 				),
 				"response": f"you sent {SECRET}",
@@ -232,21 +248,37 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 		# Request is a JSON column; free text such as a traceback can hold a repr of the headers
 		repr_row, _ = seed(
 			header_conn.name,
-			{"traceback": str({"payload": None, "headers": {"X-Shop-Header": "short", "Content-Type": "application/json"}})},
+			{
+				"traceback": str(
+					{
+						"payload": None,
+						"headers": {"X-Shop-Header": "short", "Content-Type": "application/json"},
+					}
+				)
+			},
 		)
 		clean_row, clean_modified = seed(
 			connection.name,
-			{"url": "https://api.example.invalid/v1/todos", "request": json.dumps({"payload": None, "headers": {}})},
+			{
+				"url": "https://api.example.invalid/v1/todos",
+				"request": json.dumps({"payload": None, "headers": {}}),
+			},
 		)
 		object_row, _ = seed(
 			connection.name,
 			{
-				"object": json.dumps({"id": 1, "echo": f"Basic {encoded}", "access_token": "tok-AAAA"}, indent=4),
-				"response": json.dumps({"next": "https://api.example.invalid/v1/todos?page=2&api_key=KEYKEY"}),
+				"object": json.dumps(
+					{"id": 1, "echo": f"Basic {encoded}", "access_token": "tok-AAAA"}, indent=4
+				),
+				"response": json.dumps(
+					{"next": "https://api.example.invalid/v1/todos?page=2&api_key=KEYKEY"}
+				),
 				"document": json.dumps({"description": SECRET}),
 			},
 		)
-		clean_before = frappe.db.get_value("Espresso Sync Pull Log", clean_row, ["url", "request"], as_dict=True)
+		clean_before = frappe.db.get_value(
+			"Espresso Sync Pull Log", clean_row, ["url", "request"], as_dict=True
+		)
 		# a failed Pull Log save used to log the whole unredacted row
 		error_log = frappe.log_error(
 			"Error saving pull log",
@@ -274,7 +306,9 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 
 		self.assertEqual(
 			frappe.db.get_value("Espresso Sync Pull Log", repr_row, "traceback"),
-			str({"payload": None, "headers": {"X-Shop-Header": REDACTED, "Content-Type": "application/json"}}),
+			str(
+				{"payload": None, "headers": {"X-Shop-Header": REDACTED, "Content-Type": "application/json"}}
+			),
 		)
 
 		row = frappe.get_doc("Espresso Sync Pull Log", object_row)
@@ -289,6 +323,7 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 		self.assertIn(f"'Authorization': 'Basic {REDACTED}'", error)
 
 		self.assertEqual(
-			frappe.db.get_value("Espresso Sync Pull Log", clean_row, ["url", "request"], as_dict=True), clean_before
+			frappe.db.get_value("Espresso Sync Pull Log", clean_row, ["url", "request"], as_dict=True),
+			clean_before,
 		)
 		self.assertEqual(frappe.db.get_value("Espresso Sync Pull Log", clean_row, "modified"), clean_modified)

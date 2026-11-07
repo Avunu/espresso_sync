@@ -8,20 +8,20 @@ from frappe.model.document import Document
 class EspressoSyncConnectionShot(Document):
 	def get_crud_uri(self, url, crud_action, external_id=None):
 		# scrub double quotes from url
-		url = url.replace('"', '')
+		url = url.replace('"', "")
 		match crud_action:
-			case 'create':
+			case "create":
 				return get_create_uri(url)
-			case 'read':
+			case "read":
 				return get_read_uri(self, url)
-			case 'update':
+			case "update":
 				return get_update_uri(url, external_id)
-			case 'delete':
+			case "delete":
 				return get_delete_uri(url)
 
 	def get_api_url(self):
 		# get the connection
-		connection = frappe.get_doc('Espresso Sync Connection', self.parent)
+		connection = frappe.get_doc("Espresso Sync Connection", self.parent)
 
 		# get the url pieces
 		url_scheme = "https://"
@@ -38,18 +38,22 @@ class EspressoSyncConnectionShot(Document):
 
 		return f"{url_scheme}{api_domain}{api_base}/{api_endpoint}"
 
+
 def get_create_uri(url):
 	return url
+
 
 def get_read_uri(self, url):
 	if self.override_uris:
 		return url.replace(self.uri, self.get_uri)
 	return url
 
+
 def get_update_uri(url, external_id):
 	if external_id:
 		url = f"{url}/{external_id}"
 	return url
+
 
 def get_delete_uri(url):
 	return url

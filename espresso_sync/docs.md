@@ -1,3 +1,6 @@
+<!-- Copyright (c) 2026, Avunu LLC and contributors
+For license information, please see license.txt-->
+
 # Espresso Sync Object Mapping Documentation
 
 Espresso Sync uses **JSONata** as the primary object mapping syntax, providing powerful and flexible data transformation capabilities. JSONata is an industry-standard query and transformation language for JSON data, offering advanced features for filtering, aggregation, and complex data manipulations.
@@ -5,8 +8,9 @@ Espresso Sync uses **JSONata** as the primary object mapping syntax, providing p
 ## What is JSONata?
 
 JSONata is a lightweight query and transformation language for JSON data. It provides:
+
 - **Powerful expressions** for data extraction and transformation
-- **Built-in functions** for string, numeric, array, and date operations  
+- **Built-in functions** for string, numeric, array, and date operations
 - **Conditional logic** for complex business rules
 - **Advanced filtering** and aggregation capabilities
 - **Standardized syntax** that's well-documented and widely adopted
@@ -19,8 +23,8 @@ Access fields using dot notation:
 
 ```json
 {
-  "customer_name": "billing.company",
-  "city": "billing.city"
+	"customer_name": "billing.company",
+	"city": "billing.city"
 }
 ```
 
@@ -30,8 +34,8 @@ JSONata provides powerful conditional expressions that replace Jinja templates:
 
 ```json
 {
-  "customer": "billing.company ? billing.company : (billing.first_name & ' ' & billing.last_name)",
-  "display_name": "name ? name : 'Unknown Customer'"
+	"customer": "billing.company ? billing.company : (billing.first_name & ' ' & billing.last_name)",
+	"display_name": "name ? name : 'Unknown Customer'"
 }
 ```
 
@@ -41,9 +45,9 @@ JSONata includes comprehensive string manipulation:
 
 ```json
 {
-  "full_name": "first_name & ' ' & last_name",
-  "email_domain": "$substringAfter(email, '@')",
-  "formatted_phone": "$replace(phone, /[^0-9]/g, '')"
+	"full_name": "first_name & ' ' & last_name",
+	"email_domain": "$substringAfter(email, '@')",
+	"formatted_phone": "$replace(phone, /[^0-9]/g, '')"
 }
 ```
 
@@ -57,7 +61,7 @@ Transform arrays of objects in a single expression:
 
 ```json
 {
-  "items": "line_items.{'code': sku, 'qty': quantity, 'total': price * quantity}"
+	"items": "line_items.{'code': sku, 'qty': quantity, 'total': price * quantity}"
 }
 ```
 
@@ -67,9 +71,9 @@ Filter arrays and perform calculations:
 
 ```json
 {
-  "high_value_items": "line_items[price > 100].{'sku': sku, 'value': price * quantity}",
-  "total_value": "$sum(line_items.(price * quantity))",
-  "item_count": "$count(line_items)"
+	"high_value_items": "line_items[price > 100].{'sku': sku, 'value': price * quantity}",
+	"total_value": "$sum(line_items.(price * quantity))",
+	"item_count": "$count(line_items)"
 }
 ```
 
@@ -79,8 +83,8 @@ Filter arrays and perform calculations:
 {
   "unique_categories": "$distinct(line_items.category)",
   "sorted_items": "line_items^(>price).{'name': name, 'price': price}",
-  "grouped_by_category": "$map($distinct(line_items.category), function($cat) { 
-    {'category': $cat, 'items': line_items[category = $cat]} 
+  "grouped_by_category": "$map($distinct(line_items.category), function($cat) {
+    {'category': $cat, 'items': line_items[category = $cat]}
   })"
 }
 ```
@@ -93,7 +97,7 @@ JSONata's conditional syntax replaces the legacy `match` function:
 
 ```json
 {
-  "status": "status = 'pending' ? 'Draft' : status = 'processing' ? 'To Deliver and Bill' : status = 'completed' ? 'Delivered and Billed' : 'Cancelled'"
+	"status": "status = 'pending' ? 'Draft' : status = 'processing' ? 'To Deliver and Bill' : status = 'completed' ? 'Delivered and Billed' : 'Cancelled'"
 }
 ```
 
@@ -101,8 +105,8 @@ JSONata's conditional syntax replaces the legacy `match` function:
 
 ```json
 {
-  "priority": "total_value > 1000 ? 'High' : total_value > 500 ? 'Medium' : 'Low'",
-  "shipping_method": "weight > 50 or total_value > 100 ? 'Express' : 'Standard'"
+	"priority": "total_value > 1000 ? 'High' : total_value > 500 ? 'Medium' : 'Low'",
+	"shipping_method": "weight > 50 or total_value > 100 ? 'Express' : 'Standard'"
 }
 ```
 
@@ -112,9 +116,9 @@ JSONata's conditional syntax replaces the legacy `match` function:
 
 ```json
 {
-  "discounted_price": "price * (1 - discount_rate)",
-  "tax_amount": "$round(subtotal * tax_rate, 2)",
-  "profit_margin": "$round((selling_price - cost_price) / selling_price * 100, 2)"
+	"discounted_price": "price * (1 - discount_rate)",
+	"tax_amount": "$round(subtotal * tax_rate, 2)",
+	"profit_margin": "$round((selling_price - cost_price) / selling_price * 100, 2)"
 }
 ```
 
@@ -122,8 +126,8 @@ JSONata's conditional syntax replaces the legacy `match` function:
 
 ```json
 {
-  "formatted_date": "$now() ~> $toMillis() ~> $fromMillis('[Y0001]-[M01]-[D01]')",
-  "days_since_order": "$floor(($now() - $toMillis(order_date)) / 86400000)"
+	"formatted_date": "$now() ~> $toMillis() ~> $fromMillis('[Y0001]-[M01]-[D01]')",
+	"days_since_order": "$floor(($now() - $toMillis(order_date)) / 86400000)"
 }
 ```
 
@@ -131,9 +135,9 @@ JSONata's conditional syntax replaces the legacy `match` function:
 
 ```json
 {
-  "order_tier": "total_value > 500 ? 'premium' : 'standard'",
-  "eligible_for_discount": "$count(line_items) >= 3 and total_value > 200",
-  "recommended_items": "line_items[category = 'electronics'].related_products[price < 50]"
+	"order_tier": "total_value > 500 ? 'premium' : 'standard'",
+	"eligible_for_discount": "$count(line_items) >= 3 and total_value > 200",
+	"recommended_items": "line_items[category = 'electronics'].related_products[price < 50]"
 }
 ```
 
@@ -147,10 +151,10 @@ Dynamic tags are preserved for Frappe-specific operations:
 
 ```json
 {
-  "customer": "{link:Customer:$.customer_id}",
-  "default_price_list": "{doc:Selling Settings:default_price_list}",
-  "project_external_id": "{id:project}",
-  "customer_email": "{value:customer:email_id}"
+	"customer": "{link:Customer:$.customer_id}",
+	"default_price_list": "{doc:Selling Settings:default_price_list}",
+	"project_external_id": "{id:project}",
+	"customer_email": "{value:customer:email_id}"
 }
 ```
 
@@ -160,11 +164,11 @@ Mix JSONata expressions with dynamic tags:
 
 ```json
 {
-  "customer": "{link:Customer:$.customer_id}",
-  "customer_display": "billing.company ? billing.company : (billing.first_name & ' ' & billing.last_name)",
-  "items": "line_items.{'item_code': sku, 'qty': quantity, 'rate': price}",
-  "total_amount": "$sum(line_items.(price * quantity))",
-  "default_warehouse": "{doc:Stock Settings:default_warehouse}"
+	"customer": "{link:Customer:$.customer_id}",
+	"customer_display": "billing.company ? billing.company : (billing.first_name & ' ' & billing.last_name)",
+	"items": "line_items.{'item_code': sku, 'qty': quantity, 'rate': price}",
+	"total_amount": "$sum(line_items.(price * quantity))",
+	"default_warehouse": "{doc:Stock Settings:default_warehouse}"
 }
 ```
 
@@ -173,73 +177,79 @@ Mix JSONata expressions with dynamic tags:
 ### From Jinja Templates
 
 **Before (Jinja):**
+
 ```json
 {
-  "customer": "{{ billing.company if billing.company else billing.first_name ~ ' ' ~ billing.last_name }}"
+	"customer": "{{ billing.company if billing.company else billing.first_name ~ ' ' ~ billing.last_name }}"
 }
 ```
 
 **After (JSONata):**
+
 ```json
 {
-  "customer": "billing.company ? billing.company : (billing.first_name & ' ' & billing.last_name)"
+	"customer": "billing.company ? billing.company : (billing.first_name & ' ' & billing.last_name)"
 }
 ```
 
 ### From JSONPath + Foreach
 
 **Before (JSONPath + Foreach):**
+
 ```json
 {
-  "items": {
-    "foreach": {
-      "objects": "$.line_items",
-      "map": {
-        "item_code": "$.sku",
-        "qty": "$.quantity",
-        "total": "#{{ price * quantity }}"
-      }
-    }
-  }
+	"items": {
+		"foreach": {
+			"objects": "$.line_items",
+			"map": {
+				"item_code": "$.sku",
+				"qty": "$.quantity",
+				"total": "#{{ price * quantity }}"
+			}
+		}
+	}
 }
 ```
 
 **After (JSONata):**
+
 ```json
 {
-  "items": "line_items.{'item_code': sku, 'qty': quantity, 'total': price * quantity}"
+	"items": "line_items.{'item_code': sku, 'qty': quantity, 'total': price * quantity}"
 }
 ```
 
 ### From Match Function
 
 **Before (Match Function):**
+
 ```json
 {
-  "status": {
-    "match": {
-      "match-on": "$.status",
-      "cases": {
-        "pending": "Draft",
-        "processing": "To Deliver and Bill",
-        "completed": "Delivered and Billed"
-      }
-    }
-  }
+	"status": {
+		"match": {
+			"match-on": "$.status",
+			"cases": {
+				"pending": "Draft",
+				"processing": "To Deliver and Bill",
+				"completed": "Delivered and Billed"
+			}
+		}
+	}
 }
 ```
 
 **After (JSONata):**
+
 ```json
 {
-  "status": "status = 'pending' ? 'Draft' : status = 'processing' ? 'To Deliver and Bill' : status = 'completed' ? 'Delivered and Billed' : 'Unknown'"
+	"status": "status = 'pending' ? 'Draft' : status = 'processing' ? 'To Deliver and Bill' : status = 'completed' ? 'Delivered and Billed' : 'Unknown'"
 }
 ```
 
 ## Benefits of JSONata
 
 1. **Standardized**: Industry-standard syntax with comprehensive documentation
-2. **Powerful**: Advanced transformations, filtering, and aggregation in single expressions  
+2. **Powerful**: Advanced transformations, filtering, and aggregation in single expressions
 3. **Maintainable**: Clear, readable syntax that's easier to debug and modify
 4. **Comprehensive**: Built-in functions for common operations eliminate custom code
 5. **Future-proof**: Well-maintained open standard with active community
@@ -247,6 +257,7 @@ Mix JSONata expressions with dynamic tags:
 ## JSONata Functions Reference
 
 ### String Functions
+
 - `$string()` - Convert to string
 - `$length()` - String length
 - `$substring()` - Extract substring
@@ -254,7 +265,8 @@ Mix JSONata expressions with dynamic tags:
 - `$split()` - Split string into array
 - `$join()` - Join array into string
 
-### Array Functions  
+### Array Functions
+
 - `$count()` - Count array elements
 - `$sum()` - Sum numeric values
 - `$max()` / `$min()` - Find maximum/minimum
@@ -263,12 +275,14 @@ Mix JSONata expressions with dynamic tags:
 - `$sort()` - Sort array
 
 ### Numeric Functions
+
 - `$number()` - Convert to number
 - `$round()` - Round to decimal places
 - `$floor()` / `$ceiling()` - Round down/up
 - `$abs()` - Absolute value
 
 ### Date Functions
+
 - `$now()` - Current timestamp
 - `$toMillis()` - Convert to milliseconds
 - `$fromMillis()` - Format from milliseconds

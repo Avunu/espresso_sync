@@ -14,7 +14,7 @@ frappe.realtime.on("show_alert", function (data) {
 	frappe.show_alert({
 		message: data.message,
 		indicator: data.indicator,
-	})
+	});
 });
 
 frappe.realtime.on("import_progress", function (data) {
@@ -26,7 +26,7 @@ frappe.realtime.on("import_progress", function (data) {
 	}
 });
 
-frappe.ui.form.on('Espresso Sync Connection Shot', {
+frappe.ui.form.on("Espresso Sync Connection Shot", {
 	form_render: function (frm, cdt, cdn) {
 		var cur_row = locals[cdt][cdn];
 		const dialog_form = frm.fields_dict.shots.grid.open_grid_row;
@@ -48,7 +48,7 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 			// object_map = JSON.parse(object_map);
 			// sample_object = JSON.parse(sample_object);
 			frm.call({
-				method: 'render_sample',
+				method: "render_sample",
 				args: {
 					object_map: object_map,
 					sample_object: sample_object,
@@ -57,7 +57,7 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 					// show the sample in a frappe dialog
 					const sample = response.message || {};
 					const sample_formatted = JSON.stringify(sample, null, 2);
-					frappe.msgprint({ 'message': '<pre>' + sample_formatted + '</pre>', 'title': 'Sample Data' });
+					frappe.msgprint({ message: "<pre>" + sample_formatted + "</pre>", title: "Sample Data" });
 				},
 			});
 		}
@@ -65,11 +65,11 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 	test_import: function (frm, cdt, cdn) {
 		cur_row = locals[cdt][cdn];
 		if (!cur_row.sample_object) {
-			cur_row.sample_object = '{}';
+			cur_row.sample_object = "{}";
 		}
 
 		frm.call({
-			method: 'test_import',
+			method: "test_import",
 			doc: frm.doc,
 			args: {
 				shot_name: cdn,
@@ -79,7 +79,7 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 				// show the sample in a frappe dialog
 				const sample = response.message || {};
 				const sample_formatted = JSON.stringify(sample, null, 2);
-				frappe.msgprint({ 'message': '<pre>' + sample_formatted + '</pre>', 'title': 'Sample Import' });
+				frappe.msgprint({ message: "<pre>" + sample_formatted + "</pre>", title: "Sample Import" });
 			},
 		});
 	},
@@ -87,10 +87,10 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 		frappe.show_alert("Fetching sample data");
 		var cur_row = locals[cdt][cdn];
 		const dt = cur_row.dt;
-		const uri = cur_row.uri
+		const uri = cur_row.uri;
 		try {
 			frm.call({
-				method: 'get_sample_data',
+				method: "get_sample_data",
 				doc: frm.doc,
 				args: {
 					shot_name: cur_row.name,
@@ -143,10 +143,10 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 		var cur_row = locals[cdt][cdn];
 		const dt = cur_row.dt;
 		frm.call({
-			method: 'get_reference_docs',
+			method: "get_reference_docs",
 			doc: frm.doc,
 			args: {
-				doctype: dt
+				doctype: dt,
 			},
 			callback: function (response) {
 				const reference_docs = response.message || [];
@@ -188,12 +188,12 @@ frappe.ui.form.on('Espresso Sync Connection Shot', {
 			// refresh the form
 			frm.refresh_field("shots");
 		}
-	}
+	},
 });
 
 function open_template_generator_dialog(frm, doctype) {
 	frm.call({
-		method: 'get_doctype_fields',
+		method: "get_doctype_fields",
 		args: {
 			doctype: doctype,
 		},
@@ -206,68 +206,68 @@ function open_template_generator_dialog(frm, doctype) {
 
 function show_template_generator_dialog(frm, fields) {
 	let dialog = new frappe.ui.Dialog({
-		title: __('Template Generator'),
+		title: __("Template Generator"),
 		fields: [
 			{
-				fieldtype: 'Section Break',
-				label: __('Fields Selection'),
+				fieldtype: "Section Break",
+				label: __("Fields Selection"),
 			},
 			{
-				fieldtype: 'Table',
-				fieldname: 'fields_map',
-				label: __('Fields Map'),
+				fieldtype: "Table",
+				fieldname: "fields_map",
+				label: __("Fields Map"),
 				fields: [
 					{
-						fieldtype: 'Check',
-						fieldname: 'enabled',
-						label: __('Enabled'),
+						fieldtype: "Check",
+						fieldname: "enabled",
+						label: __("Enabled"),
 						default: 1,
 					},
 					{
-						fieldtype: 'Data',
-						fieldname: 'field_name',
-						label: __('Field Name'),
+						fieldtype: "Data",
+						fieldname: "field_name",
+						label: __("Field Name"),
 						read_only: 1,
 					},
 					{
-						fieldtype: 'Data',
-						fieldname: 'field_label',
-						label: __('Field Label'),
+						fieldtype: "Data",
+						fieldname: "field_label",
+						label: __("Field Label"),
 						read_only: 1,
 					},
 					{
-						fieldtype: 'Select',
-						fieldname: 'map_type',
-						label: __('Map Type'),
+						fieldtype: "Select",
+						fieldname: "map_type",
+						label: __("Map Type"),
 						options: [
-							{ label: __('Field Match'), value: 'field_match' },
-							{ label: __('Static/Custom'), value: 'custom' }
+							{ label: __("Field Match"), value: "field_match" },
+							{ label: __("Static/Custom"), value: "custom" },
 						],
-						default: 'jsonpath',
+						default: "jsonpath",
 					},
 					{
-						fieldtype: 'Data',
-						fieldname: 'map_value',
-						label: __('Map Value'),
+						fieldtype: "Data",
+						fieldname: "map_value",
+						label: __("Map Value"),
 						depends_on: 'map_type=="custom"',
 					},
 					{
-						fieldtype: 'Select',
-						fieldname: 'field_match',
-						label: __('Field Match'),
+						fieldtype: "Select",
+						fieldname: "field_match",
+						label: __("Field Match"),
 						depends_on: 'map_type=="field_match"',
-					}
+					},
 				],
 				data: fields,
 			},
 		],
-		primary_action_label: __('Render Template'),
+		primary_action_label: __("Render Template"),
 		primary_action: function () {
 			let selected_fields = get_selected_fields(dialog);
 			let template_json = create_template_json(selected_fields);
 			dialog.hide();
-			frm.set_value('object_map', JSON.stringify(template_json, null, 2));
-			frm.refresh_field('object_map');
+			frm.set_value("object_map", JSON.stringify(template_json, null, 2));
+			frm.refresh_field("object_map");
 		},
 	});
 
@@ -303,19 +303,16 @@ function make_filter_widget(cur_row, dialog_form) {
 
 // helper function to add extra utility buttons to the code editors
 function add_editor_buttons(cur_row, dialog_form) {
-	const code_editors = [
-		'object_map_import',
-		'request_payload',
-		'object_map_export'
-	]
+	const code_editors = ["object_map_import", "request_payload", "object_map_export"];
 	// format code button
 	code_editors.forEach((editor_name) => {
 		const editor_field = dialog_form.fields_dict[editor_name];
 		const $format_button = $('<button class="btn btn-xs btn-default">Format</button>');
-		$format_button.click(function(editor_field) {
-			editor_field.editor.autoIndent();
-		}
-		.bind(this, editor_field));
+		$format_button.click(
+			function (editor_field) {
+				editor_field.editor.autoIndent();
+			}.bind(this, editor_field),
+		);
 		editor_field.$input_wrapper.append($format_button);
 	});
 }
@@ -387,7 +384,6 @@ function get_selected_fields(dialog) {
 
 	return selected_fields;
 }
-
 
 function create_template_json(selected_fields) {
 	let template_json = {};

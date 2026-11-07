@@ -1,9 +1,10 @@
-from . import __version__ as app_version
+# Copyright (c) 2026, Avunu LLC and contributors
+# For license information, please see license.txt
 
 app_name = "espresso_sync"
 app_title = "Espresso Sync"
 app_publisher = "Avunu LLC"
-app_description = "A Highly-caffeinated Sync Engine for Frappe"
+app_description = "Two-way sync between Frappe documents and external REST APIs"
 app_email = "mail@avu.nu"
 app_license = "MIT"
 
@@ -15,24 +16,10 @@ app_license = "MIT"
 # }
 
 scheduler_events = {
-    "all": [
-        "espresso_sync.sync_scheduler.sync_all"
-    ],
-    "hourly": [
-        "espresso_sync.sync_scheduler.sync_hourly"
-    ],
-    "daily": [
-        "espresso_sync.sync_scheduler.sync_daily"
-    ],
-    "weekly": [
-        "espresso_sync.sync_scheduler.sync_weekly"
-    ],
-    "monthly": [
-        "espresso_sync.sync_scheduler.sync_monthly"
-    ],
-    "cron": {
-        "*/5 * * * *": [
-            "espresso_sync.sync_scheduler.sync_cron"
-        ]
-    }
+	"all": ["espresso_sync.sync_scheduler.sync_all"],
+	"hourly": ["espresso_sync.sync_scheduler.sync_hourly"],
+	"daily": ["espresso_sync.sync_scheduler.sync_daily"],
+	"weekly": ["espresso_sync.sync_scheduler.sync_weekly"],
+	"monthly": ["espresso_sync.sync_scheduler.sync_monthly"],
+	"cron": {"*/5 * * * *": ["espresso_sync.sync_scheduler.sync_cron"]},
 }

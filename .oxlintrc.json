@@ -1,0 +1,74 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "oxc", "import"],
+	"categories": {
+		"correctness": "error",
+		"suspicious": "error",
+		"perf": "warn",
+		"pedantic": "off"
+	},
+	"env": {
+		"builtin": true,
+		"es2024": true,
+		"browser": true
+	},
+	"rules": {
+		"typescript/no-explicit-any": "error",
+		"typescript/ban-ts-comment": "error",
+		"typescript/consistent-type-imports": "error",
+		"no-console": [
+			"warn",
+			{
+				"allow": ["error", "warn"]
+			}
+		],
+		"import/no-cycle": "off",
+		"no-underscore-dangle": "off",
+		"unicorn/consistent-function-scoping": "off",
+		"unicorn/no-array-sort": "off"
+	},
+	"ignorePatterns": [
+		"espresso_sync/public/dist/**",
+		".frappe-nix/**",
+		".dev-dist/**",
+		"nix/**",
+		"docs-site/**",
+		"types/doctypes.d.ts"
+	],
+	"overrides": [
+		{
+			"files": ["scripts/**", "marketplace/**", "ci/**", "test/**"],
+			"env": {
+				"node": true
+			},
+			"rules": {
+				"no-console": "off",
+				"no-await-in-loop": "off",
+				"import/no-unassigned-import": "off"
+			}
+		},
+		{
+			"files": ["espresso_sync/public/js/*.bundle.ts", "espresso_sync/public/js/*.bundle.js"],
+			"rules": {
+				"import/no-unassigned-import": "off"
+			}
+		},
+		{
+			"files": [
+				"espresso_sync/espresso_sync/doctype/espresso_sync_batch/espresso_sync_batch.js",
+				"espresso_sync/espresso_sync/doctype/espresso_sync_connection/espresso_sync_connection.js",
+				"espresso_sync/espresso_sync/doctype/espresso_sync_pull_log/espresso_sync_pull_log.js"
+			],
+			"globals": {
+				"frappe": "readonly",
+				"__": "readonly",
+				"cur_frm": "readonly",
+				"cur_list": "readonly",
+				"locals": "readonly",
+				"$": "readonly",
+				"jQuery": "readonly",
+				"moment": "readonly"
+			}
+		}
+	]
+}

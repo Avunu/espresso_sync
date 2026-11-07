@@ -1,3 +1,6 @@
+# Copyright (c) 2026, Avunu LLC and contributors
+# For license information, please see license.txt
+
 """
 Configuration for docs
 """
@@ -5,6 +8,7 @@ Configuration for docs
 # source_link = "https://github.com/[org_name]/espresso_sync"
 # headline = "App that does everything"
 # sub_heading = "Yes, you got that right the first time, everything"
+
 
 def get_context(context):
 	context.brand_html = "Espresso Sync"

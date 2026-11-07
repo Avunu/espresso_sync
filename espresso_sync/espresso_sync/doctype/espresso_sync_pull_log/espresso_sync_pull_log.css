@@ -1,7 +1,6 @@
-
 /* style read-only inputs like a <pre> element */
 .control-value.like-disabled-input.for-description {
-    white-space: pre;
-    font-family: monospace;
-    overflow-x: auto;
+	white-space: pre;
+	font-family: monospace;
+	overflow-x: auto;
 }

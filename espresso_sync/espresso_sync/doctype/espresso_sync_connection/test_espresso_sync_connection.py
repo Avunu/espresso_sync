@@ -38,7 +38,9 @@ def make_user(email, roles=()):
 	return user
 
 
-def make_connection(name="ES Permission Test", auth_type="Basic", api_key="sync-user", secret="hunter2-secret-value"):
+def make_connection(
+	name="ES Permission Test", auth_type="Basic", api_key="sync-user", secret="hunter2-secret-value"
+):
 	if frappe.db.exists("Espresso Sync Connection", name):
 		frappe.delete_doc("Espresso Sync Connection", name, force=True)
 	connection = frappe.get_doc(
@@ -74,6 +76,12 @@ def fake_response(payload, status_code=200):
 	return response
 
 
+def inspect_source():
+	import inspect
+
+	return inspect.getsource(esc)
+
+
 class TestEspressoSyncConnection(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -92,7 +100,9 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.shot_name = self.connection.shots[0].name
 		# get_sample_data substitutes the URL against one existing document
 		if not frappe.db.exists("ToDo", {"description": "espresso sync test"}):
-			frappe.get_doc({"doctype": "ToDo", "description": "espresso sync test"}).insert(ignore_permissions=True)
+			frappe.get_doc({"doctype": "ToDo", "description": "espresso sync test"}).insert(
+				ignore_permissions=True
+			)
 		# a System Manager could share the Connection with someone; that must not
 		# be enough to reach the endpoints
 		share_doc("Espresso Sync Connection", self.connection.name, DESK_USER, read=1, write=1, notify=0)
@@ -144,11 +154,7 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			for module in (esc, sync_machine)
 			for name, fn in inspect.getmembers(module, inspect.isfunction)
 			if fn in frappe.whitelisted
-		} | {
-			name
-			for name, fn in vars(esc.EspressoSyncConnection).items()
-			if fn in frappe.whitelisted
-		}
+		} | {name for name, fn in vars(esc.EspressoSyncConnection).items() if fn in frappe.whitelisted}
 		self.assertEqual(whitelisted, set(self.endpoints()))
 
 	def test_website_user_is_refused(self):
@@ -166,7 +172,8 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			frappe.client.save(doc)
 		frappe.set_user("Administrator")
 		self.assertEqual(
-			frappe.db.get_value("Espresso Sync Connection", self.connection.name, "api_domain"), "api.example.invalid"
+			frappe.db.get_value("Espresso Sync Connection", self.connection.name, "api_domain"),
+			"api.example.invalid",
 		)
 
 		frappe.set_user(MANAGER_USER)
@@ -177,7 +184,9 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		)
 
 	def assert_refused(self, user):
-		with patch.object(requests.Session, "request", return_value=fake_response([{"title": "x"}])) as request:
+		with patch.object(
+			requests.Session, "request", return_value=fake_response([{"title": "x"}])
+		) as request:
 			for name, call in self.endpoints().items():
 				frappe.set_user(user)
 				with self.subTest(endpoint=name, user=user):
@@ -198,7 +207,9 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 
 		frappe.set_user(MANAGER_USER)
 		self.assertEqual(
-			esc.render_sample(json.dumps({"out": "{get_value:User:name:name=Administrator}"}), json.dumps({})),
+			esc.render_sample(
+				json.dumps({"out": "{get_value:User:name:name=Administrator}"}), json.dumps({})
+			),
 			{"out": "Administrator"},
 		)
 		self.assertIn("status", [f["fieldname"] for f in esc.get_doctype_fields("ToDo")])
@@ -206,7 +217,9 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 	def test_requests_use_a_timeout(self):
 		connection = frappe.get_doc("Espresso Sync Connection", self.connection.name)
 		shot = connection.shots[0]
-		with patch.object(requests.Session, "request", return_value=fake_response([{"title": "x"}])) as request:
+		with patch.object(
+			requests.Session, "request", return_value=fake_response([{"title": "x"}])
+		) as request:
 			connection.pull_import_data(shot)
 			shot.override_import_request = 1
 			shot.import_request_type = "POST"
@@ -265,9 +278,3 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			session.post("https://api.example.invalid/x", timeout=5)
 		self.assertEqual(request.call_args_list[0].kwargs["timeout"], REQUEST_TIMEOUT)
 		self.assertEqual(request.call_args_list[1].kwargs["timeout"], 5)
-
-
-def inspect_source():
-	import inspect
-
-	return inspect.getsource(esc)
