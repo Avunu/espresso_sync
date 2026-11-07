@@ -1,15 +1,6 @@
 // Copyright (c) 2023, Avunu LLC and contributors
 // For license information, please see license.txt
 
-// debug
-frappe.realtime.on("console_log", function (data) {
-	console.log(data.label);
-	console.log(data.message);
-});
-frappe.realtime.on("console.log", function (data) {
-	console.log(data);
-});
-
 frappe.realtime.on("show_alert", function (data) {
 	frappe.show_alert({
 		message: data.message,
@@ -84,10 +75,8 @@ frappe.ui.form.on("Espresso Sync Connection Shot", {
 		});
 	},
 	get_samples: function (frm, cdt, cdn) {
-		frappe.show_alert("Fetching sample data");
+		frappe.show_alert(__("Fetching sample data"));
 		var cur_row = locals[cdt][cdn];
-		const dt = cur_row.dt;
-		const uri = cur_row.uri;
 		try {
 			frm.call({
 				method: "get_sample_data",
@@ -107,7 +96,7 @@ frappe.ui.form.on("Espresso Sync Connection Shot", {
 					cur_row.sample_object = first_object;
 					// refresh the form
 					frm.refresh_field("shots");
-					frappe.show_alert("Sample data updated");
+					frappe.show_alert(__("Sample data updated"));
 				},
 			});
 		} catch (error) {
@@ -158,7 +147,7 @@ frappe.ui.form.on("Espresso Sync Connection Shot", {
 				// get the first document
 				first_doc = JSON.stringify(reference_docs[0], null, 2);
 				frappe.model.set_value(cdt, cdn, "reference_doc", first_doc);
-				frappe.show_alert("Reference docs updated");
+				frappe.show_alert(__("Reference docs updated"));
 				// refresh the form
 				frm.refresh_field("shots");
 			},
@@ -308,11 +297,7 @@ function add_editor_buttons(cur_row, dialog_form) {
 	code_editors.forEach((editor_name) => {
 		const editor_field = dialog_form.fields_dict[editor_name];
 		const $format_button = $('<button class="btn btn-xs btn-default">Format</button>');
-		$format_button.click(
-			function (editor_field) {
-				editor_field.editor.autoIndent();
-			}.bind(this, editor_field),
-		);
+		$format_button.click(() => editor_field.editor.autoIndent());
 		editor_field.$input_wrapper.append($format_button);
 	});
 }
@@ -320,7 +305,6 @@ function add_editor_buttons(cur_row, dialog_form) {
 // Helper functions to add fields to the dialog, get selected fields, create the JSON template, and show the output
 function add_fields_to_dialog(dialog, fields) {
 	const main_fields = fields.filter((field) => field.fieldtype !== "Table");
-	const table_fields = fields.filter((field) => field.fieldtype === "Table");
 
 	dialog.fields.push({
 		fieldtype: "Table MultiSelect",

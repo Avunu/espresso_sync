@@ -8,6 +8,29 @@ from espresso_sync.redaction import PULL_LOG_FIELDS, redact_pull_log_values
 
 
 class EspressoSyncPullLog(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		document: DF.JSON | None
+		map: DF.JSON | None
+		object: DF.JSON | None
+		request: DF.JSON | None
+		request_type: DF.Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
+		response: DF.Code | None
+		sync_connection: DF.Link | None
+		sync_direction: DF.Literal["Import", "Export"]
+		sync_doc: DF.DynamicLink | None
+		sync_doctype: DF.Link | None
+		sync_status: DF.Literal["Success", "Failure"]
+		traceback: DF.Code | None
+		url: DF.Data | None
+	# end: auto-generated types
+
 	def validate(self):
 		# never store the credentials the request was sent with
 		values = {field: self.get(field) for field in PULL_LOG_FIELDS}

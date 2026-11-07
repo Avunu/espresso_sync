@@ -2,7 +2,7 @@
 	"name": "espresso-sync",
 	"version": "0.0.1",
 	"private": true,
-	"description": "A Highly-caffeinated Sync Engine for Frappe",
+	"description": "Two-way sync between Frappe documents and external REST APIs",
 	"license": "MIT",
 	"author": "Avunu LLC",
 	"type": "module",

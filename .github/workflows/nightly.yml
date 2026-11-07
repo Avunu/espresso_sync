@@ -29,11 +29,9 @@ jobs:
       run-duplication: true
       auto-merge: true
       merge-method: squash
-      publish: ${{ vars.MARKETPLACE_PUBLISH == 'true' }}
     secrets:
       NIX_CACHE_TOKEN: ${{ secrets.FRAPPE_NIX_CACHE_TOKEN }}
       NIX_CACHE_READ_TOKEN: ${{ secrets.FRAPPE_NIX_CACHE_READ_TOKEN }}
       FETCH_TOKEN: ${{ secrets.FRAPPE_NIX_FETCH_TOKEN }}
       APP_ID: ${{ vars.AVUNU_CI_APP_ID || secrets.AVUNU_CI_APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.AVUNU_CI_PRIVATE_KEY }}
-      REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}

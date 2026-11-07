@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Avunu LLC and contributors
 # For license information, please see license.txt
 
+import json
 import re
 
 import frappe
@@ -10,8 +11,16 @@ from jsonpath_ng import parse
 from espresso_sync.dynamic_tags import extract_dynamic_tag
 
 
+def apply_quotes(value):
+	if isinstance(value, str) and not value.startswith('"') and not value.endswith('"'):
+		value = '"' + value + '"'
+	return value
+
+
 # This function builds a list of all possible permutations of a parameter string based on dynamic tags in the string
-def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=[0]):
+def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=None, doc=None):
+	if doc_names is None:
+		doc_names = [""]
 	finished_parameters = []
 	# loop over exported docs (if any)
 	# if no docs are passed, loop over a single empty dict
@@ -87,11 +96,9 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=[0]):
 					# Handle the dyno tag as jinja
 					try:
 						# Get the doc data from the dynamic tag
-						if doc_name:
-							doc_data = frappe.get_doc(shot.dt, doc_name).as_dict()
-						else:
-							doc_data = {}
-						jinja_value = frappe.render_template(dynamic_tag, doc_data)
+						doc_data = frappe.get_doc(shot.dt, doc_name).as_dict() if doc_name else {}
+						# Legacy map, authored by a System Manager; removed with the legacy executor.
+						jinja_value = frappe.render_template(dynamic_tag, doc_data)  # nosemgrep: frappe-ssti
 						jinja_value = apply_quotes(jinja_value)
 						# Replace the dynamic parameter with the value
 						new_parameter = parameter.replace(first_dynamic_tag.group(0), jinja_value)
@@ -110,30 +117,26 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=[0]):
 			else:
 				finished_parameters.append(parameter)
 			if i > 1000:
+				message = f"Too many parameter variations on shot {shot.dt}: stopped after 1000"
 				frappe.publish_realtime(
-					"show_alert",
-					{"message": f"Error rendering template: {e}", "indicator": "orange"},
-					user=frappe.session.user,
+					"show_alert", {"message": message, "indicator": "orange"}, user=frappe.session.user
 				)
-				frappe.log_error(f"Error rendering template: {e}")
+				frappe.log_error(message)
 	return finished_parameters
-
-
-def apply_quotes(value):
-	if isinstance(value, str):
-		if not value.startswith('"') and not value.endswith('"'):
-			value = '"' + value + '"'
-	return value
 
 
 def evaluate_jsonata(expression, data):
 	"""
 	Evaluate a JSONata expression against the given data.
 	Returns the result or None if evaluation fails.
+
+	jsonata-python reads only JSON types, so the data goes through Frappe's JSON
+	encoder first: datetimes, dates, Decimals and the like become what an API
+	would send, as strings or numbers.
 	"""
 	try:
 		expr = jsonata.Jsonata(expression)
-		return expr.evaluate(data)
+		return expr.evaluate(json.loads(frappe.as_json(data)))
 	except Exception as e:
 		frappe.log_error(f"Error evaluating JSONata expression '{expression}': {e}")
 		return None
@@ -149,7 +152,8 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
 		conditions = object_map.get("{condition}", [])
 		for condition in conditions:
 			# For backwards compatibility, still support Jinja conditions
-			test_result = frappe.render_template(condition, object)
+			# Legacy map, authored by a System Manager; removed with the legacy executor.
+			test_result = frappe.render_template(condition, object)  # nosemgrep: frappe-ssti
 			if not bool(test_result):
 				return None
 
@@ -172,7 +176,8 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
 			# Check if it's a legacy numeric template (for backwards compatibility)
 			elif value.startswith("#"):
 				template_value = value[1:]  # remove the '#'
-				template_result = frappe.render_template(template_value, object)
+				# Legacy map, authored by a System Manager; removed with the legacy executor.
+				template_result = frappe.render_template(template_value, object)  # nosemgrep: frappe-ssti
 				result[key] = float(template_result) if "." in template_result else int(template_result)
 			# Everything else is treated as a JSONata expression
 			else:

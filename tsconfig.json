@@ -3,7 +3,7 @@
 	"files": [],
 	"references": [
 		{
-			"path": "./tsconfig.desk.json"
+			"path": "./tsconfig.scripts.json"
 		}
 	]
 }

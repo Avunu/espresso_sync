@@ -14,7 +14,7 @@ class RateLimitedSession:
 		self.session = requests.Session()
 		self.max_requests_per_minute = max_requests_per_minute
 		self.requests_made = 0
-		self.time_first_request_was_made = None
+		self.time_first_request_was_made = 0.0
 
 	def request(self, *args, **kwargs):
 		if self.requests_made >= self.max_requests_per_minute:

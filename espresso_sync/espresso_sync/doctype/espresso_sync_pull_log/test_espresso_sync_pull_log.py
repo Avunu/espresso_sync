@@ -3,16 +3,16 @@
 
 import base64
 import json
+from typing import cast
 
 import frappe
-
-try:
-	from frappe.tests import IntegrationTestCase
-except ImportError:  # frappe < 16
-	from frappe.tests.utils import FrappeTestCase as IntegrationTestCase
+from frappe.tests import IntegrationTestCase
 
 from espresso_sync.espresso_sync.doctype.espresso_sync_connection.test_espresso_sync_connection import (
 	make_connection,
+)
+from espresso_sync.espresso_sync.doctype.espresso_sync_pull_log.espresso_sync_pull_log import (
+	EspressoSyncPullLog,
 )
 from espresso_sync.patches import redact_pull_log_secrets
 from espresso_sync.redaction import (
@@ -24,6 +24,10 @@ from espresso_sync.redaction import (
 )
 
 SECRET = "hunter2-secret-value"
+
+
+def get_pull_log(name) -> EspressoSyncPullLog:
+	return cast(EspressoSyncPullLog, frappe.get_doc("Espresso Sync Pull Log", name))
 
 
 def latest_pull_log(connection_name):
@@ -294,14 +298,14 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 
 		redact_pull_log_secrets.execute()
 
-		row = frappe.get_doc("Espresso Sync Pull Log", json_row)
+		row = get_pull_log(json_row)
 		text = pull_log_text(row)
 		self.assertNotIn(encoded, text)
 		self.assertNotIn(SECRET, text)
 		self.assertNotIn(":pw@", text)
 		self.assertNotIn("api_key=abc", text)
-		self.assertEqual(json.loads(row.request)["headers"]["Authorization"], REDACTED)
-		self.assertEqual(json.loads(row.request)["headers"]["Content-Type"], "application/json")
+		self.assertEqual(json.loads(row.request or "")["headers"]["Authorization"], REDACTED)
+		self.assertEqual(json.loads(row.request or "")["headers"]["Content-Type"], "application/json")
 		self.assertEqual(row.modified, json_modified)
 
 		self.assertEqual(
@@ -311,11 +315,11 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 			),
 		)
 
-		row = frappe.get_doc("Espresso Sync Pull Log", object_row)
+		row = get_pull_log(object_row)
 		text = pull_log_text(row)
 		for secret in (encoded, SECRET, "tok-AAAA", "KEYKEY"):
 			self.assertNotIn(secret, text)
-		self.assertEqual(json.loads(row.object)["id"], 1)
+		self.assertEqual(json.loads(row.object or "")["id"], 1)
 
 		error = frappe.db.get_value("Error Log", error_log.name, "error")
 		self.assertNotIn(encoded, error)

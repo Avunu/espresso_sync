@@ -1,7 +1,10 @@
-<!-- Copyright (c) 2026, Avunu LLC and contributors
-For license information, please see license.txt-->
-
-# Espresso Sync Object Mapping Documentation
+---
+title: Object maps
+description: The JSON maps a shot uses to turn API objects into documents and back, with JSONata expressions and Frappe tags.
+nav_title: Object maps
+order: 1
+updated: 2026-11-07
+---
 
 Espresso Sync uses **JSONata** as the primary object mapping syntax, providing powerful and flexible data transformation capabilities. JSONata is an industry-standard query and transformation language for JSON data, offering advanced features for filtering, aggregation, and complex data manipulations.
 
@@ -154,7 +157,7 @@ Dynamic tags are preserved for Frappe-specific operations:
 	"customer": "{link:Customer:$.customer_id}",
 	"default_price_list": "{doc:Selling Settings:default_price_list}",
 	"project_external_id": "{id:project}",
-	"customer_email": "{value:customer:email_id}"
+	"customer_email": "{link_value:customer:email_id}"
 }
 ```
 

@@ -26,11 +26,8 @@ jobs:
       integration-branch: develop
       runs-on: '["self-hosted","nixos"]'
       release-branch: "version-16"
-      publish: ${{ vars.MARKETPLACE_PUBLISH == 'true' }}
-      registry-fork: Avunu/marketplace
       pilot-assets: false
     secrets:
-      REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
       FETCH_TOKEN: ${{ secrets.FRAPPE_NIX_FETCH_TOKEN }}
       APP_ID: ${{ vars.AVUNU_CI_APP_ID || secrets.AVUNU_CI_APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.AVUNU_CI_PRIVATE_KEY }}

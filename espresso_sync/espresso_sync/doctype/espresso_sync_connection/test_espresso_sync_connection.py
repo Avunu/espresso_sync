@@ -1,17 +1,16 @@
 # Copyright (c) 2023, Avunu LLC and Contributors
 # See license.txt
 
+import ast
 import json
 from unittest.mock import MagicMock, patch
 
 import frappe
+import frappe.client
+import frappe.handler
 import requests
 from frappe.share import add as share_doc
-
-try:
-	from frappe.tests import IntegrationTestCase
-except ImportError:  # frappe < 16
-	from frappe.tests.utils import FrappeTestCase as IntegrationTestCase
+from frappe.tests import IntegrationTestCase
 
 from espresso_sync import sync_machine
 from espresso_sync.espresso_sync.doctype.espresso_sync_connection import espresso_sync_connection as esc
@@ -65,7 +64,7 @@ def make_connection(
 		}
 	).insert(ignore_permissions=True)
 	# reload: the controller binds its Pull Log to the name it had when loaded
-	return frappe.get_doc("Espresso Sync Connection", connection.name)
+	return esc.get_connection(str(connection.name))
 
 
 def fake_response(payload, status_code=200):
@@ -90,9 +89,11 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			frappe.get_doc({"doctype": "Role", "role_name": DESK_ROLE, "desk_access": 1}).insert(
 				ignore_permissions=True
 			)
-		make_user(WEBSITE_USER)
-		make_user(DESK_USER, [DESK_ROLE])
-		make_user(MANAGER_USER, ["System Manager"])
+		cls.users = [
+			make_user(WEBSITE_USER),
+			make_user(DESK_USER, [DESK_ROLE]),
+			make_user(MANAGER_USER, ["System Manager"]),
+		]
 
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -189,9 +190,8 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		) as request:
 			for name, call in self.endpoints().items():
 				frappe.set_user(user)
-				with self.subTest(endpoint=name, user=user):
-					with self.assertRaises(frappe.PermissionError):
-						call()
+				with self.subTest(endpoint=name, user=user), self.assertRaises(frappe.PermissionError):
+					call()
 				frappe.set_user("Administrator")
 		request.assert_not_called()
 
@@ -215,7 +215,7 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.assertIn("status", [f["fieldname"] for f in esc.get_doctype_fields("ToDo")])
 
 	def test_requests_use_a_timeout(self):
-		connection = frappe.get_doc("Espresso Sync Connection", self.connection.name)
+		connection = esc.get_connection(self.connection.name)
 		shot = connection.shots[0]
 		with patch.object(
 			requests.Session, "request", return_value=fake_response([{"title": "x"}])
@@ -229,7 +229,7 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			self.assertEqual(call.kwargs.get("timeout"), REQUEST_TIMEOUT)
 
 	def test_error_response_does_not_show_the_credentials(self):
-		connection = frappe.get_doc("Espresso Sync Connection", self.connection.name)
+		connection = esc.get_connection(self.connection.name)
 		encoded = connection.get_request_headers()["Authorization"].split()[1]
 		frappe.local.message_log = []
 		with (
@@ -243,7 +243,7 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.assertNotIn("hunter2-secret-value", shown)
 
 	def test_failed_pull_log_does_not_log_the_credentials(self):
-		connection = frappe.get_doc("Espresso Sync Connection", self.connection.name)
+		connection = esc.get_connection(self.connection.name)
 		encoded = connection.get_request_headers()["Authorization"].split()[1]
 		connection.pull.sync_doctype = "ToDo"
 		# a link that does not exist fails insert() before the Pull Log validates
@@ -264,12 +264,19 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.assertNotIn("hunter2-secret-value", error)
 
 	def test_export_requests_use_a_timeout(self):
-		source = inspect_source()
-		for verb in ("put", "post", "get"):
-			for line in [l for l in source.splitlines() if f"self.session.{verb}(" in l]:
-				self.assertIn("timeout=REQUEST_TIMEOUT", line)
-		for line in [l for l in source.splitlines() if "self.session.request(" in l]:
-			self.assertIn("timeout=REQUEST_TIMEOUT", line)
+		calls = [
+			node
+			for node in ast.walk(ast.parse(inspect_source()))
+			if isinstance(node, ast.Call)
+			and isinstance(node.func, ast.Attribute)
+			and node.func.attr in ("get", "post", "put", "request")
+			and ast.unparse(node.func.value) == "self.session"
+		]
+		self.assertGreaterEqual(len(calls), 4)
+		for call in calls:
+			with self.subTest(call=ast.unparse(call)):
+				timeout = [k.value for k in call.keywords if k.arg == "timeout"]
+				self.assertEqual([ast.unparse(v) for v in timeout], ["REQUEST_TIMEOUT"])
 
 	def test_rate_limited_session_defaults_the_timeout(self):
 		session = RateLimitedSession(60)
