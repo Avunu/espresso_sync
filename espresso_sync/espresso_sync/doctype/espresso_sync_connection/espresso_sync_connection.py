@@ -10,7 +10,8 @@ import frappe
 import requests
 from dateutil.parser import parse as parse_date
 from espresso_sync.map_machine import extract_object, tamp_dynamic_parameter
-from espresso_sync.requests_machine import RateLimitedSession
+from espresso_sync.redaction import PULL_LOG_FIELDS, redact_pull_log_values
+from espresso_sync.requests_machine import REQUEST_TIMEOUT, RateLimitedSession
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 from frappe.model.document import Document
 
@@ -52,9 +53,19 @@ class PullLog(Document):
         pull_log.response = self.response
         pull_log.traceback = self.traceback
         try:
+            # the Pull Log redacts itself in validate, but insert() can fail before that
+            pull_log.update(redact_pull_log_values(
+                {field: pull_log.get(field) for field in PULL_LOG_FIELDS}, self.sync_connection))
             pull_log.insert()
         except Exception as e:
-            frappe.log_error(f'Error saving pull log', f'error: {e}\ntraceback: {frappe.get_traceback()}\npull_log: {pull_log.as_dict()}')
+            # never the field values: they can hold the credentials of the request
+            error = f'error: {e}\ntraceback: {frappe.get_traceback()}'
+            try:
+                error = redact_pull_log_values({'traceback': error}, self.sync_connection)['traceback']
+            except Exception:
+                error = f'error: {type(e).__name__}'
+            frappe.log_error('Error saving pull log', f'{error}\nsync_connection: {self.sync_connection}'
+                             f'\nsync_doctype: {self.sync_doctype}\nsync_doc: {self.sync_doc}')
 
 class EspressoSyncConnection(Document):
     def __init__(self, *args, **kwargs):
@@ -67,6 +78,9 @@ class EspressoSyncConnection(Document):
             self.session = requests.Session()
 
     def validate(self):
+        # a share must not let anyone else change where the credentials are sent
+        if not self.flags.ignore_permissions:
+            frappe.only_for("System Manager")
         if self.pull_shot:
             # self.validate_espresso_api()
             self.create_custom_fields()
@@ -137,15 +151,17 @@ class EspressoSyncConnection(Document):
             self.pull.request = {'payload': payload, 'headers': headers}
             if shot.override_import_request:
                 self.pull.request_type = shot.import_request_type
-                response = self.session.request(shot.import_request_type, url, headers=headers, data=payload)
+                response = self.session.request(shot.import_request_type, url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
             else:
                 self.pull.request_type = 'GET'
                 url = shot.get_crud_uri(url, 'read')
-                response = self.session.get(url, headers=headers, params=payload)
+                response = self.session.get(url, headers=headers, params=payload, timeout=REQUEST_TIMEOUT)
             self.pull.response = json.dumps(response.json(), indent=4)
             # test if response is valid server response, if not, throw error
             if not str(response.status_code).startswith('2'):
-                frappe.throw(response.text, title=f'Invalid Server Response for {call_string}')
+                # call_string holds the request headers, i.e. the credentials
+                shown = redact_pull_log_values({'url': url, 'response': response.text}, self.name)
+                frappe.throw(shown['response'], title=f"Invalid Server Response for {shown['url']}")
                 # put the error in the pull log
                 self.pull.sync_status = 'Failure'
                 self.pull.traceback = response.text
@@ -227,7 +243,7 @@ class EspressoSyncConnection(Document):
             if external_id:
                 # Update the existing object in the external system
                 object_update_url = shot.get_api_url(object_api_url, 'update', external_id)
-                response = self.session.put(object_update_url, headers=self.get_request_headers(), json=parsed_data)
+                response = self.session.put(object_update_url, headers=self.get_request_headers(), json=parsed_data, timeout=REQUEST_TIMEOUT)
                 self.pull.request_type = 'PUT'
                 self.pull.request = json.dumps({'payload': parsed_data, 'headers': self.get_request_headers()}, indent=4)
                 self.pull.response = json.dumps(response.json(), indent=4)
@@ -248,7 +264,7 @@ class EspressoSyncConnection(Document):
             else:
                 # Create a new object in the external system
                 object_create_url = shot.get_crud_uri(object_api_url, 'create')
-                response = self.session.post(object_create_url, headers=self.get_request_headers(), json=parsed_data)
+                response = self.session.post(object_create_url, headers=self.get_request_headers(), json=parsed_data, timeout=REQUEST_TIMEOUT)
                 self.pull.request_type = 'POST'
                 self.pull.request = json.dumps({'payload': parsed_data, 'headers': self.get_request_headers()}, indent=4)
                 self.pull.response = str(response.json())
@@ -473,6 +489,8 @@ class EspressoSyncConnection(Document):
 
     @frappe.whitelist()
     def get_sample_data(self, shot_name):
+        # calls the external API with the stored credentials
+        require_sync_manager(self, "write")
         # get a list of up to 10 objects from the given API endpoint
         shot = frappe.get_doc('Espresso Sync Connection Shot', shot_name)
         # get sync_connection from shot
@@ -491,6 +509,7 @@ class EspressoSyncConnection(Document):
 
     @frappe.whitelist()
     def get_reference_docs(self, doctype):
+        require_sync_manager(self, "read")
         # return a list of up to 10 documents of the given doctype
         # including child field values
         reference_docs = []
@@ -523,6 +542,8 @@ class EspressoSyncConnection(Document):
 
     @frappe.whitelist()
     def test_import(self, shot_name, sample_object):
+        # may create custom fields and Pull Log rows
+        require_sync_manager(self, "write")
         # shot = frappe._dict(json.loads(shot))
         import_object = frappe._dict(json.loads(sample_object))
         shot = frappe.get_doc('Espresso Sync Connection Shot', shot_name)
@@ -532,8 +553,17 @@ class EspressoSyncConnection(Document):
 
 # API Calls
 
+def require_sync_manager(connection=None, ptype="read"):
+    """Raise frappe.PermissionError unless the caller is a System Manager
+    (and, given a Connection, holds `ptype` permission on it)."""
+    frappe.only_for("System Manager")
+    if connection is not None:
+        connection.check_permission(ptype)
+
+
 @frappe.whitelist()
 def get_doctype_fields(doctype):
+    require_sync_manager()
     field_list = [
         {'fieldname': df.fieldname, 'label': df.label,
             'fieldtype': df.fieldtype, 'options': df.options}
@@ -544,6 +574,8 @@ def get_doctype_fields(doctype):
 
 @frappe.whitelist()
 def render_sample(object_map, sample_object):
+    # dynamic tags and templates in the map read arbitrary database values
+    require_sync_manager()
     object_map = frappe._dict(json.loads(object_map))
     sample_object = frappe._dict(json.loads(sample_object))
 
@@ -551,8 +583,10 @@ def render_sample(object_map, sample_object):
 
 @frappe.whitelist()
 def sync_action(doc: str):
+    require_sync_manager()
     doc_name = frappe._dict(json.loads(doc)).name
     connection = frappe.get_doc('Espresso Sync Connection', doc_name)
+    require_sync_manager(connection, "write")
     connection.sync()
     return connection
 
