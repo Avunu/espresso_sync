@@ -132,7 +132,6 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			return call
 
 		return {
-			"get_doctype_fields": lambda: esc.get_doctype_fields("ToDo"),
 			"render_sample": lambda: esc.render_sample(
 				json.dumps({"out": "{get_value:User:name:name=Administrator}"}), json.dumps({})
 			),
@@ -212,7 +211,6 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 			),
 			{"out": "Administrator"},
 		)
-		self.assertIn("status", [f["fieldname"] for f in esc.get_doctype_fields("ToDo")])
 
 	def test_requests_use_a_timeout(self):
 		connection = esc.get_connection(self.connection.name)

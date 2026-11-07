@@ -19,8 +19,6 @@
   "do_import",
   "section_break_pkkc",
   "column_break_uupi",
-  "generate_template",
-  "column_break_wlwn",
   "render_sample",
   "column_break_wscx",
   "test_import",
@@ -117,10 +115,6 @@
    "hide_border": 1
   },
   {
-   "fieldname": "column_break_wlwn",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "view_log",
    "fieldtype": "Button",
    "label": "View Log"
@@ -173,11 +167,6 @@
    "fieldtype": "Int",
    "hidden": 1,
    "label": "Sample Index"
-  },
-  {
-   "fieldname": "generate_template",
-   "fieldtype": "Button",
-   "label": "Generate Template"
   },
   {
    "fieldname": "render_sample",
@@ -548,7 +537,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-08-10 16:42:13.226560",
+ "modified": "2026-11-07 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection Shot",

@@ -644,17 +644,6 @@ def require_sync_manager(connection=None, ptype="read"):
 
 
 @frappe.whitelist()
-def get_doctype_fields(doctype: str):
-	require_sync_manager()
-	field_list = [
-		{"fieldname": df.fieldname, "label": df.label, "fieldtype": df.fieldtype, "options": df.options}
-		for df in frappe.get_meta(doctype).fields
-		if df.fieldtype in ["Data", "Table", "Text", "Small Text", "Link", "Select"]
-	]
-	return field_list
-
-
-@frappe.whitelist()
 def render_sample(object_map: str, sample_object: str):
 	# dynamic tags and templates in the map read arbitrary database values
 	require_sync_manager()
