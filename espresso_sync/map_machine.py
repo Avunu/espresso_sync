@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Avunu LLC and contributors
 # For license information, please see license.txt
 
+import copy
 import json
 import re
 from functools import lru_cache
@@ -154,7 +155,12 @@ def evaluate_jsonata(expression, data, default=None):
 	would send, as strings or numbers.
 	"""
 	try:
-		expr = compile_jsonata(expression)
+		# jsonata-python evaluates on the thread's current instance (Jsonata.CURRENT), which
+		# only its constructor sets, and $now() and $millis() read that instance's timestamp.
+		# A cached expression is not constructed again, so a copy of it is made current: the
+		# time is this evaluation's, and the cached instance is not changed by it.
+		expr = copy.copy(compile_jsonata(expression))
+		jsonata.Jsonata.CURRENT.jsonata = expr
 		# a fresh frame per evaluation: its timebox starts now, not when the expression was cached
 		bounds = jsonata.Jsonata.Frame(None)
 		bounds.set_runtime_bounds(JSONATA_TIMEOUT_MS, JSONATA_MAX_DEPTH)

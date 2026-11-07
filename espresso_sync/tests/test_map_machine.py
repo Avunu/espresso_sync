@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import frappe
 import frappe.apps
+import jsonata.timebox
 from frappe.tests import IntegrationTestCase
 
 from espresso_sync import map_machine
@@ -60,6 +61,18 @@ class TestEvaluateJsonata(IntegrationTestCase):
 			self.assertEqual(evaluate_jsonata("n + 1", {"n": n}), n + 1)
 		info = map_machine.compile_jsonata.cache_info()
 		self.assertEqual((info.misses, info.hits), (1, 2))
+
+	def test_now_is_the_time_of_each_evaluation(self):
+		map_machine.compile_jsonata.cache_clear()
+		clock = [1_794_000_000_000]
+		with patch.object(jsonata.timebox.Timebox, "current_milli_time", side_effect=lambda: clock[0]):
+			self.assertEqual(evaluate_jsonata("$millis()", {}), clock[0])
+			# compiled after it: jsonata-python makes this one the thread's current instance
+			self.assertEqual(evaluate_jsonata("n", {"n": 1}), 1)
+			clock[0] += 5000
+			self.assertEqual(evaluate_jsonata("$millis()", {}), clock[0])
+			self.assertEqual(evaluate_jsonata("$now()", {}), "2026-11-06T21:20:05.000Z")
+		self.assertEqual(map_machine.compile_jsonata.cache_info().misses, 3)
 
 	def test_every_evaluation_is_timeboxed(self):
 		endless = "($f := function($n){ $n > 0 ? $f($n + 1) : 0 }; $f(1))"
