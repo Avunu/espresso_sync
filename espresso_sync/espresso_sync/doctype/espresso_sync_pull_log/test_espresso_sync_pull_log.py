@@ -331,3 +331,44 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 			clean_before,
 		)
 		self.assertEqual(frappe.db.get_value("Espresso Sync Pull Log", clean_row, "modified"), clean_modified)
+
+
+class TestDeleteBatchPatch(IntegrationTestCase):
+	def test_the_doctype_and_its_table_are_removed(self):
+		from espresso_sync.patches import delete_espresso_sync_batch
+
+		frappe.set_user("Administrator")
+		doctype = delete_espresso_sync_batch.DOCTYPE
+		if not frappe.db.exists("DocType", doctype):
+			# what a site installed before the removal still has
+			frappe.get_doc(
+				{
+					"doctype": "DocType",
+					"name": doctype,
+					"module": "Espresso Sync",
+					"custom": 1,
+					"fields": [
+						{
+							"fieldname": "sync_connection",
+							"fieldtype": "Link",
+							"options": "Espresso Sync Connection",
+						},
+						{"fieldname": "objects_processed", "fieldtype": "Int"},
+					],
+					"permissions": [{"role": "System Manager", "read": 1}],
+				}
+			).insert()
+			frappe.db.set_value("DocType", doctype, "custom", 0)
+		self.assertTrue(frappe.db.table_exists(doctype, cached=False))
+
+		# as bench migrate runs it
+		in_migrate = frappe.flags.in_migrate
+		frappe.flags.in_migrate = True
+		try:
+			delete_espresso_sync_batch.execute()
+			self.assertFalse(frappe.db.exists("DocType", doctype))
+			self.assertFalse(frappe.db.table_exists(doctype, cached=False))
+			# and again: a patch may run on a site that never had it
+			delete_espresso_sync_batch.execute()
+		finally:
+			frappe.flags.in_migrate = in_migrate
