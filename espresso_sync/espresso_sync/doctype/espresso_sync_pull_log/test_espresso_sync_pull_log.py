@@ -331,3 +331,81 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 			clean_before,
 		)
 		self.assertEqual(frappe.db.get_value("Espresso Sync Pull Log", clean_row, "modified"), clean_modified)
+
+
+class TestPullLogRetention(IntegrationTestCase):
+	def test_old_entries_are_cleared(self):
+		from frappe.core.doctype.log_settings.log_settings import _supports_log_clearing
+
+		self.assertEqual(
+			frappe.get_hooks("default_log_clearing_doctypes", app_name="espresso_sync"),
+			{"Espresso Sync Pull Log": [30]},
+		)
+		self.assertTrue(_supports_log_clearing("Espresso Sync Pull Log"))
+
+		connection = make_connection("ES Retention Test")
+		names = []
+		for age in (40, 1):
+			connection.pull.sync_doctype = "ToDo"
+			connection.pull.sync_status = "Success"
+			connection.pull.save()
+			name = frappe.get_all(
+				"Espresso Sync Pull Log",
+				filters={"sync_connection": connection.name},
+				order_by="creation desc",
+				pluck="name",
+				limit=1,
+			)[0]
+			frappe.db.set_value(
+				"Espresso Sync Pull Log",
+				name,
+				"creation",
+				frappe.utils.add_days(frappe.utils.now_datetime(), -age),
+				update_modified=False,
+			)
+			names.append(name)
+
+		EspressoSyncPullLog.clear_old_logs(days=30)
+		self.assertFalse(frappe.db.exists("Espresso Sync Pull Log", names[0]))
+		self.assertTrue(frappe.db.exists("Espresso Sync Pull Log", names[1]))
+
+
+class TestDeleteBatchPatch(IntegrationTestCase):
+	def test_the_doctype_and_its_table_are_removed(self):
+		from espresso_sync.patches import delete_espresso_sync_batch
+
+		frappe.set_user("Administrator")
+		doctype = delete_espresso_sync_batch.DOCTYPE
+		if not frappe.db.exists("DocType", doctype):
+			# what a site installed before the removal still has
+			frappe.get_doc(
+				{
+					"doctype": "DocType",
+					"name": doctype,
+					"module": "Espresso Sync",
+					"custom": 1,
+					"fields": [
+						{
+							"fieldname": "sync_connection",
+							"fieldtype": "Link",
+							"options": "Espresso Sync Connection",
+						},
+						{"fieldname": "objects_processed", "fieldtype": "Int"},
+					],
+					"permissions": [{"role": "System Manager", "read": 1}],
+				}
+			).insert()
+			frappe.db.set_value("DocType", doctype, "custom", 0)
+		self.assertTrue(frappe.db.table_exists(doctype, cached=False))
+
+		# as bench migrate runs it
+		in_migrate = frappe.flags.in_migrate
+		frappe.flags.in_migrate = True
+		try:
+			delete_espresso_sync_batch.execute()
+			self.assertFalse(frappe.db.exists("DocType", doctype))
+			self.assertFalse(frappe.db.table_exists(doctype, cached=False))
+			# and again: a patch may run on a site that never had it
+			delete_espresso_sync_batch.execute()
+		finally:
+			frappe.flags.in_migrate = in_migrate

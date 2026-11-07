@@ -15,7 +15,7 @@ Rules:
   signature, session or cookie have their value replaced;
 - URLs: the user-info part (``https://user:pass@host``) is replaced, and so is
   the value of every query parameter whose name matches the same pattern;
-- response, traceback and the imported object are read as JSON when they
+- response, traceback, diagnostics and the imported object are read as JSON when they
   parse and get the same key-based masking as the request; otherwise, like
   any other free text, the value after one of those names
   (``Authorization: Basic ...``, ``'X-Api-Key': '...'``,
@@ -55,7 +55,7 @@ URL_ONLY = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://\S*$")
 MIN_SECRET_LENGTH = 6
 
 # fields holding data sent to or received from the API
-PULL_LOG_TEXT_FIELDS = ("url", "request", "response", "traceback", "object")
+PULL_LOG_TEXT_FIELDS = ("url", "request", "response", "traceback", "diagnostics", "object")
 # local data (the document written, the map used): only literal secrets are
 # replaced, so a field that merely looks like a credential stays readable
 PULL_LOG_LOCAL_FIELDS = ("document", "map")

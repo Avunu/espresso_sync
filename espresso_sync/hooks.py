@@ -19,3 +19,17 @@ add_to_apps_screen = [
 ]
 
 export_python_type_annotations = True
+
+# Scheduled syncs: each event enqueues a sync of the enabled Connections whose Sync Frequency
+# it runs ("Every Minute" is every scheduler tick; "Cron" reads each Connection's Cron Rule).
+scheduler_events = {
+	"all": ["espresso_sync.scheduler.sync_all"],
+	"hourly": ["espresso_sync.scheduler.sync_hourly"],
+	"daily": ["espresso_sync.scheduler.sync_daily"],
+	"weekly": ["espresso_sync.scheduler.sync_weekly"],
+	"monthly": ["espresso_sync.scheduler.sync_monthly"],
+	"cron": {"* * * * *": ["espresso_sync.scheduler.sync_cron"]},
+}
+
+# Log Settings deletes Pull Log entries older than this many days (changeable there)
+default_log_clearing_doctypes = {"Espresso Sync Pull Log": 30}
