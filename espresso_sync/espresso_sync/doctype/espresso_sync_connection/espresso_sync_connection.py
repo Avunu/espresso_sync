@@ -19,6 +19,7 @@ from frappe.utils import get_datetime, now_datetime
 from espresso_sync.map_machine import extract_object, tamp_dynamic_parameter
 from espresso_sync.redaction import PULL_LOG_FIELDS, redact_pull_log_values
 from espresso_sync.requests_machine import REQUEST_TIMEOUT, RateLimitedSession
+from espresso_sync.scheduler import holding_sync_lock
 
 SHOT_DOCTYPE = "Espresso Sync Connection Shot"
 # rolled back to when saving one imported document fails, so it leaves nothing half-written
@@ -177,6 +178,7 @@ class EspressoSyncConnection(Document):
 		connection_name: DF.Data | None
 		cron_rule: DF.Data | None
 		last_pull: DF.Datetime | None
+		last_sync_attempt: DF.Datetime | None
 		pull_shot: DF.Check
 		shots: DF.Table[EspressoSyncConnectionShot]
 		sync_frequency: DF.Literal["Manual", "Every Minute", "Hourly", "Daily", "Weekly", "Monthly", "Cron"]
@@ -676,10 +678,21 @@ def render_sample(object_map: str, sample_object: str):
 
 @frappe.whitelist()
 def sync_action(doc: str):
+	return sync_now(json.loads(doc)["name"])
+
+
+def sync_now(name: str) -> EspressoSyncConnection:
+	"""Sync Now: sync the Connection in this request, unless a sync of it is running."""
 	require_sync_manager()
-	connection = get_connection(json.loads(doc)["name"])
+	connection = get_connection(name)
 	require_sync_manager(connection, "write")
-	connection.sync()
+	# the lock the scheduled job holds: two syncs would both create the same new objects
+	with holding_sync_lock(name) as acquired:
+		if not acquired:
+			frappe.throw(
+				_("A sync of {0} is already running").format(frappe.bold(name)), title=_("Sync Running")
+			)
+		connection.sync()
 	return connection
 
 

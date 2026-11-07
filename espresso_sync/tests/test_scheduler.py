@@ -2,12 +2,13 @@
 # For license information, please see license.txt
 
 import datetime
+import json
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from espresso_sync import scheduler
+from espresso_sync import scheduler, sync_machine
 from espresso_sync.espresso_sync.doctype.espresso_sync_connection import espresso_sync_connection as esc
 
 PREFIX = "ES Schedule "
@@ -59,6 +60,13 @@ class TestScheduler(IntegrationTestCase):
 			cron_rule="*/15 * * * *",
 			last_pull=datetime.datetime(2026, 1, 15, 12, 15, 30),
 		)
+
+	def setUp(self):
+		super().setUp()
+		# run_connection_sync commits the attempt; these tests leave nothing behind
+		commit = patch.object(frappe.local.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
 
 	def test_every_event_enqueues_its_frequency(self):
 		events = {
@@ -128,3 +136,72 @@ class TestScheduler(IntegrationTestCase):
 		with patch.object(esc.EspressoSyncConnection, "sync") as sync:
 			self.assertFalse(scheduler.run_connection_sync(self.disabled))
 		sync.assert_not_called()
+
+	def test_sync_now_is_refused_while_a_sync_runs(self):
+		name = self.names["Hourly"]
+		doc = json.dumps({"name": name})
+		sync_now = {
+			"sync_action": lambda: esc.sync_action(doc),
+			"process_sync_connection_form_action": lambda: sync_machine.process_sync_connection_form_action(
+				doc
+			),
+		}
+		lock = scheduler.sync_lock(name)
+		with patch.object(esc.EspressoSyncConnection, "sync") as sync:
+			self.assertTrue(lock.acquire(blocking=False))
+			try:
+				for endpoint, call in sync_now.items():
+					with self.subTest(endpoint=endpoint), self.assertRaises(frappe.ValidationError):
+						call()
+			finally:
+				lock.release()
+			sync.assert_not_called()
+			# free again: it runs, and releases the lock for the scheduled job
+			for call in sync_now.values():
+				self.assertEqual(call().name, name)
+			self.assertEqual(sync.call_count, 2)
+			self.assertTrue(scheduler.run_connection_sync(name))
+		# and the other way round: the scheduled job does not run while Sync Now syncs
+		with patch.object(
+			esc.EspressoSyncConnection,
+			"sync",
+			side_effect=lambda: self.assertFalse(scheduler.run_connection_sync(name)),
+		):
+			esc.sync_action(doc)
+
+	def test_a_failed_cron_sync_waits_for_its_next_time(self):
+		name = make_scheduled_connection(
+			"cron failing",
+			"Cron",
+			cron_rule="0 3 * * *",
+			last_pull=datetime.datetime(2026, 1, 14, 3, 0, 5),
+		)
+		self.addCleanup(frappe.delete_doc, scheduler.CONNECTION, name, force=True)
+		at_three = datetime.datetime(2026, 1, 15, 3, 0, 10)
+		self.assertIn(name, scheduler.connections_due("cron", at_three))
+		with (
+			patch.object(scheduler, "now_datetime", return_value=at_three),
+			patch.object(esc.EspressoSyncConnection, "sync", side_effect=RuntimeError("no API secret")),
+			self.assertRaises(RuntimeError),
+		):
+			scheduler.run_connection_sync(name)
+		self.assertEqual(
+			frappe.db.get_value(scheduler.CONNECTION, name, "last_pull"),
+			datetime.datetime(2026, 1, 14, 3, 0, 5),
+		)
+		# not at the next tick, nor for the rest of the day
+		for now in (datetime.datetime(2026, 1, 15, 3, 4), datetime.datetime(2026, 1, 16, 2, 59)):
+			self.assertNotIn(name, scheduler.connections_due("cron", now))
+		self.assertIn(name, scheduler.connections_due("cron", datetime.datetime(2026, 1, 16, 3, 0)))
+
+	def test_last_run(self):
+		creation = datetime.datetime(2026, 1, 1)
+		earlier, later = datetime.datetime(2026, 1, 2), datetime.datetime(2026, 1, 3)
+		row = frappe._dict(creation=creation, last_pull=None, last_sync_attempt=None)
+		self.assertEqual(scheduler.last_run(row), creation)
+		self.assertEqual(
+			scheduler.last_run(frappe._dict(row, last_pull=earlier, last_sync_attempt=later)), later
+		)
+		self.assertEqual(
+			scheduler.last_run(frappe._dict(row, last_pull=later, last_sync_attempt=earlier)), later
+		)

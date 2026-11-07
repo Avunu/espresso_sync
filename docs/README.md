@@ -26,7 +26,7 @@ Espresso Sync moves documents between a Frappe site and external REST APIs, in e
 | Hourly, Daily, Weekly, Monthly | on the scheduler's hourly, daily, weekly and monthly events                            |
 | Cron                           | when its **Cron Rule** (for example `*/15 * * * *`) has come round since the last sync |
 
-Each scheduled sync is a background job on the `long` queue. A Connection never syncs twice at once: a sync is not queued while another of the same Connection is queued or running.
+Each scheduled sync is a background job on the `long` queue. A Connection never syncs twice at once: a sync is not queued while another of the same Connection is queued or running, and Sync Now is refused while one is running. A scheduled sync that fails waits for its next time like one that succeeded.
 
 ## What a sync does
 

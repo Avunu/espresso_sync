@@ -7,11 +7,12 @@ Each scheduler event (hooks.scheduler_events) calls process_sync_connections
 with its frequency, which enqueues one background job per enabled Connection
 whose Sync Frequency matches. A Connection never has two syncs at once: its
 job has a fixed job_id and is enqueued with deduplicate=True, so a second one
-is not queued while the first is queued or running, and the job itself takes a
-cache lock before it syncs.
+is not queued while the first is queued or running, and every sync, scheduled
+or Sync Now, holds a cache lock while it runs.
 """
 
-from contextlib import suppress
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from datetime import datetime
 from typing import cast
 
@@ -45,6 +46,13 @@ def cron_is_due(cron_rule: str | None, since, now: datetime) -> bool:
 	return croniter(cron_rule, get_datetime(since)).get_next(datetime) <= now
 
 
+def last_run(row) -> datetime | None:
+	"""When the Connection last synced, or last tried to: a sync that failed is not due again
+	until its rule comes round."""
+	times = [value for value in (row.last_pull, row.last_sync_attempt) if value]
+	return get_datetime(max(times) if times else row.creation)
+
+
 def connections_due(frequency: str, now: datetime | None = None) -> list[str]:
 	sync_frequency = FREQUENCIES[frequency]
 	if sync_frequency != "Cron":
@@ -58,10 +66,10 @@ def connections_due(frequency: str, now: datetime | None = None) -> list[str]:
 	rows = frappe.get_all(
 		CONNECTION,
 		filters={"pull_shot": 1, "sync_frequency": "Cron"},
-		fields=["name", "cron_rule", "last_pull", "creation"],
+		fields=["name", "cron_rule", "last_pull", "last_sync_attempt", "creation"],
 		order_by="name asc",
 	)
-	return [row.name for row in rows if cron_is_due(row.cron_rule, row.last_pull or row.creation, now)]
+	return [row.name for row in rows if cron_is_due(row.cron_rule, last_run(row), now)]
 
 
 def sync_job_id(connection: str) -> str:
@@ -117,22 +125,37 @@ def sync_lock(connection: str) -> Lock:
 	return cache.lock(cache.make_key(sync_job_id(connection)), timeout=LOCK_TIMEOUT)
 
 
+@contextmanager
+def holding_sync_lock(connection: str) -> Generator[bool]:
+	"""Take the sync lock of `connection` without waiting; yield whether it was taken."""
+	lock = sync_lock(connection)
+	acquired = lock.acquire(blocking=False)
+	try:
+		yield acquired
+	finally:
+		if acquired:
+			# a sync that outlived LOCK_TIMEOUT no longer owns it
+			with suppress(LockError):
+				lock.release()
+
+
 def run_connection_sync(connection: str) -> bool:
 	"""Sync one Connection, unless another sync of it holds the lock. True when it ran."""
 	from espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection import (
 		get_connection,
 	)
 
-	lock = sync_lock(connection)
-	if not lock.acquire(blocking=False):
-		frappe.logger("espresso_sync").info(f"{connection}: a sync is already running")
-		return False
-	try:
+	with holding_sync_lock(connection) as acquired:
+		if not acquired:
+			frappe.logger("espresso_sync").info(f"{connection}: a sync is already running")
+			return False
 		if not frappe.db.get_value(CONNECTION, connection, "pull_shot"):
 			return False
+		# a sync that raises sets no last_pull: without this its Cron Rule would be due again
+		# at every tick
+		frappe.db.set_value(
+			CONNECTION, connection, "last_sync_attempt", now_datetime(), update_modified=False
+		)
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- kept when the sync fails and the job rolls back
 		get_connection(connection).sync()
 		return True
-	finally:
-		# a sync that outlived LOCK_TIMEOUT no longer owns it
-		with suppress(LockError):
-			lock.release()
