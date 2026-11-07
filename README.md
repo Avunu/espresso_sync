@@ -27,7 +27,7 @@ Espresso Sync moves documents between a Frappe site and external REST APIs, in e
 
 Field maps are JSON objects whose values are [JSONata](https://docs.jsonata.org/) expressions, with a few Frappe tags (`{link:…}`, `{id:…}`, `{doc:…}`, `{get_value:…}`) for lookups in the site. The syntax is described in [docs/object-mapping.md](docs/object-mapping.md).
 
-Syncs run on demand, with **Sync Now** on the Connection form; scheduled syncs return in a later release. Only a System Manager can configure a Connection or run it.
+Syncs run on demand, with **Sync Now** on the Connection form, and on each enabled Connection's **Sync Frequency** (hourly, daily, a cron rule, …) as background jobs. Only a System Manager can configure a Connection or run it.
 
 This map format is being replaced by a schema-aware transform editor driven by the APIs' OpenAPI descriptions; until then the app is not listed in the Frappe marketplace.
 

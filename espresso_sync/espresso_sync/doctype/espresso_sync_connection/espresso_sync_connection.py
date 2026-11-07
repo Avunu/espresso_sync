@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import frappe
 import requests
+from croniter import croniter
 from dateutil.parser import parse as parse_date
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
@@ -190,8 +191,18 @@ class EspressoSyncConnection(Document):
 		# a share must not let anyone else change where the credentials are sent
 		if not self.flags.ignore_permissions:
 			frappe.only_for("System Manager")
+		self.validate_cron_rule()
 		if self.pull_shot:
 			self.create_custom_fields()
+
+	def validate_cron_rule(self):
+		if self.sync_frequency != "Cron":
+			return
+		cron_rule = self.cron_rule or ""
+		if not cron_rule:
+			frappe.throw(_("A Cron Rule is needed when the Sync Frequency is Cron"))
+		if not croniter.is_valid(cron_rule):
+			frappe.throw(_("{0} is not a valid cron rule").format(frappe.bold(cron_rule)))
 
 	def create_custom_fields(self):
 		# Ensure the 'Espresso Sync ID' child table field exists for each DocType in the shots table

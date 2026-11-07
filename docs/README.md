@@ -15,7 +15,18 @@ Espresso Sync moves documents between a Frappe site and external REST APIs, in e
 - Imported objects are matched to documents through the **Espresso Sync IDs** table the app adds, on a **Sync** tab, to each DocType a shot names. A document's **Exclude from Sync** box keeps it out of exports.
 - Every request is recorded in an **Espresso Sync Pull Log**, with its response, and so is every object imported or document exported, with its **Diagnostics**. Credentials are redacted before the log is saved. Log Settings deletes entries older than 30 days; change the period there.
 
-Syncs run on demand, with **Sync Now** on the Connection form. The **Sync Frequency** setting is kept but not acted on: scheduled syncs return in a later release.
+## When syncs run
+
+**Sync Now** on the Connection form runs one at once. An **Enabled** Connection also runs on its **Sync Frequency**:
+
+| Sync Frequency                 | Runs                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------- |
+| Manual                         | only with Sync Now                                                                     |
+| Every Minute                   | on every tick of the scheduler (`scheduler_interval`, every 4 minutes unless changed)  |
+| Hourly, Daily, Weekly, Monthly | on the scheduler's hourly, daily, weekly and monthly events                            |
+| Cron                           | when its **Cron Rule** (for example `*/15 * * * *`) has come round since the last sync |
+
+Each scheduled sync is a background job on the `long` queue. A Connection never syncs twice at once: a sync is not queued while another of the same Connection is queued or running.
 
 ## What a sync does
 

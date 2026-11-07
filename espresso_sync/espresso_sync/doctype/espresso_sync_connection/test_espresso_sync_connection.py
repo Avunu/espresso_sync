@@ -280,6 +280,17 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.assertEqual(request.call_args_list[0].kwargs["timeout"], REQUEST_TIMEOUT)
 		self.assertEqual(request.call_args_list[1].kwargs["timeout"], 5)
 
+	def test_a_cron_frequency_needs_a_valid_rule(self):
+		for cron_rule, valid in (("", False), ("every tuesday", False), ("*/15 * * * *", True)):
+			connection = esc.get_connection(self.connection.name)
+			connection.sync_frequency = "Cron"
+			connection.cron_rule = cron_rule
+			with self.subTest(cron_rule=cron_rule):
+				if valid:
+					connection.save()
+				else:
+					self.assertRaises(frappe.ValidationError, connection.save)
+
 
 class TestRetry(IntegrationTestCase):
 	"""429 Too Many Requests: waited for and retried, a bounded number of times."""
