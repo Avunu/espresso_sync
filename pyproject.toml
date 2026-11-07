@@ -26,6 +26,27 @@ siblings = []
 # Off the marketplace until the transform editor replaces the legacy maps.
 publish = false
 
+# The /espresso_sync page: a React app built by the root vite.config.ts. Its pure modules
+# (espresso_sync/public/js/editor) are in the managed projects, with their node:test tests.
+[[tool.frappe-nix.typescript.spa]]
+root = "."
+include = ["espresso_sync/www/espresso_sync/src/**", "vite.config.ts"]
+tsconfig = "tsconfig.json"
+check = "tsc -p tsconfig.json"
+
+[[tool.frappe-nix.js.oxlint.overrides]]
+# The page's entry imports its fonts and stylesheet for what they do on load.
+files = ["espresso_sync/www/espresso_sync/src/main.tsx"]
+rules = { "import/no-unassigned-import" = "off" }
+
+[[tool.frappe-nix.js.oxlint.overrides]]
+# A Worker's postMessage has no target origin: the rule is for window.postMessage.
+files = [
+	"espresso_sync/public/js/editor/evalWorker.ts",
+	"espresso_sync/www/espresso_sync/src/evalWorker.worker.ts",
+]
+rules = { "unicorn/require-post-message-target-origin" = "off" }
+
 [[tool.frappe-nix.unchecked-js]]
 path = "espresso_sync/espresso_sync/doctype/espresso_sync_connection/espresso_sync_connection.js"
 reason = "Legacy map editor, replaced by the transform editor and deleted with the legacy executor"

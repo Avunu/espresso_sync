@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="{{ lang or 'en' }}">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<meta name="robots" content="noindex" />
+		<title>{{ title }}</title>
+		<link rel="icon" type="image/svg+xml" href="/assets/espresso_sync/images/espresso_sync-symbolic.svg" />
+		{% if forbidden %}
+		<style>
+			:root {
+				color-scheme: light dark;
+				--es-bg: #f4f4f4;
+				--es-layer: #ffffff;
+				--es-text: #161616;
+				--es-muted: #525252;
+				--es-border: #e0e0e0;
+				--es-button: #0f62fe;
+				--es-button-hover: #0050e6;
+				--es-focus: #0f62fe;
+			}
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--es-bg: #161616;
+					--es-layer: #262626;
+					--es-text: #f4f4f4;
+					--es-muted: #c6c6c6;
+					--es-border: #393939;
+					--es-focus: #ffffff;
+				}
+			}
+			body {
+				display: grid;
+				min-height: 100vh;
+				margin: 0;
+				place-items: center;
+				background: var(--es-bg);
+				color: var(--es-text);
+				font-family: "IBM Plex Sans", system-ui, sans-serif;
+			}
+			main {
+				max-width: 28rem;
+				padding: 2rem;
+				border-top: 4px solid #da1e28;
+				background: var(--es-layer);
+			}
+			h1 {
+				margin: 0 0 1rem;
+				font-size: 1.75rem;
+				font-weight: 400;
+			}
+			p {
+				margin: 0 0 1rem;
+				line-height: 1.5;
+			}
+			.es-muted {
+				color: var(--es-muted);
+			}
+			.es-actions {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 1rem;
+				align-items: center;
+				margin-top: 1.5rem;
+			}
+			button {
+				min-height: 3rem;
+				padding: 0 4rem 0 1rem;
+				border: 0;
+				background: var(--es-button);
+				color: #ffffff;
+				cursor: pointer;
+				font: inherit;
+			}
+			button:hover {
+				background: var(--es-button-hover);
+			}
+			button:focus-visible,
+			a:focus-visible {
+				outline: 2px solid var(--es-focus);
+				outline-offset: 2px;
+			}
+			a {
+				color: inherit;
+			}
+		</style>
+		{% else %} {{ include_style('espresso-sync.bundle.css') }} {% endif %}
+	</head>
+
+	<body>
+		{% if forbidden %}
+		<main>
+			<h1>{{ title }}</h1>
+			<p>{{ message }}</p>
+			<p class="es-muted">{{ _("You are signed in as {0}.").format(user | e) }}</p>
+			<div class="es-actions">
+				<form method="post" action="/api/method/web_logout">
+					<input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+					<button type="submit">{{ _("Sign out") }}</button>
+				</form>
+				{% if desk_user %}
+				<a href="/desk">{{ _("Go to the desk") }}</a>
+				{% endif %}
+			</div>
+		</main>
+		{% else %}
+		<div id="app"></div>
+		<noscript>{{ _("Espresso Sync needs JavaScript.") }}</noscript>
+		<script>
+			window.csrf_token = {{ csrf_token | tojson }};
+			window.sitename = {{ sitename | tojson }};
+			window.portal_boot = {{ boot | tojson }};
+			window.developer_mode = {{ developer_mode | tojson }};
+		</script>
+		<script type="module" src="{{ bundled_asset('espresso-sync.bundle.js') }}"></script>
+		{% endif %}
+	</body>
+</html>
