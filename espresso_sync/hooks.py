@@ -19,3 +19,6 @@ add_to_apps_screen = [
 ]
 
 export_python_type_annotations = True
+
+# Log Settings deletes Pull Log entries older than this many days (changeable there)
+default_log_clearing_doctypes = {"Espresso Sync Pull Log": 30}

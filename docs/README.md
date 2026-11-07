@@ -13,9 +13,16 @@ Espresso Sync moves documents between a Frappe site and external REST APIs, in e
 - An **Espresso Sync Connection** holds an API's domain, base path, credentials (Basic or a header) and an optional rate limit. Only a System Manager can create, change or run one.
 - Each of its **shots** ties one DocType to one endpoint. A shot imports, exports, or both, and has a map for each direction.
 - Imported objects are matched to documents through the **Espresso Sync IDs** table the app adds, on a **Sync** tab, to each DocType a shot names. A document's **Exclude from Sync** box keeps it out of exports.
-- Every request is recorded in an **Espresso Sync Pull Log**: the URL, the request, the response and the document. Credentials are redacted before the log is saved.
+- Every request is recorded in an **Espresso Sync Pull Log**, with its response, and so is every object imported or document exported, with its **Diagnostics**. Credentials are redacted before the log is saved. Log Settings deletes entries older than 30 days; change the period there.
 
 Syncs run on demand, with **Sync Now** on the Connection form. The **Sync Frequency** setting is kept but not acted on: scheduled syncs return in a later release.
+
+## What a sync does
+
+- An API that answers 429 Too Many Requests is waited for, as its `Retry-After` says (up to a minute), and asked again, at most three more times.
+- A request that fails, an object that cannot be imported, or a document that cannot be exported is logged as a failure in the Pull Log, and the sync goes on with the next one.
+- An imported object that matches a document this Connection imported before (by its external ID, within the shot's DocType) updates and saves that document.
+- **Last Export** moves only as far as the last document exported before the first failure, so a failed document is sent again by the next sync. **Last Import** moves only when every object imported.
 
 ## Maps
 

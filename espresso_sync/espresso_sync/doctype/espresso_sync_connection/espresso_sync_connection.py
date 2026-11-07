@@ -13,30 +13,49 @@ from dateutil.parser import parse as parse_date
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 from frappe.model.document import Document
+from frappe.utils import get_datetime, now_datetime
 
 from espresso_sync.map_machine import extract_object, tamp_dynamic_parameter
 from espresso_sync.redaction import PULL_LOG_FIELDS, redact_pull_log_values
 from espresso_sync.requests_machine import REQUEST_TIMEOUT, RateLimitedSession
 
+SHOT_DOCTYPE = "Espresso Sync Connection Shot"
+# rolled back to when saving one imported document fails, so it leaves nothing half-written
+IMPORT_SAVEPOINT = "espresso_sync_import"
+
 
 class PullLog:
 	"""The Pull Log entry being filled in for a Connection: each save() inserts a new
-	Espresso Sync Pull Log from the current values."""
+	Espresso Sync Pull Log from the current values, then clears what belongs to that
+	entry alone. The context (DocType, direction, map, URL) carries over to the next."""
 
 	def __init__(self, sync_connection):
 		self.sync_connection = sync_connection.name
 		self.sync_doctype = ""
-		self.sync_doc: str | None = ""
 		self.sync_direction = ""
-		self.sync_status = ""
-		self.object = "{}"
-		self.document = "{}"
 		self.map = "{}"
 		self.url = ""
 		self.request_type = ""
+		# the number of failures saved, for the watermarks
+		self.failures = 0
+		self.clear_entry()
+
+	def clear_entry(self):
+		self.sync_doc: str | None = ""
+		self.sync_status = ""
+		self.object = "{}"
+		self.document = "{}"
+		# the request and its response are stored on the entry for that request only
 		self.request: str | dict[str, Any] = "{}"
-		self.response = "{}"
+		self.response = ""
 		self.traceback = ""
+		self.diagnostics: list[dict[str, Any]] = []
+
+	def fail(self, code: str, message: str, origin: str = "object"):
+		"""Mark the entry failed, with `message` as its traceback and a diagnostic."""
+		self.sync_status = "Failure"
+		self.traceback = message
+		self.diagnostics.append({"severity": "error", "code": code, "message": message, "origin": origin})
 
 	def save(self):
 		values = {
@@ -53,7 +72,10 @@ class PullLog:
 			"request": self.request,
 			"response": self.response,
 			"traceback": str(self.traceback or ""),
+			"diagnostics": json.dumps(self.diagnostics, indent=4, default=str) if self.diagnostics else None,
 		}
+		if self.sync_status == "Failure":
+			self.failures += 1
 		try:
 			# the Pull Log redacts itself in validate, but insert() can fail before that
 			values.update(
@@ -74,6 +96,60 @@ class PullLog:
 				f"{error}\nsync_connection: {self.sync_connection}"
 				f"\nsync_doctype: {self.sync_doctype}\nsync_doc: {self.sync_doc}",
 			)
+		finally:
+			self.clear_entry()
+
+
+class ImportResponseError(Exception):
+	"""An import request's response that cannot be imported."""
+
+	def __init__(self, code: str, message: str, title: str, shown: str):
+		super().__init__(message)
+		self.code = code
+		self.message = message
+		# the form's error dialog: its title takes the URL, its body is `shown`
+		self.title = title
+		self.shown = shown
+
+
+def read_import_response(shot, response: requests.Response):
+	"""The objects in an import response: the status is checked before the body is read."""
+	if not 200 <= response.status_code < 300:
+		raise ImportResponseError(
+			"http-status",
+			f"HTTP {response.status_code}",
+			_("Invalid Server Response for {0}"),
+			response.text,
+		)
+	try:
+		data = response.json()
+	except ValueError:
+		raise ImportResponseError(
+			"invalid-json", "The response is not JSON", _("Invalid JSON Response from API"), response.text
+		) from None
+	if shot.objects_key:
+		if not isinstance(data, dict) or shot.objects_key not in data:
+			message = _("Objects Key {0} not found in response data").format(shot.objects_key)
+			raise ImportResponseError("objects-key", message, _("Invalid Objects Key"), message)
+		data = data[shot.objects_key]
+	return data
+
+
+def export_watermark(results, current):
+	"""The new last_export, from the (modified, succeeded) of each document exported.
+
+	It is the newest `modified` exported before the first failure (in `modified`
+	order), and never moves back: a failed document stays above it, so the next
+	export sends it again, together with the documents after it.
+	"""
+	first_failure = min((modified for modified, ok in results if not ok), default=None)
+	exported = [
+		modified for modified, ok in results if ok and (first_failure is None or modified < first_failure)
+	]
+	if not exported:
+		return current
+	newest = max(exported)
+	return newest if current is None or newest > current else current
 
 
 class EspressoSyncConnection(Document):
@@ -107,145 +183,119 @@ class EspressoSyncConnection(Document):
 		super().__init__(*args, **kwargs)  # This calls the init method of the superclass
 		# current pull log for the connection
 		self.pull = PullLog(self)
-		if self.api_rate_limit:
-			self.session = RateLimitedSession(self.api_rate_limit)
-		else:
-			self.session = requests.Session()
+		# every request goes through it: timeout, rate limit, 429 retries
+		self.session = RateLimitedSession(self.api_rate_limit)
 
 	def validate(self):
 		# a share must not let anyone else change where the credentials are sent
 		if not self.flags.ignore_permissions:
 			frappe.only_for("System Manager")
 		if self.pull_shot:
-			# self.validate_espresso_api()
 			self.create_custom_fields()
 
-		# TODO: Add validation for the API URL and API Key using the built-in validation
-		# def validate_espresso_api(self):
-		#     credentials_entered = False
-		#     if self.auth_type == 'Basic Auth':
-		# 		if self.api_url and self.api_key or not self.api_secret:
-		# 			frappe.throw('Please enter all the Connection API details')
-
 	def create_custom_fields(self):
-		# Get the list of DocTypes from the shots table
-		doctypes = [shot.dt for shot in self.shots]
-
-		# Ensure the 'Espresso Sync ID' child table field exists for each DocType
-		for doctype in doctypes:
-			# Check if the custom field already exists
-			custom_field_exists = frappe.db.exists(
-				"Custom Field", {"dt": doctype, "fieldname": "exclude_from_sync"}
-			)
-
-			# If the custom field does not exist, create it
-			if not custom_field_exists:
-				create_espresso_sync_id_custom_fields(doctype)
+		# Ensure the 'Espresso Sync ID' child table field exists for each DocType in the shots table
+		for shot in self.shots:
+			ensure_sync_fields(shot.dt)
 
 	def sync(self):
 		for shot in self.shots:
-			self.pull.sync_doctype = shot.dt
 			# TODO: handle deletion of objects
 			# TODO: handle URI overrides
 			if shot.do_import:
-				self.pull.sync_direction = "Import"
-				if shot.override_import_request and shot.request_payload:
-					self.import_with_payload_variations(shot)
-				else:
-					self.process_import(shot)
+				self.import_shot(shot)
 			if shot.do_export:
-				self.pull.sync_direction = "Export"
 				self.process_export(shot)
-		# update the last sync date
-		self.last_pull = datetime.datetime.now()
-		self.save()
-		return
+		# not save(): it would write the shots' watermarks back as they were loaded
+		self.db_set("last_pull", now_datetime(), update_modified=False)
 
-	def import_with_payload_variations(self, shot):
-		payload = shot.request_payload
-		payloads = tamp_dynamic_parameter(payload, shot, self)
+	def set_watermark(self, shot, fieldname, value):
+		shot.set(fieldname, value)
+		frappe.db.set_value(SHOT_DOCTYPE, shot.name, fieldname, value, update_modified=False)
+
+	def import_shot(self, shot):
+		"""Import every object the shot's request(s) return. last_import moves to the start
+		of this run only when nothing failed."""
+		started = now_datetime()
+		failures = self.pull.failures
+		self.pull.sync_doctype, self.pull.sync_direction = shot.dt, "Import"
+		payloads = [None]
+		if shot.override_import_request and shot.request_payload:
+			payloads = [
+				payload.replace('""', '"')
+				for payload in tamp_dynamic_parameter(shot.request_payload, shot, self)
+			]
 		for payload in payloads:
-			payload = payload.replace('""', '"')
-			# does a pull log go here? what does the payload match up with?
 			self.process_import(shot, payload)
+		if self.pull.failures == failures:
+			self.set_watermark(shot, "last_import", started)
 
 	def pull_import_data(self, shot, payload=None, single_pull=False):
+		"""Send the shot's import request(s) and return [{"call_string", "response_data"}]
+		for those that succeeded. Each request gets one Pull Log entry, holding its response.
+		A failed request is logged and the next one still runs; with `single_pull` (a sample
+		for the form) nothing is logged and a failure raises."""
 		url = shot.get_api_url()
 		# first check to see if we need to return a single URL or a list of URLs
 		if single_pull:
 			# grab a single doc for the dynamic parameter substitution
 			doc_name = frappe.get_all(shot.dt, limit=1, pluck="name")
-			urls = tamp_dynamic_parameter(url, shot, self, doc_name)
-			urls = [urls[0]]
+			urls = tamp_dynamic_parameter(url, shot, self, doc_name)[:1]
 		else:
 			urls = tamp_dynamic_parameter(url, shot, self)
 		headers = self.get_request_headers()
 		import_data = []
 		for url in urls:
 			call_string = f"{url}{headers}{payload}"
-			self.pull.url = url
-			self.pull.request = {"payload": payload, "headers": headers}
 			if shot.override_import_request:
-				self.pull.request_type = shot.import_request_type
-				response = self.session.request(
-					shot.import_request_type, url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT
-				)
+				method, request_url, options = shot.import_request_type, url, {"data": payload}
 			else:
-				self.pull.request_type = "GET"
-				url = shot.get_crud_uri(url, "read")
-				response = self.session.get(url, headers=headers, params=payload, timeout=REQUEST_TIMEOUT)
-			self.pull.response = json.dumps(response.json(), indent=4)
-			# test if response is valid server response, if not, throw error
-			if not str(response.status_code).startswith("2"):
-				# call_string holds the request headers, i.e. the credentials
-				shown = redact_pull_log_values({"url": url, "response": response.text}, self.name)
-				frappe.throw(
-					shown["response"], title=_("Invalid Server Response for {0}").format(shown["url"])
-				)
-				# put the error in the pull log
-				self.pull.sync_status = "Failure"
-				self.pull.traceback = response.text
-				self.pull.save()
-			# test if response is valid json, if not, throw error
-			response_data = {}
+				method, request_url, options = "GET", shot.get_crud_uri(url, "read"), {"params": payload}
+			# a map's {doctype} may have changed it for the previous request's objects
+			self.pull.sync_doctype = shot.dt
+			self.pull.url, self.pull.request_type = request_url, method
+			self.pull.request = {"payload": payload, "headers": headers}
 			try:
-				response_data = response.json()
-			except ValueError:
-				frappe.throw(response.text, title=_("Invalid JSON Response from API"))
-				# put the error in the pull log
-				self.pull.sync_status = "Failure"
-				self.pull.traceback = response.text
+				response = self.session.request(
+					method, request_url, headers=headers, timeout=REQUEST_TIMEOUT, **options
+				)
+			except requests.RequestException as e:
+				if single_pull:
+					raise
+				self.pull.fail("request-error", f"{type(e).__name__}: {e}", origin="request")
 				self.pull.save()
-			# if an objects_key is set, filter the response data to only include the objects_key value
-			if shot.objects_key:
-				try:
-					response_data = response_data[shot.objects_key]
-				except KeyError:
-					frappe.throw(
-						_("Objects Key {0} not found in response data").format(shot.objects_key),
-						title=_("Invalid Objects Key"),
-					)
-					# put the error in the pull log
-					self.pull.sync_status = "Failure"
-					self.pull.traceback = f"Objects Key {shot.objects_key} not found in response data"
-					self.pull.save()
-			# add the response data to the import_data list
-			api_call = {"call_string": call_string, "response_data": response_data}
-			import_data.append(api_call)
-
+				continue
+			self.pull.response = response.text
+			try:
+				response_data = read_import_response(shot, response)
+			except ImportResponseError as e:
+				if single_pull:
+					# call_string holds the request headers, i.e. the credentials
+					shown = redact_pull_log_values({"url": request_url, "response": e.shown}, self.name)
+					frappe.throw(shown["response"], title=e.title.format(shown["url"]))
+				self.pull.fail(e.code, e.message, origin="request")
+				self.pull.save()
+				continue
+			if not single_pull:
+				self.pull.sync_status = "Success"
+				self.pull.save()
+			import_data.append({"call_string": call_string, "response_data": response_data})
 		return import_data
 
 	def process_export(self, shot):
 		doctype = shot.dt
+		self.pull.sync_doctype, self.pull.sync_direction = doctype, "Export"
 		mapping_template = json.loads(shot.object_map_export)
 		self.pull.map = json.dumps(mapping_template, indent=4)
-		# get the last modified timestamp of the sync connection shot
-		shot_last_modified = shot.modified
-		last_export = shot.last_export
+		last_export = get_datetime(shot.last_export) if shot.last_export else None
+		# the filter below reads exclude_from_sync
+		ensure_sync_fields(doctype)
 		# filter out exclude_from_sync by default
 		filters = [[doctype, "exclude_from_sync", "=", 0]]
-		# if the shot was modified after the last export, re-sync all docs
-		if last_export and shot_last_modified < last_export:
+		# only what changed since the last export, unless the shot changed since the last sync
+		last_pull = get_datetime(self.last_pull) if self.last_pull else None
+		shot_modified = get_datetime(shot.modified)
+		if last_export and last_pull and shot_modified and shot_modified < last_pull:
 			filters.append([doctype, "modified", ">", last_export])
 		# if "Only Export Synced Documents" is checked, only sync docs that have a sync_id
 		if shot.export_existing:
@@ -255,149 +305,146 @@ class EspressoSyncConnection(Document):
 		if shot.filters:
 			# shot.filters is a list of lists, we need to add each item of each list to the filters list
 			filters.extend(json.loads(shot.filters))
-		# get the docs to export
-		doc_names = frappe.get_list(doctype, filters=filters, pluck="name")
-		# loop through the docs
+		# the oldest change first, so the watermark can stop below the first failure
+		rows = frappe.get_list(
+			doctype, filters=filters, fields=["name", "modified"], order_by="modified asc", distinct=True
+		)
 		api_url = shot.get_api_url()
-		for doc_name in doc_names:
-			self.pull.sync_doc = doc_name
-			# ensure this doc is not excluded from sync
-			if frappe.db.get_value(
-				doctype="Espresso Sync ID",
-				filters={"sync_connection": self.name, "parent": doc_name},
-				fieldname="dont_sync",
-			):
+		results = []
+		seen = set()
+		for row in rows:
+			if row.name in seen:
 				continue
+			seen.add(row.name)
+			results.append((row.modified, self.export_document(shot, row.name, api_url, mapping_template)))
+		watermark = export_watermark(results, last_export)
+		if watermark != last_export:
+			self.set_watermark(shot, "last_export", watermark)
+
+	def export_document(self, shot, doc_name, api_url, mapping_template) -> bool:
+		"""Export one document; False when it failed (and was logged). A document that is
+		excluded, or whose map gives nothing, counts as done."""
+		doctype = shot.dt
+		self.pull.sync_doc = doc_name
+		sync_id = frappe.db.get_value(
+			"Espresso Sync ID",
+			{"sync_connection": self.name, "parenttype": doctype, "parent": doc_name},
+			["external_id", "dont_sync"],
+			as_dict=True,
+		)
+		# ensure this doc is not excluded from sync
+		if sync_id and sync_id.dont_sync:
+			self.pull.clear_entry()
+			return True
+		try:
 			# the URL for this document alone: a tag that gives no value (or several) must not
 			# send it to another document's URL
 			api_urls = tamp_dynamic_parameter(api_url, shot, self, [doc_name])
 			if len(api_urls) != 1:
-				self.pull.sync_status = "Failure"
-				self.pull.url, self.pull.request_type, self.pull.request, self.pull.response = (
-					api_url,
-					"",
-					"{}",
-					"{}",
+				self.pull.url, self.pull.request_type = api_url, ""
+				self.pull.fail(
+					"url-variations", f"The URL gave {len(api_urls)} variations for {doc_name}, not one"
 				)
-				self.pull.traceback = f"The URL gave {len(api_urls)} variations for {doc_name}, not one"
 				self.pull.save()
-				continue
-			object_api_url = api_urls[0]
+				return False
 			doc = frappe.get_doc(doctype, doc_name)
-			doc_data = doc.as_dict()
 			self.pull.document = str(doc.as_json())
+			doc_data = doc.as_dict()
 			parsed_data = extract_object(mapping_template, doc_data, sync_connection=self, doc=doc_data)
 			if not parsed_data:
-				continue
-			# Check if the document has a unique ID for the external system
-			external_id = frappe.db.get_value(
-				doctype="Espresso Sync ID",
-				filters={"sync_connection": self.name, "parent": doc.name},
-				fieldname="external_id",
+				self.pull.clear_entry()
+				return True
+			return self.export_doc(
+				shot, doc, parsed_data, api_urls[0], sync_id.external_id if sync_id else None
 			)
-			try:
-				self.export_doc(shot, doc, parsed_data, object_api_url, external_id)
-			except (requests.RequestException, ValueError) as e:
-				# a timeout or a body that is not JSON fails this document only: the others,
-				# and the external IDs already stored for them, are kept
-				self.pull.sync_status = "Failure"
-				self.pull.traceback = f"{type(e).__name__}: {e}"
-				frappe.publish_realtime(
-					"show_alert",
-					{"message": f"Error exporting {doctype}: {doc.name}", "indicator": "orange"},
-					user=frappe.session.user,
-				)
+		except Exception as e:
+			# a timeout, or a body requests cannot send, fails this document only: the others,
+			# and the external IDs already stored for them, are kept
+			self.pull.fail(type(e).__name__, f"{type(e).__name__}: {e}")
+			self.alert_export_failure(doctype, doc_name)
 			self.pull.save()
-		# update the last_export timestamp
-		frappe.db.set_value("Espresso Sync Connection Shot", shot.name, "last_export", frappe.utils.now())
-		return
+			return False
 
-	def export_doc(self, shot, doc, parsed_data, object_api_url, external_id):
+	def export_doc(self, shot, doc, parsed_data, object_api_url, external_id) -> bool:
 		"""Send one document to the external system: a PUT when it already has an
-		external ID on this Connection, a POST otherwise."""
-		doctype = doc.doctype
+		external ID on this Connection, a POST otherwise. One Pull Log entry either way."""
 		headers = self.get_request_headers()
-		self.pull.request = json.dumps({"payload": parsed_data, "headers": headers}, indent=4)
-		self.pull.response = "{}"
+		self.pull.request = json.dumps({"payload": parsed_data, "headers": headers}, indent=4, default=str)
 		if external_id:
 			# Update the existing object in the external system
-			object_update_url = shot.get_crud_uri(object_api_url, "update", external_id)
-			self.pull.request_type = "PUT"
-			self.pull.url = object_update_url
-			response = self.session.put(
-				object_update_url, headers=headers, json=parsed_data, timeout=REQUEST_TIMEOUT
-			)
-			self.pull.response = json.dumps(response.json(), indent=4)
-			# handle bad response
-			if str(response.status_code).startswith("2"):
-				self.pull.sync_status = "Success"
-			else:
-				self.pull.sync_status = "Failure"
-				frappe.publish_realtime(
-					"show_alert",
-					{"message": f"Error exporting {doctype}: {doc.name}", "indicator": "orange"},
-					user=frappe.session.user,
-				)
-				frappe.log_error(f"Error exporting {doctype}: {doc.name}", response.text)
-				# put the error in the pull log
-				self.pull.traceback = response.text
-				self.pull.save()
-				# TODO: figure out task updates since they are all erroring here on an undefined response
-			return
-		# Create a new object in the external system
-		object_create_url = shot.get_crud_uri(object_api_url, "create")
-		self.pull.request_type = "POST"
-		self.pull.url = object_create_url
-		response = self.session.post(
-			object_create_url, headers=headers, json=parsed_data, timeout=REQUEST_TIMEOUT
+			method, url = "PUT", shot.get_crud_uri(object_api_url, "update", external_id)
+		else:
+			# Create a new object in the external system
+			method, url = "POST", shot.get_crud_uri(object_api_url, "create")
+		self.pull.request_type, self.pull.url = method, url
+		response = self.session.request(
+			method, url, headers=headers, json=parsed_data, timeout=REQUEST_TIMEOUT
 		)
-		response_data = response.json()
-		self.pull.response = str(response_data)
-		# If the external system returns a unique ID, store it in the espresso_sync_id field
-		if str(response.status_code).startswith("2"):
-			self.pull.sync_status = "Success"
-			if "id" in response_data:
-				# Add the Espresso Sync ID to the document
-				doc.append(
-					"espresso_sync_ids", {"sync_connection": self.name, "external_id": response_data["id"]}
+		self.pull.response = response.text
+		if not 200 <= response.status_code < 300:
+			self.pull.fail("http-status", f"HTTP {response.status_code}", origin="request")
+			self.alert_export_failure(doc.doctype, doc.name)
+			self.pull.save()
+			return False
+		self.pull.sync_status = "Success"
+		if not external_id:
+			try:
+				response_data = response.json()
+			except ValueError:
+				response_data = None
+			new_id = response_data.get("id") if isinstance(response_data, dict) else None
+			if new_id in (None, ""):
+				self.pull.diagnostics.append(
+					{
+						"severity": "warning",
+						"code": "no-external-id",
+						"message": "The response has no id: the next export creates the object again",
+						"origin": "request",
+					}
 				)
+			else:
+				# If the external system returns a unique ID, store it in the espresso_sync_id field
+				doc.append("espresso_sync_ids", {"sync_connection": self.name, "external_id": new_id})
 				doc.save()
 				# The object now exists in the external system: a later error in this sync
 				# must not roll back its ID, or the next sync would create it again.
 				frappe.db.commit()  # nosemgrep: frappe-manual-commit -- external side effect already happened; persisting the external id prevents duplicate creation
-		else:
-			self.pull.sync_status = "Failure"
-			frappe.publish_realtime(
-				"show_alert",
-				{"message": f"Error creating {doctype} in external system", "indicator": "orange"},
-				user=frappe.session.user,
-			)
-			self.pull.traceback = response.text
+		self.pull.save()
+		return True
+
+	def alert_export_failure(self, doctype, doc_name):
+		frappe.publish_realtime(
+			"show_alert",
+			{"message": f"Error exporting {doctype}: {doc_name}", "indicator": "orange"},
+			user=frappe.session.user,
+		)
 
 	def process_import(self, shot, payload=None):
 		# pull the import data from the API
-		import_data = self.pull_import_data(shot, payload)
-		for api_call in import_data:
+		for api_call in self.pull_import_data(shot, payload):
 			response_data = api_call["response_data"]
-			call_string = api_call["call_string"]
-			# test if the response contains a list of objects and run a loop to process each object
-			if isinstance(response_data, list):
-				for i, import_object in enumerate(response_data):
-					self.process_import_object(shot, import_object, call_string)
-					# show progress on frontend
-					frappe.publish_realtime(
-						"import_progress",
-						{"doctype": shot.dt, "progress": i, "total": len(import_data)},
-						user=frappe.session.user,
-					)
-			else:
-				self.process_import_object(shot, response_data, call_string)
-		# update the last_import timestamp
-		frappe.db.set_value("Espresso Sync Connection Shot", shot.name, "last_import", frappe.utils.now())
-		return
+			# a list of objects, or one object
+			objects = response_data if isinstance(response_data, list) else [response_data]
+			for i, import_object in enumerate(objects, start=1):
+				self.import_object(shot, import_object, api_call["call_string"])
+				# show progress on frontend
+				frappe.publish_realtime(
+					"import_progress",
+					{"doctype": shot.dt, "progress": i, "total": len(objects)},
+					user=frappe.session.user,
+				)
+
+	def import_object(self, shot, import_object, call_string):
+		"""Import one object. A failure is logged and the run goes on with the next one."""
+		try:
+			self.process_import_object(shot, import_object, call_string)
+		except Exception as e:
+			self.pull.fail(type(e).__name__, f"{type(e).__name__}: {e}")
+			self.pull.save()
 
 	def process_import_object(self, shot, import_object, call_string, save=True):
-		self.pull.object = json.dumps(import_object, indent=4)
+		object_json = json.dumps(import_object, indent=4, default=str)
+		self.pull.object = object_json
 		id_field = shot.id_field_map
 		modified_date_field = shot.modified_date_field_map
 		modified_date_format = shot.modified_date_format
@@ -413,8 +460,6 @@ class EspressoSyncConnection(Document):
 				frappe.throw(
 					_("ID field {0} not found in response data").format(id_field), title=_("Invalid ID Field")
 				)
-				self.pull.sync_status = "Failure"
-				self.pull.traceback = f"ID field {id_field} not found in response data"
 		else:
 			external_id = hashlib.md5(call_string.encode()).hexdigest()
 		# test if the response contains a modified date field, if not, throw error
@@ -450,21 +495,21 @@ class EspressoSyncConnection(Document):
 							),
 							title=_("Invalid Modified Date Field"),
 						)
-		# if the object map is a list, then we need to loop through each item in the list
-		if isinstance(object_map, list):
-			for single_map in object_map:
-				self.pull.map = json.dumps(single_map, indent=4)
-				parsed_data = extract_object(single_map, import_object, self)
-				if parsed_data:
-					doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
-		else:
-			parsed_data = extract_object(object_map, import_object, self)
+		# the object map is a map, or a list of maps that each make a document
+		doc = None
+		for single_map in object_map if isinstance(object_map, list) else [object_map]:
+			self.pull.object = object_json
+			self.pull.map = json.dumps(single_map, indent=4)
+			parsed_data = extract_object(single_map, import_object, self)
 			if parsed_data:
-				doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save)
+				doc = self.update_or_create_doc(shot, parsed_data, external_id, modified_date, save) or doc
 
 		return doc
 
 	def update_or_create_doc(self, shot, parsed_data, external_id, modified_date, save=True):
+		"""Update the document this Connection imported as `external_id`, or create one.
+		With `save` false (a test import) nothing is written: no document, no custom field,
+		no Pull Log."""
 		# check to see if the map contains a condition
 		if "{condition}" in parsed_data:
 			# conditions are specified as a list of logical tests, such as:
@@ -473,105 +518,73 @@ class EspressoSyncConnection(Document):
 			#     "{{ billing.city != shipping.city }}"
 			# ]
 			# the condition is evaluated as true only if all of the tests are true
-			tests = parsed_data["{condition}"]
-			# remove the condition from the parsed_data dict
-			del parsed_data["{condition}"]
-			# check if all the tests in the condition are 'True' strings
-			if all(test == "True" for test in tests):
-				pass
-			else:
-				# if any of the tests are not 'True', return
+			tests = parsed_data.pop("{condition}")
+			# if any of the tests are not 'True', return
+			if not all(test == "True" for test in tests):
 				return None
 
 		# check to see if the doctype is specified in the map
-		if "{doctype}" in parsed_data:
-			doctype = parsed_data["{doctype}"]
-			# remove the doctype from the parsed_data dict
-			del parsed_data["{doctype}"]
-			# Check if the custom field already exists for this doctype
-			custom_field_exists = frappe.db.exists(
-				"Custom Field", {"dt": doctype, "fieldname": "exclude_from_sync"}
-			)
-
-			# If the custom field does not exist, create it
-			if not custom_field_exists:
-				create_espresso_sync_id_custom_fields(doctype)
-		else:
-			doctype = shot.dt
+		doctype = parsed_data.pop("{doctype}", None) or shot.dt
+		if save:
+			ensure_sync_fields(doctype)
 
 		# set the pull log doctype
 		self.pull.sync_doctype = doctype
 
 		# check if the map overrides the external_id
 		if "{external_id}" in parsed_data:
-			external_id = parsed_data["{external_id}"]
-			# remove the external_id from the parsed_data dict
-			del parsed_data["{external_id}"]
+			external_id = parsed_data.pop("{external_id}")
 
-		# Check if a document with a matching Sync ID already exists
-		sync_id_list = frappe.db.get_all(
+		# Check if a document of this doctype with a matching Sync ID already exists
+		sync_id_parents = frappe.get_all(
 			"Espresso Sync ID",
-			filters={"sync_connection": self.name, "external_id": external_id},
-			fields=["parent"],
+			filters={"sync_connection": self.name, "parenttype": doctype, "external_id": external_id},
+			pluck="parent",
+		)
+		doc = next(
+			(
+				frappe.get_doc(doctype, parent)
+				for parent in sync_id_parents
+				if frappe.db.exists(doctype, parent)
+			),
+			None,
 		)
 
-		doc = None
-		# confirm that a matching document with a matching doctype exists
-		if sync_id_list:
-			for sync_id_entry in sync_id_list:
-				doc_exists = frappe.db.exists(doctype, sync_id_entry.parent)
-				if doc_exists:
-					doc = frappe.get_doc(doctype, sync_id_entry.parent)
-					break
-
 		if doc:
-			# # check if the document has been modified after the external system
-			# if modified_date and (doc.modified is None or doc.modified > modified_date or shot.modified > doc.modified):
-			#     return
-			# else:
 			# update the existing doc
-			try:
-				doc.update(parsed_data)
-				self.pull.sync_status = "Success"
-				self.pull.sync_doc = doc.name
-			except Exception as e:
-				self.pull.sync_status = "Failure"
-				self.pull.sync_doc = ""
-				self.pull.traceback = str(e)
-			# save the pull log entry
-			finally:
-				self.pull.document = doc.as_json()
-				self.pull.save()
-			return doc
-
+			doc.update(parsed_data)
 		else:
 			doc = frappe.new_doc(doctype)
 			doc.update(parsed_data)
 
 			# check if a document with the same name already exists
 			if doc.name and frappe.db.exists(doctype, doc.name):
-				# if a document with the same name exists, rename the document
+				# if a document with the same name exists, update that document
 				doc = frappe.get_doc(doctype, doc.name)
 				doc.update(parsed_data)
 
 			# Create Espresso Sync ID child table entry
-			doc.append("espresso_sync_ids", {"sync_connection": self.name, "external_id": external_id})
-		if save:
-			# validate and save the doc
-			try:
-				doc.run_method("validate")
-				doc.save()
-				self.pull.sync_status = "Success"
-				self.pull.sync_doc = doc.name
-				self.pull.document = doc.as_json()
-			except Exception as e:
-				self.pull.sync_status = "Failure"
-				self.pull.sync_doc = ""
-				self.pull.document = doc.as_json()
-				self.pull.traceback = str(e)
-			# save the pull log entry
-			finally:
-				self.pull.save()
+			if doc.meta.has_field("espresso_sync_ids"):
+				doc.append("espresso_sync_ids", {"sync_connection": self.name, "external_id": external_id})
+
+		if not save:
+			return doc
+
+		# validate and save the doc
+		frappe.db.savepoint(IMPORT_SAVEPOINT)
+		try:
+			doc.run_method("validate")
+			doc.save()
+			self.pull.sync_status = "Success"
+			self.pull.sync_doc = doc.name
+		except Exception as e:
+			frappe.db.rollback(save_point=IMPORT_SAVEPOINT)
+			self.pull.fail(type(e).__name__, str(e))
+			self.pull.sync_doc = ""
+		# save the pull log entry
+		finally:
+			self.pull.document = doc.as_json()
+			self.pull.save()
 		return doc
 
 	@frappe.whitelist()
@@ -579,14 +592,13 @@ class EspressoSyncConnection(Document):
 		# calls the external API with the stored credentials
 		require_sync_manager(self, "write")
 		# get a list of up to 10 objects from the given API endpoint
-		shot = frappe.get_doc("Espresso Sync Connection Shot", shot_name)
+		shot = frappe.get_doc(SHOT_DOCTYPE, shot_name)
 		sample_data = self.pull_import_data(shot, payload=None, single_pull=True)
-		sample_data = sample_data[0]["response_data"]
 		# test if the response contains a list of objects, if not, throw error
-		if not isinstance(sample_data, list):
+		if not sample_data or not isinstance(sample_data[0]["response_data"], list):
 			frappe.throw(_("The API response should contain a list of objects"))
 
-		return sample_data[:10]
+		return sample_data[0]["response_data"][:10]
 
 	@frappe.whitelist()
 	def get_reference_docs(self, doctype: str):
@@ -620,11 +632,10 @@ class EspressoSyncConnection(Document):
 
 	@frappe.whitelist()
 	def test_import(self, shot_name: str, sample_object: str):
-		# may create custom fields and Pull Log rows
+		# maps the sample with the stored map; writes nothing
 		require_sync_manager(self, "write")
-		# shot = frappe._dict(json.loads(shot))
 		import_object = frappe._dict(json.loads(sample_object))
-		shot = frappe.get_doc("Espresso Sync Connection Shot", shot_name)
+		shot = frappe.get_doc(SHOT_DOCTYPE, shot_name)
 		return self.process_import_object(shot=shot, import_object=import_object, call_string="", save=False)
 
 
@@ -660,6 +671,12 @@ def sync_action(doc: str):
 
 
 # Custom Fields
+
+
+def ensure_sync_fields(doctype):
+	"""Add the Sync tab (Exclude from Sync, Espresso Sync IDs) to `doctype` unless it has it."""
+	if not frappe.db.exists("Custom Field", {"dt": doctype, "fieldname": "exclude_from_sync"}):
+		create_espresso_sync_id_custom_fields(doctype)
 
 
 def create_espresso_sync_id_custom_fields(doctype):

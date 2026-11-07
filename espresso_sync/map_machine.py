@@ -3,6 +3,7 @@
 
 import json
 import re
+from functools import lru_cache
 
 import frappe
 import jsonata
@@ -125,21 +126,45 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=None):
 	return finished_parameters
 
 
-def evaluate_jsonata(expression, data):
+# Every evaluation is timeboxed: a runaway expression (an endless loop, a deep recursion)
+# raises D1012 or D1011 instead of holding the worker.
+JSONATA_TIMEOUT_MS = 5000
+JSONATA_MAX_DEPTH = 200
+# returned by evaluate_jsonata for an undefined result when the caller asks to tell it apart
+UNDEFINED = object()
+
+
+@lru_cache(maxsize=512)
+def compile_jsonata(expression: str) -> jsonata.Jsonata:
+	"""Parse a JSONata expression once per process. A syntax error raises, and is not cached."""
+	expr = jsonata.Jsonata(expression)
+	# keep JSONata null (Utils.NULL_VALUE) apart from undefined (None)
+	expr.set_output_convert_nulls(False)
+	return expr
+
+
+def evaluate_jsonata(expression, data, default=None):
 	"""
 	Evaluate a JSONata expression against the given data.
-	Returns the result or None if evaluation fails.
+	Returns the result, None for JSONata null, and `default` when the result is
+	undefined or the evaluation fails (the error is logged).
 
 	jsonata-python reads only JSON types, so the data goes through Frappe's JSON
 	encoder first: datetimes, dates, Decimals and the like become what an API
 	would send, as strings or numbers.
 	"""
 	try:
-		expr = jsonata.Jsonata(expression)
-		return expr.evaluate(json.loads(frappe.as_json(data)))
+		expr = compile_jsonata(expression)
+		# a fresh frame per evaluation: its timebox starts now, not when the expression was cached
+		bounds = jsonata.Jsonata.Frame(None)
+		bounds.set_runtime_bounds(JSONATA_TIMEOUT_MS, JSONATA_MAX_DEPTH)
+		result = expr.evaluate(json.loads(frappe.as_json(data)), bounds)
 	except Exception as e:
 		frappe.log_error(f"Error evaluating JSONata expression '{expression}': {e}")
-		return None
+		return default
+	if result is None:
+		return default
+	return jsonata.Utils.convert_nulls(result)
 
 
 def extract_object(object_map, object, sync_connection=None, doc=None):
@@ -179,9 +204,11 @@ def extract_object(object_map, object, sync_connection=None, doc=None):
 				# Legacy map, authored by a System Manager; removed with the legacy executor.
 				template_result = frappe.render_template(template_value, object)  # nosemgrep: frappe-ssti
 				result[key] = float(template_result) if "." in template_result else int(template_result)
-			# Everything else is treated as a JSONata expression
+			# Everything else is treated as a JSONata expression; an undefined result leaves the key out
 			else:
-				result[key] = evaluate_jsonata(value, object)
+				evaluated = evaluate_jsonata(value, object, default=UNDEFINED)
+				if evaluated is not UNDEFINED:
+					result[key] = evaluated
 
 		# Handle dictionary values (nested objects or legacy function objects)
 		elif isinstance(value, dict):
