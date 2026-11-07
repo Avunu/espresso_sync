@@ -1,0 +1,19 @@
+openapi: 3.1.0
+info: { title: Quirks, version: 2026-01-01 }
+paths:
+  /switches:
+    get:
+      operationId: listSwitches
+      responses:
+        200:
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  on: { type: boolean }
+                  off: { type: boolean }
+                  state: { type: string, enum: [on, off, yes, no] }
+                  since: { type: string, format: date, example: 2026-01-01 }
+                  count: { type: integer }

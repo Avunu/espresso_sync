@@ -1,0 +1,30 @@
+# oas30.yaml as the import screen upgrades it to OpenAPI 3.1: nullable becomes a type
+# list, a boolean exclusiveMinimum becomes the number itself.
+openapi: 3.1.0
+info: { title: Shop, version: "1" }
+paths:
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200":
+          description: ok
+          content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } }
+components:
+  schemas:
+    Order:
+      type: object
+      required: [id]
+      properties:
+        id: { type: integer, readOnly: true }
+        note: { type: [string, "null"] }
+        status: { type: string, enum: [open, closed] }
+        lines: { type: array, items: { $ref: "#/components/schemas/Line" } }
+    Line:
+      allOf:
+        - { $ref: "#/components/schemas/Base" }
+        - type: object
+          required: [sku]
+          properties: { sku: { type: string }, qty: { type: number, exclusiveMinimum: 0 } }
+    Base: { type: object, properties: { line_id: { type: string, format: uuid } } }

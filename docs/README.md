@@ -10,7 +10,8 @@ Espresso Sync moves documents between a Frappe site and external REST APIs, in e
 
 ## How it fits together
 
-- An **Espresso Sync Connection** holds an API's domain, base path, credentials (Basic or a header) and an optional rate limit. Only a System Manager can create, change or run one.
+- An **Espresso Sync Connection** holds an API's domain, base path, credentials (Basic or a header), an optional rate limit, and the **Allowed Host**, the one host its credentials are sent to. Only a System Manager can create, change or run one.
+- An **Espresso Sync API Spec** holds an API's OpenAPI 3.1 description, which the transform editor reads operations and schemas from. See [API Specs and schemas](api-specs.md).
 - Each of its **shots** ties one DocType to one endpoint. A shot imports, exports, or both, and has a map for each direction.
 - Imported objects are matched to documents through the **Espresso Sync IDs** table the app adds, on a **Sync** tab, to each DocType a shot names. A document's **Exclude from Sync** box keeps it out of exports.
 - Every request is recorded in an **Espresso Sync Pull Log**, with its response, and so is every object imported or document exported, with its **Diagnostics**. Credentials are redacted before the log is saved. Log Settings deletes entries older than 30 days; change the period there.
@@ -30,6 +31,7 @@ Each scheduled sync is a background job on the `long` queue. A Connection never 
 
 ## What a sync does
 
+- Every request goes to public addresses only, follows at most 5 redirects and reads at most 20 MiB; credentials go only to the Allowed Host. See [Where requests go](api-specs.md#where-requests-go).
 - An API that answers 429 Too Many Requests is waited for, as its `Retry-After` says (up to a minute), and asked again, at most three more times.
 - A request that fails, an object that cannot be imported, or a document that cannot be exported is logged as a failure in the Pull Log, and the sync goes on with the next one.
 - An imported object that matches a document this Connection imported before (by its external ID, within the shot's DocType) updates and saves that document.

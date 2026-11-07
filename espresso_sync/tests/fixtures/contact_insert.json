@@ -1,0 +1,357 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "type": "object",
+ "title": "Contact",
+ "x-frappe": {
+  "doctype": "Contact",
+  "mode": "insert",
+  "istable": false
+ },
+ "required": [],
+ "additionalProperties": false,
+ "properties": {
+  "first_name": {
+   "type": "string",
+   "maxLength": 140,
+   "title": "First Name",
+   "x-frappe": {
+    "fieldtype": "Data",
+    "options": null,
+    "link": null,
+    "dynamic_link": null,
+    "required": null,
+    "read_only": false,
+    "custom": false
+   }
+  },
+  "user": {
+   "type": "string",
+   "maxLength": 140,
+   "title": "User Id",
+   "x-frappe": {
+    "fieldtype": "Link",
+    "options": "User",
+    "link": "User",
+    "dynamic_link": null,
+    "required": null,
+    "read_only": false,
+    "custom": false
+   }
+  },
+  "status": {
+   "type": "string",
+   "enum": [
+    "Passive",
+    "Open",
+    "Replied"
+   ],
+   "title": "Status",
+   "x-frappe": {
+    "fieldtype": "Select",
+    "options": "Passive\nOpen\nReplied",
+    "link": null,
+    "dynamic_link": null,
+    "required": null,
+    "read_only": false,
+    "custom": false
+   }
+  },
+  "unsubscribed": {
+   "type": [
+    "integer",
+    "boolean"
+   ],
+   "enum": [
+    0,
+    1,
+    false,
+    true
+   ],
+   "title": "Unsubscribed",
+   "x-frappe": {
+    "fieldtype": "Check",
+    "options": null,
+    "link": null,
+    "dynamic_link": null,
+    "required": null,
+    "read_only": false,
+    "custom": false
+   }
+  },
+  "full_name": {
+   "type": "string",
+   "maxLength": 140,
+   "title": "Full Name",
+   "x-frappe": {
+    "fieldtype": "Data",
+    "options": null,
+    "link": null,
+    "dynamic_link": null,
+    "required": null,
+    "read_only": true,
+    "custom": false
+   }
+  },
+  "email_ids": {
+   "type": "array",
+   "title": "Email IDs",
+   "items": {
+    "type": "object",
+    "title": "Contact Email",
+    "x-frappe": {
+     "doctype": "Contact Email",
+     "mode": "insert",
+     "istable": true
+    },
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "ID",
+      "x-frappe": {
+       "fieldtype": "Data",
+       "options": null,
+       "link": null,
+       "dynamic_link": null,
+       "required": null,
+       "read_only": false,
+       "custom": false
+      }
+     },
+     "email_id": {
+      "type": "string",
+      "format": "email",
+      "maxLength": 140,
+      "title": "Email ID",
+      "x-frappe": {
+       "fieldtype": "Data",
+       "options": "Email",
+       "link": null,
+       "dynamic_link": null,
+       "required": "hard",
+       "read_only": false,
+       "custom": false
+      }
+     },
+     "is_primary": {
+      "type": [
+       "integer",
+       "boolean"
+      ],
+      "enum": [
+       0,
+       1,
+       false,
+       true
+      ],
+      "title": "Is Primary",
+      "x-frappe": {
+       "fieldtype": "Check",
+       "options": null,
+       "link": null,
+       "dynamic_link": null,
+       "required": null,
+       "read_only": false,
+       "custom": false
+      }
+     }
+    },
+    "required": [
+     "email_id"
+    ],
+    "additionalProperties": false
+   },
+   "x-frappe": {
+    "fieldtype": "Table",
+    "options": "Contact Email",
+    "link": null,
+    "dynamic_link": null,
+    "required": null,
+    "read_only": false,
+    "custom": false
+   }
+  },
+  "phone_nos": {
+   "type": "array",
+   "title": "Contact Numbers",
+   "items": {
+    "type": "object",
+    "title": "Contact Phone",
+    "x-frappe": {
+     "doctype": "Contact Phone",
+     "mode": "insert",
+     "istable": true
+    },
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "ID",
+      "x-frappe": {
+       "fieldtype": "Data",
+       "options": null,
+       "link": null,
+       "dynamic_link": null,
+       "required": null,
+       "read_only": false,
+       "custom": false
+      }
+     },
+     "phone": {
+      "type": "string",
+      "maxLength": 140,
+      "title": "Number",
+      "x-frappe": {
+       "fieldtype": "Data",
+       "options": "Phone",
+       "link": null,
+       "dynamic_link": null,
+       "required": "hard",
+       "read_only": false,
+       "custom": false
+      }
+     },
+     "is_primary_phone": {
+      "type": [
+       "integer",
+       "boolean"
+      ],
+      "enum": [
+       0,
+       1,
+       false,
+       true
+      ],
+      "title": "Is Primary Phone",
+      "x-frappe": {
+       "fieldtype": "Check",
+       "options": null,
+       "link": null,
+       "dynamic_link": null,
+       "required": null,
+       "read_only": false,
+       "custom": false
+      }
+     },
+     "is_primary_mobile_no": {
+      "type": [
+       "integer",
+       "boolean"
+      ],
+      "enum": [
+       0,
+       1,
+       false,
+       true
+      ],
+      "title": "Is Primary Mobile",
+      "x-frappe": {
+       "fieldtype": "Check",
+       "options": null,
+       "link": null,
+       "dynamic_link": null,
+       "required": null,
+       "read_only": false,
+       "custom": false
+      }
+     }
+    },
+    "required": [
+     "phone"
+    ],
+    "additionalProperties": false
+   },
+   "x-frappe": {
+    "fieldtype": "Table",
+    "options": "Contact Phone",
+    "link": null,
+    "dynamic_link": null,
+    "required": null,
+    "read_only": false,
+    "custom": false
+   }
+  },
+  "links": {
+   "type": "array",
+   "title": "Links",
+   "items": {
+    "type": "object",
+    "title": "Dynamic Link",
+    "x-frappe": {
+     "doctype": "Dynamic Link",
+     "mode": "insert",
+     "istable": true
+    },
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "ID",
+      "x-frappe": {
+       "fieldtype": "Data",
+       "options": null,
+       "link": null,
+       "dynamic_link": null,
+       "required": null,
+       "read_only": false,
+       "custom": false
+      }
+     },
+     "link_doctype": {
+      "type": "string",
+      "maxLength": 140,
+      "title": "Link Document Type",
+      "x-frappe": {
+       "fieldtype": "Link",
+       "options": "DocType",
+       "link": "DocType",
+       "dynamic_link": null,
+       "required": "hard",
+       "read_only": false,
+       "custom": false
+      }
+     },
+     "link_name": {
+      "type": "string",
+      "maxLength": 140,
+      "title": "Link Name",
+      "x-frappe": {
+       "fieldtype": "Dynamic Link",
+       "options": "link_doctype",
+       "link": null,
+       "dynamic_link": "link_doctype",
+       "required": "hard",
+       "read_only": false,
+       "custom": false
+      }
+     },
+     "link_title": {
+      "type": "string",
+      "maxLength": 140,
+      "title": "Link Title",
+      "x-frappe": {
+       "fieldtype": "Read Only",
+       "options": null,
+       "link": null,
+       "dynamic_link": null,
+       "required": null,
+       "read_only": true,
+       "custom": false
+      }
+     }
+    },
+    "required": [
+     "link_doctype",
+     "link_name"
+    ],
+    "additionalProperties": false
+   },
+   "x-frappe": {
+    "fieldtype": "Table",
+    "options": "Dynamic Link",
+    "link": null,
+    "dynamic_link": null,
+    "required": null,
+    "read_only": false,
+    "custom": false
+   }
+  }
+ }
+}

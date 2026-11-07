@@ -1,0 +1,134 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-11-07 20:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "connection",
+  "column_break_source",
+  "source_url",
+  "source_format",
+  "original_version",
+  "section_break_spec",
+  "spec_hash",
+  "spec_json",
+  "section_break_summary",
+  "operations",
+  "auth_hints"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "description": "The Connection whose API this spec describes.",
+   "fieldname": "connection",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Connection",
+   "options": "Espresso Sync Connection",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "column_break_source",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Where the spec was imported from.",
+   "fieldname": "source_url",
+   "fieldtype": "Data",
+   "label": "Source URL",
+   "options": "URL"
+  },
+  {
+   "default": "OpenAPI 3.1",
+   "description": "The format the spec was written in. It is stored as OpenAPI 3.1 whatever it was: the import screen upgrades Swagger 2.0 and OpenAPI 3.0.",
+   "fieldname": "source_format",
+   "fieldtype": "Select",
+   "label": "Source Format",
+   "options": "OpenAPI 3.1\nOpenAPI 3.0\nSwagger 2.0"
+  },
+  {
+   "description": "The version in the spec as imported, before any upgrade.",
+   "fieldname": "original_version",
+   "fieldtype": "Data",
+   "label": "Original Version"
+  },
+  {
+   "fieldname": "section_break_spec",
+   "fieldtype": "Section Break",
+   "label": "Spec"
+  },
+  {
+   "description": "SHA-256 of the spec's canonical JSON.",
+   "fieldname": "spec_hash",
+   "fieldtype": "Data",
+   "label": "Spec Hash",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "The OpenAPI 3.1 description, bundled: its references point inside it only.",
+   "fieldname": "spec_json",
+   "fieldtype": "JSON",
+   "label": "Spec",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_summary",
+   "fieldtype": "Section Break",
+   "label": "Summary"
+  },
+  {
+   "description": "Each operation's method, path, id, summary and parts, read from the spec.",
+   "fieldname": "operations",
+   "fieldtype": "JSON",
+   "label": "Operations",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "What the spec's securitySchemes suggest for the Connection's authentication. A suggestion only: it is never applied to the Connection.",
+   "fieldname": "auth_hints",
+   "fieldtype": "JSON",
+   "label": "Authentication Hints",
+   "no_copy": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-07 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Espresso Sync",
+ "name": "Espresso Sync API Spec",
+ "naming_rule": "By script",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

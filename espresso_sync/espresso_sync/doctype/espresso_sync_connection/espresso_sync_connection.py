@@ -20,6 +20,7 @@ from espresso_sync.map_machine import extract_object, tamp_dynamic_parameter
 from espresso_sync.redaction import PULL_LOG_FIELDS, redact_pull_log_values
 from espresso_sync.requests_machine import REQUEST_TIMEOUT, RateLimitedSession
 from espresso_sync.scheduler import holding_sync_lock
+from espresso_sync.utils.safe_fetch import credentials_apply, host_of, normalize_allowed_host
 
 SHOT_DOCTYPE = "Espresso Sync Connection Shot"
 # rolled back to when saving one imported document fails, so it leaves nothing half-written
@@ -169,6 +170,7 @@ class EspressoSyncConnection(Document):
 			EspressoSyncConnectionShot,
 		)
 
+		allowed_host: DF.Data | None
 		api_base: DF.Data | None
 		api_domain: DF.Data | None
 		api_key: DF.Data | None
@@ -196,6 +198,7 @@ class EspressoSyncConnection(Document):
 		if not self.flags.ignore_permissions:
 			frappe.only_for("System Manager")
 		self.validate_cron_rule()
+		self.validate_allowed_host()
 		if self.pull_shot:
 			self.create_custom_fields()
 
@@ -207,6 +210,46 @@ class EspressoSyncConnection(Document):
 			frappe.throw(_("A Cron Rule is needed when the Sync Frequency is Cron"))
 		if not croniter.is_valid(cron_rule):
 			frappe.throw(_("{0} is not a valid cron rule").format(frappe.bold(cron_rule)))
+
+	def validate_allowed_host(self):
+		"""The host the credentials may go to: the API Domain's unless set otherwise."""
+		try:
+			self.allowed_host = normalize_allowed_host(self.allowed_host) or host_of(self.api_domain)
+		except ValueError:
+			frappe.throw(
+				_("{0} is not a host: give a host name, or host:port, without a scheme or a path").format(
+					frappe.bold(self.allowed_host or "")
+				),
+				title=_("Invalid Allowed Host"),
+			)
+		domain_host = host_of(self.api_domain)
+		if (
+			self.allowed_host
+			and domain_host
+			and not credentials_apply(f"https://{domain_host}", self.allowed_host)
+		):
+			frappe.msgprint(
+				_(
+					"The API Domain's host {0} is not the Allowed Host {1}: requests to it are sent without credentials"
+				).format(frappe.bold(domain_host), frappe.bold(self.allowed_host)),
+				indicator="orange",
+				alert=True,
+			)
+
+	def credentials_withheld(self, url: str) -> bool:
+		"""Note in the Pull Log entry when the request to `url` goes without the credentials,
+		because its host is not the Allowed Host."""
+		if credentials_apply(url, self.allowed_host) or not self.get_credential_headers():
+			return False
+		self.pull.diagnostics.append(
+			{
+				"severity": "warning",
+				"code": "credentials-withheld",
+				"message": f"{host_of(url)} is not the Allowed Host ({self.allowed_host or 'none'}): the request was sent without credentials",
+				"origin": "request",
+			}
+		)
+		return True
 
 	def create_custom_fields(self):
 		# Ensure the 'Espresso Sync ID' child table field exists for each DocType in the shots table
@@ -270,9 +313,16 @@ class EspressoSyncConnection(Document):
 			self.pull.sync_doctype = shot.dt
 			self.pull.url, self.pull.request_type = request_url, method
 			self.pull.request = {"payload": payload, "headers": headers}
+			self.credentials_withheld(request_url)
 			try:
 				response = self.session.request(
-					method, request_url, headers=headers, timeout=REQUEST_TIMEOUT, **options
+					method,
+					request_url,
+					headers=self.get_plain_headers(),
+					credentials=self.get_credential_headers(),
+					allowed_host=self.allowed_host,
+					timeout=REQUEST_TIMEOUT,
+					**options,
 				)
 			except requests.RequestException as e:
 				if single_pull:
@@ -392,8 +442,15 @@ class EspressoSyncConnection(Document):
 			# Create a new object in the external system
 			method, url = "POST", shot.get_crud_uri(object_api_url, "create")
 		self.pull.request_type, self.pull.url = method, url
+		self.credentials_withheld(url)
 		response = self.session.request(
-			method, url, headers=headers, json=parsed_data, timeout=REQUEST_TIMEOUT
+			method,
+			url,
+			headers=self.get_plain_headers(),
+			credentials=self.get_credential_headers(),
+			allowed_host=self.allowed_host,
+			json=parsed_data,
+			timeout=REQUEST_TIMEOUT,
 		)
 		self.pull.response = response.text
 		if not 200 <= response.status_code < 300:
@@ -631,19 +688,22 @@ class EspressoSyncConnection(Document):
 			reference_docs.append(doc)
 		return reference_docs
 
+	def get_credential_headers(self) -> dict[str, str]:
+		"""The headers that carry the credentials: sent only to the Allowed Host."""
+		secret = self.get_password("api_secret", raise_exception=False) or ""
+		if self.auth_type == "Header-based" and self.api_key:
+			return {self.api_key: secret}
+		if self.auth_type == "Basic" and (self.api_key or secret):
+			credentials = f"{self.api_key or ''}:{secret}"
+			return {"Authorization": f"Basic {base64.b64encode(credentials.encode()).decode()}"}
+		return {}
+
+	def get_plain_headers(self) -> dict[str, str]:
+		return {"Content-Type": "application/json"}
+
 	def get_request_headers(self):
-		headers = {}
-		if self.auth_type == "Header-based":
-			headers[self.api_key] = self.get_password("api_secret")
-		elif self.auth_type == "Basic":
-			credentials = f"{self.api_key}:{self.get_password('api_secret')}"
-			encoded_credentials = base64.b64encode(credentials.encode()).decode()
-			headers["Authorization"] = f"Basic {encoded_credentials}"
-
-		# append a content-type application/json header
-		headers["Content-Type"] = "application/json"
-
-		return headers
+		"""Every header of a request to the Allowed Host (as the Pull Log records it, redacted)."""
+		return {**self.get_credential_headers(), **self.get_plain_headers()}
 
 	@frappe.whitelist()
 	def test_import(self, shot_name: str, sample_object: str):

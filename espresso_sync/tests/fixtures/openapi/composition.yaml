@@ -1,0 +1,74 @@
+openapi: 3.1.0
+info: { title: Payments, version: "1" }
+servers: [{ url: "https://api.example.invalid/v2" }]
+security: [{ apiKey: [] }]
+paths:
+  /payments:
+    post:
+      operationId: createPayment
+      summary: Create a payment
+      tags: [payments]
+      requestBody:
+        $ref: "#/components/requestBodies/Payment"
+      responses:
+        "201":
+          $ref: "#/components/responses/Payment"
+        default:
+          description: error
+          content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+components:
+  requestBodies:
+    Payment:
+      required: true
+      content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } }
+  responses:
+    Payment:
+      description: created
+      content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } }
+  schemas:
+    Payment:
+      allOf:
+        - $ref: "#/components/schemas/Entity"
+        - type: object
+          required: [amount, method]
+          properties:
+            amount: { type: number }
+            method:
+              oneOf:
+                - $ref: "#/components/schemas/Card"
+                - $ref: "#/components/schemas/BankTransfer"
+            metadata:
+              type: object
+              additionalProperties: { type: string }
+            secret: { type: string, writeOnly: true }
+    Entity:
+      type: object
+      properties:
+        id: { type: string, readOnly: true }
+        created: { type: string, format: date-time, readOnly: true }
+    Card:
+      type: object
+      required: [kind, last4]
+      properties:
+        kind: { const: card }
+        last4: { type: string, pattern: "^[0-9]{4}$" }
+      additionalProperties: false
+    BankTransfer:
+      type: object
+      required: [kind, iban]
+      properties:
+        kind: { const: bank }
+        iban: { type: string }
+      additionalProperties: false
+    Problem:
+      type: object
+      properties: { title: { type: string }, status: { type: integer } }
+  securitySchemes:
+    apiKey: { type: apiKey, in: header, name: X-Api-Key }
+    basic: { type: http, scheme: basic }
+    bearer: { type: http, scheme: bearer }
+    oauth:
+      {
+        type: oauth2,
+        flows: { clientCredentials: { tokenUrl: "https://auth.example.invalid/token", scopes: {} } },
+      }

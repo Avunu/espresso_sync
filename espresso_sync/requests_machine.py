@@ -3,10 +3,11 @@
 
 """The one way this app sends a request to an external API.
 
-Every request goes through ``RateLimitedSession.request``, which adds the
-timeout, keeps to the Connection's rate limit and, when the API answers
-429 Too Many Requests, waits as its ``Retry-After`` says and tries again, a
-bounded number of times.
+Every request goes through ``RateLimitedSession.request``, which keeps to the
+Connection's rate limit and, when the API answers 429 Too Many Requests, waits as
+its ``Retry-After`` says and tries again, a bounded number of times. Each attempt is
+sent by ``safe_fetch.safe_request``: the timeout, the host and address checks, the
+redirect and size caps, and credentials sent only to the Connection's allowed host.
 """
 
 import time
@@ -15,8 +16,10 @@ from email.utils import parsedate_to_datetime
 
 import requests
 
-# (connect, read) seconds for every call to an external API
-REQUEST_TIMEOUT = (10, 60)
+from espresso_sync.utils.safe_fetch import REQUEST_TIMEOUT, make_session, safe_request
+
+__all__ = ["REQUEST_TIMEOUT", "RateLimitedSession", "retry_delay"]
+
 # after a 429, how many more times a request is sent (so at most 1 + MAX_RETRIES requests)
 MAX_RETRIES = 3
 # a Retry-After longer than this (seconds) is not waited for: the 429 is returned
@@ -49,11 +52,11 @@ def retry_delay(response: requests.Response, attempt: int) -> float | None:
 
 
 class RateLimitedSession:
-	"""A requests.Session that sends at most ``max_requests_per_minute`` requests a
-	minute (no limit when it is empty or 0), and retries a 429."""
+	"""A session that sends at most ``max_requests_per_minute`` requests a minute (no
+	limit when it is empty or 0), and retries a 429."""
 
 	def __init__(self, max_requests_per_minute: int | None = None):
-		self.session = requests.Session()
+		self.session = make_session()
 		self.max_requests_per_minute = max_requests_per_minute or 0
 		self.requests_made = 0
 		self.time_first_request_was_made = 0.0
@@ -70,12 +73,21 @@ class RateLimitedSession:
 			self.time_first_request_was_made = time.time()
 			self.requests_made = 0
 
-	def request(self, method, url, **kwargs) -> requests.Response:
+	def request(self, method, url, *, credentials=None, allowed_host=None, **kwargs) -> requests.Response:
+		"""safe_request through this session: `credentials` (headers) go only to
+		`allowed_host`."""
 		kwargs.setdefault("timeout", REQUEST_TIMEOUT)
 		attempt = 0
 		while True:
 			self._wait_for_rate_limit()
-			response = self.session.request(method, url, **kwargs)
+			response = safe_request(
+				method,
+				url,
+				session=self.session,
+				credentials=credentials,
+				allowed_host=allowed_host,
+				**kwargs,
+			)
 			self.requests_made += 1
 			if response.status_code != 429 or attempt >= MAX_RETRIES:
 				return response

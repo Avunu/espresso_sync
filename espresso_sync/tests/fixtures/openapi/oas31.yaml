@@ -1,0 +1,21 @@
+openapi: 3.1.0
+info: { title: Shop, version: "1" }
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } }
+      responses: { "201": { description: ok } }
+components:
+  schemas:
+    Order:
+      type: object
+      required: [id]
+      properties:
+        id: { type: integer }
+        note: { type: [string, "null"] }
+        qty: { type: number, exclusiveMinimum: 0 }
+        tags: { type: array, prefixItems: [{ const: first }] }
+      unevaluatedProperties: false
