@@ -554,6 +554,35 @@ class TestExport(SyncTestCase):
 			frappe.db.get_value(esc.SHOT_DOCTYPE, self.shot.name, "last_export"), self.todos[0].modified
 		)
 
+	def test_a_full_export_failure_below_the_watermark_is_sent_again(self):
+		# the shot changed since the last sync: every document is sent, older ones too
+		self.connection.db_set("last_pull", None, update_modified=False)
+		frappe.db.set_value(
+			esc.SHOT_DOCTYPE, self.shot.name, "last_export", self.todos[2].modified, update_modified=False
+		)
+		self.export(
+			(responses.POST, f"{API}/todos", 500, {"error": "boom"}),
+			(responses.POST, f"{API}/todos", 201, {"id": "f2"}),
+			(responses.POST, f"{API}/todos", 201, {"id": "f3"}),
+		)
+		last_export = frappe.db.get_value(esc.SHOT_DOCTYPE, self.shot.name, "last_export")
+		self.assertLess(last_export, self.todos[0].modified)
+
+		# the next sync reads only what changed since then, and that includes the failed one
+		self.connection.db_set("last_pull", self.todos[2].modified, update_modified=False)
+		frappe.db.set_value(
+			esc.SHOT_DOCTYPE, self.shot.name, "modified", self.todos[0].modified, update_modified=False
+		)
+		calls = self.export(
+			(responses.POST, f"{API}/todos", 201, {"id": "f1"}),
+			(responses.PUT, f"{API}/todos/f2", 200, {}),
+			(responses.PUT, f"{API}/todos/f3", 200, {}),
+		)
+		self.assertEqual(
+			calls, [("POST", f"{API}/todos"), ("PUT", f"{API}/todos/f2"), ("PUT", f"{API}/todos/f3")]
+		)
+		self.assertEqual([self.external_id(t) for t in self.todos], ["f1", "f2", "f3"])
+
 	def test_a_failed_request_fails_that_document_only(self):
 		connection = esc.get_connection(self.connection.name)
 		with patch.object(
@@ -603,5 +632,10 @@ class TestExportWatermark(IntegrationTestCase):
 		self.assertEqual(esc.export_watermark([(t[1], True), (t[2], False), (t[3], True)], t[0]), t[1])
 		# a failure at the same `modified` as a success holds the watermark below both
 		self.assertEqual(esc.export_watermark([(t[1], True), (t[1], False)], t[0]), t[0])
-		# never back
+		# never back for a success
 		self.assertEqual(esc.export_watermark([(t[1], True)], t[3]), t[3])
+		# a full export's failure older than the watermark: back to just below it
+		just_below = t[1] - datetime.timedelta(microseconds=1)
+		self.assertEqual(esc.export_watermark([(t[1], False), (t[3], True)], t[2]), just_below)
+		self.assertEqual(esc.export_watermark([(t[0], True), (t[1], False)], t[1]), just_below)
+		self.assertEqual(esc.export_watermark([(t[1], False)], None), None)

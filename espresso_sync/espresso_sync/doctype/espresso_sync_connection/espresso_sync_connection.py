@@ -140,17 +140,19 @@ def export_watermark(results, current):
 	"""The new last_export, from the (modified, succeeded) of each document exported.
 
 	It is the newest `modified` exported before the first failure (in `modified`
-	order), and never moves back: a failed document stays above it, so the next
-	export sends it again, together with the documents after it.
+	order), and a failed document always stays above it, so the next export sends
+	it again, together with the documents after it. It moves back only for that:
+	a full export (after the shot changed) also sends documents older than it, and
+	when one of those fails, the watermark goes to just below it.
 	"""
 	first_failure = min((modified for modified, ok in results if not ok), default=None)
 	exported = [
 		modified for modified, ok in results if ok and (first_failure is None or modified < first_failure)
 	]
-	if not exported:
-		return current
-	newest = max(exported)
-	return newest if current is None or newest > current else current
+	watermark = max([*exported, current] if current is not None else exported, default=None)
+	if first_failure is not None and watermark is not None and watermark >= first_failure:
+		return first_failure - datetime.timedelta(microseconds=1)
+	return watermark
 
 
 class EspressoSyncConnection(Document):

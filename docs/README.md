@@ -33,7 +33,7 @@ Each scheduled sync is a background job on the `long` queue. A Connection never 
 - An API that answers 429 Too Many Requests is waited for, as its `Retry-After` says (up to a minute), and asked again, at most three more times.
 - A request that fails, an object that cannot be imported, or a document that cannot be exported is logged as a failure in the Pull Log, and the sync goes on with the next one.
 - An imported object that matches a document this Connection imported before (by its external ID, within the shot's DocType) updates and saves that document.
-- **Last Export** moves only as far as the last document exported before the first failure, so a failed document is sent again by the next sync. **Last Import** moves only when every object imported.
+- **Last Export** moves only as far as the last document exported before the first failure, and back to just below a failed document older than it (a shot that changed exports every document), so a failed document is sent again by the next sync. **Last Import** moves only when every object imported.
 
 ## Maps
 
