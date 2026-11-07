@@ -17,6 +17,24 @@ def doc_tag(params, object, sync_connection, doc):
 		return None
 
 
+def get_linked_doctype(doc, fieldname):
+	"""The DocType of the document `doc[fieldname]` names: `doc`'s own for `name`, a Link's
+	options, or the DocType a Dynamic Link reads. None when it cannot be told."""
+	doctype = doc.get("doctype") if doc else None
+	if not doctype:
+		return None
+	if fieldname == "name":
+		return doctype
+	df = frappe.get_meta(doctype).get_field(fieldname)
+	if not df:
+		return None
+	if df.fieldtype == "Link":
+		return df.options
+	if df.fieldtype == "Dynamic Link":
+		return doc.get(df.options)
+	return None
+
+
 def id_tag(params, object, sync_connection, doc):
 	"""
 	This function handles "id" tags, which are used to fetch the external ID of a linked doc.
@@ -24,11 +42,12 @@ def id_tag(params, object, sync_connection, doc):
 	Example: "{id:project}" - fetches the external ID of the linked doc in the project field.
 	"""
 	try:
-		return frappe.db.get_value(
-			doctype="Espresso Sync ID",
-			filters={"sync_connection": sync_connection.name, "parent": doc[params]},
-			fieldname="external_id",
-		)
+		filters = {"sync_connection": sync_connection.name, "parent": doc[params]}
+		# the same name can belong to documents of two DocTypes
+		linked_doctype = get_linked_doctype(doc, params)
+		if linked_doctype:
+			filters["parenttype"] = linked_doctype
+		return frappe.db.get_value(doctype="Espresso Sync ID", filters=filters, fieldname="external_id")
 	except Exception as e:
 		frappe.log_error(f"Error handling id dynamic tag {params}: {e}")
 		return None

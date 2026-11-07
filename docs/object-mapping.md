@@ -18,6 +18,12 @@ JSONata is a lightweight query and transformation language for JSON data. It pro
 - **Advanced filtering** and aggregation capabilities
 - **Standardized syntax** that's well-documented and widely adopted
 
+## How a value is read
+
+- A key whose expression gives nothing (JSONata's _undefined_, for a field the object lacks) is left out of the result, so an update leaves that field as it is. An expression that gives `null` sets the field to empty.
+- An expression that fails to parse or to evaluate is recorded in the Error Log and its key is left out too.
+- Each evaluation may take at most 5 seconds and nest at most 200 levels deep; past that it fails with the JSONata error D1012 or D1011.
+
 ## Basic JSONata Syntax
 
 ### Simple Field Access
