@@ -7,8 +7,11 @@ from unittest.mock import patch
 
 import frappe
 import frappe.apps
+import jsonata.timebox
 from frappe.tests import IntegrationTestCase
 
+from espresso_sync import map_machine
+from espresso_sync.dynamic_tags import get_linked_doctype, id_tag
 from espresso_sync.map_machine import evaluate_jsonata, extract_object, tamp_dynamic_parameter
 
 
@@ -36,6 +39,53 @@ class TestEvaluateJsonata(IntegrationTestCase):
 			),
 			{"title": "Espresso", "upper": "ESPRESSO", "count": 3, "nested": {"id": 7}},
 		)
+
+	def test_undefined_keys_are_left_out(self):
+		self.assertEqual(
+			extract_object(
+				{"title": "subject", "missing": "no_such_field", "empty": "nothing", "broken": "lines["},
+				{"subject": "Espresso", "nothing": None},
+			),
+			# null is a value; undefined and a failed expression are not
+			{"title": "Espresso", "empty": None},
+		)
+		self.assertIsNone(evaluate_jsonata("no_such_field", {}))
+		self.assertIs(
+			evaluate_jsonata("no_such_field", {}, default=map_machine.UNDEFINED), map_machine.UNDEFINED
+		)
+		self.assertEqual(evaluate_jsonata("[a, null]", {"a": 1}), [1, None])
+
+	def test_expressions_are_compiled_once(self):
+		map_machine.compile_jsonata.cache_clear()
+		for n in range(3):
+			self.assertEqual(evaluate_jsonata("n + 1", {"n": n}), n + 1)
+		info = map_machine.compile_jsonata.cache_info()
+		self.assertEqual((info.misses, info.hits), (1, 2))
+
+	def test_now_is_the_time_of_each_evaluation(self):
+		map_machine.compile_jsonata.cache_clear()
+		clock = [1_794_000_000_000]
+		with patch.object(jsonata.timebox.Timebox, "current_milli_time", side_effect=lambda: clock[0]):
+			self.assertEqual(evaluate_jsonata("$millis()", {}), clock[0])
+			# compiled after it: jsonata-python makes this one the thread's current instance
+			self.assertEqual(evaluate_jsonata("n", {"n": 1}), 1)
+			clock[0] += 5000
+			self.assertEqual(evaluate_jsonata("$millis()", {}), clock[0])
+			self.assertEqual(evaluate_jsonata("$now()", {}), "2026-11-06T21:20:05.000Z")
+		self.assertEqual(map_machine.compile_jsonata.cache_info().misses, 3)
+
+	def test_every_evaluation_is_timeboxed(self):
+		endless = "($f := function($n){ $n > 0 ? $f($n + 1) : 0 }; $f(1))"
+		deep = "($f := function($n){ $n = 0 ? 0 : 1 + $f($n - 1) }; $f(100000))"
+		with patch.object(map_machine.frappe, "log_error") as log_error:
+			with patch.object(map_machine, "JSONATA_TIMEOUT_MS", 200):
+				self.assertIsNone(evaluate_jsonata(endless, {}))
+			self.assertIsNone(evaluate_jsonata(deep, {}))
+		errors = " ".join(str(c.args[0]) for c in log_error.call_args_list)
+		self.assertIn("timeout", errors.lower())
+		self.assertIn("Stack overflow", errors)
+		# the timebox starts with each evaluation, not when the expression was cached
+		self.assertEqual(evaluate_jsonata("$sum(lines)", {"lines": [1, 2]}), 3)
 
 	def test_match_reads_whole_numbers_as_integers(self):
 		object_map = {
@@ -85,3 +135,24 @@ class TestAppsScreen(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		self.assertIn("System Manager", frappe.get_roles())
 		self.assertNotIn("espresso_sync", [app["name"] for app in frappe.apps.get_apps()])
+
+
+class TestIdTag(IntegrationTestCase):
+	def test_the_linked_doctype_narrows_the_lookup(self):
+		todo = frappe._dict(
+			doctype="ToDo", name="T1", reference_type="Note", reference_name="N1", role="System Manager"
+		)
+		self.assertEqual(get_linked_doctype(todo, "name"), "ToDo")
+		self.assertEqual(get_linked_doctype(todo, "role"), "Role")
+		self.assertEqual(get_linked_doctype(todo, "reference_name"), "Note")
+		self.assertIsNone(get_linked_doctype(todo, "description"))
+		self.assertIsNone(get_linked_doctype(todo, "no_such_field"))
+		self.assertIsNone(get_linked_doctype(frappe._dict(name="x"), "name"))
+
+		connection = frappe._dict(name="ES Id Tag Test")
+		with patch.object(frappe.db, "get_value", return_value="ext-1") as get_value:
+			self.assertEqual(id_tag("reference_name", None, connection, todo), "ext-1")
+		self.assertEqual(
+			get_value.call_args.kwargs["filters"],
+			{"sync_connection": "ES Id Tag Test", "parent": "N1", "parenttype": "Note"},
+		)
