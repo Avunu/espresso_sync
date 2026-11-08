@@ -244,39 +244,82 @@ describe("fromOpenApiSchema", () => {
 	});
 });
 
-/** doctype_json_schema's shape, for a Contact (see the server's schema contract). */
+/** The x-frappe of a field, as doctype_json_schema writes it: every key, null when unset. */
+function xFrappe(fieldtype: string, extra: Record<string, unknown> = {}) {
+	return {
+		fieldtype,
+		options: null,
+		link: null,
+		dynamic_link: null,
+		required: null,
+		read_only: false,
+		custom: false,
+		...extra,
+	};
+}
+
+/** A standard field (`doctype`, and `name` or a read's `modified`…), as the server writes it. */
+function standard(type: string, fieldtype: string, title: string, extra: Record<string, unknown> = {}) {
+	return { type, title, "x-frappe": xFrappe(fieldtype, { read_only: true }), ...extra };
+}
+
+/** doctype_json_schema("Contact", "insert"), cut down to the fields the tests read. */
 const contact = {
 	$schema: "https://json-schema.org/draft/2020-12/schema",
 	type: "object",
 	title: "Contact",
 	"x-frappe": { doctype: "Contact", mode: "insert", istable: false },
 	properties: {
+		doctype: standard("string", "Data", "DocType", { const: "Contact" }),
+		name: { type: "string", title: "ID", "x-frappe": xFrappe("Data") },
 		first_name: {
 			type: "string",
+			maxLength: 140,
 			title: "First Name",
-			"x-frappe": { fieldtype: "Data", required: "hard", read_only: false, custom: false },
+			"x-frappe": xFrappe("Data", { required: "hard" }),
 		},
 		status: {
 			type: "string",
 			enum: ["Passive", "Open", "Replied"],
-			"x-frappe": { fieldtype: "Select", required: "server" },
+			title: "Status",
+			"x-frappe": xFrappe("Select", { options: "Passive\nOpen\nReplied", required: "server" }),
 		},
-		unsubscribed: { type: ["integer", "boolean"], "x-frappe": { fieldtype: "Check", required: null } },
-		birthday: { type: ["string", "null"], format: "date", "x-frappe": { fieldtype: "Date" } },
+		unsubscribed: {
+			type: ["integer", "boolean"],
+			enum: [0, 1, false, true],
+			title: "Unsubscribed",
+			"x-frappe": xFrappe("Check"),
+		},
+		birthday: { type: "string", format: "date", title: "Birthday", "x-frappe": xFrappe("Date") },
 		company_name: {
 			type: "string",
-			"x-frappe": { fieldtype: "Link", options: "Company", link: "Company", custom: true },
+			maxLength: 140,
+			title: "Company Name",
+			"x-frappe": xFrappe("Link", { options: "Company", link: "Company", custom: true }),
 		},
 		email_ids: {
 			type: "array",
 			title: "Email IDs",
-			"x-frappe": { fieldtype: "Table", options: "Contact Email" },
+			"x-frappe": xFrappe("Table", { options: "Contact Email" }),
 			items: {
 				type: "object",
-				"x-frappe": { doctype: "Contact Email", istable: true },
+				title: "Contact Email",
+				"x-frappe": { doctype: "Contact Email", mode: "insert", istable: true },
 				properties: {
-					email_id: { type: "string", "x-frappe": { fieldtype: "Data", required: "hard" } },
-					is_primary: { type: "integer", "x-frappe": { fieldtype: "Check" } },
+					doctype: standard("string", "Data", "DocType", { const: "Contact Email" }),
+					name: { type: "string", title: "ID", "x-frappe": xFrappe("Data") },
+					email_id: {
+						type: "string",
+						format: "email",
+						title: "Email ID",
+						"x-frappe": xFrappe("Data", { options: "Email", required: "hard" }),
+					},
+					is_primary: {
+						type: ["integer", "boolean"],
+						enum: [0, 1, false, true],
+						title: "Is Primary",
+						"x-frappe": xFrappe("Check"),
+					},
 				},
 				required: ["email_id"],
 				additionalProperties: false,
@@ -284,28 +327,57 @@ const contact = {
 		},
 		links: {
 			type: "array",
-			"x-frappe": { fieldtype: "Table", options: "Dynamic Link" },
+			title: "Links",
+			"x-frappe": xFrappe("Table", { options: "Dynamic Link" }),
 			items: {
 				type: "object",
+				title: "Dynamic Link",
+				"x-frappe": { doctype: "Dynamic Link", mode: "insert", istable: true },
 				properties: {
+					doctype: standard("string", "Data", "DocType", { const: "Dynamic Link" }),
 					link_doctype: {
 						type: "string",
-						"x-frappe": { fieldtype: "Link", link: "DocType", required: "hard" },
+						title: "Link Document Type",
+						"x-frappe": xFrappe("Link", { options: "DocType", link: "DocType", required: "hard" }),
 					},
 					link_name: {
 						type: "string",
-						"x-frappe": {
-							fieldtype: "Dynamic Link",
+						title: "Link Name",
+						"x-frappe": xFrappe("Dynamic Link", {
 							options: "link_doctype",
 							dynamic_link: "link_doctype",
 							required: "hard",
-						},
+						}),
 					},
 				},
+				required: ["link_doctype", "link_name"],
+				additionalProperties: false,
 			},
 		},
 	},
 	required: ["first_name"],
+	additionalProperties: false,
+};
+
+/** doctype_json_schema("ToDo", "read"), cut down: the standard fields, and no required tiers. */
+const todoRead = {
+	$schema: "https://json-schema.org/draft/2020-12/schema",
+	type: "object",
+	title: "ToDo",
+	"x-frappe": { doctype: "ToDo", mode: "read", istable: false },
+	properties: {
+		doctype: standard("string", "Data", "DocType", { const: "ToDo" }),
+		name: standard("string", "Data", "ID"),
+		owner: {
+			type: "string",
+			title: "Created By",
+			"x-frappe": xFrappe("Link", { options: "User", link: "User", read_only: true }),
+		},
+		modified: standard("string", "Datetime", "Last Updated On", { format: "date-time" }),
+		docstatus: standard("integer", "Int", "Document Status"),
+		description: { type: "string", title: "Description", "x-frappe": xFrappe("Text Editor") },
+	},
+	required: [],
 	additionalProperties: false,
 };
 
@@ -317,6 +389,7 @@ describe("fromDocTypeSchema", () => {
 		assert.deepEqual(
 			tree.children.map((c) => [c.key, c.required]),
 			[
+				["name", null],
 				["first_name", "hard"],
 				["status", "server"],
 				["unsubscribed", null],
@@ -326,6 +399,12 @@ describe("fromDocTypeSchema", () => {
 				["links", null],
 			],
 		);
+	});
+
+	it("leaves out the doctype, which only names the DocType", () => {
+		for (const node of walkTree(tree)) assert.notEqual(node.key, "doctype", node.pointer);
+		assert.equal(findNode(tree, "/doctype"), undefined);
+		assert.equal(findNode(tree, "/email_ids/doctype"), undefined);
 	});
 
 	it("keeps field metadata for the editor", () => {
@@ -338,9 +417,20 @@ describe("fromDocTypeSchema", () => {
 			custom: true,
 		});
 		assert.equal(child(child(tree, "links"), "link_name").frappe?.dynamicLink, "link_doctype");
-		assert.deepEqual(child(tree, "unsubscribed").types, ["integer", "boolean"]);
+		assert.equal(child(tree, "status").frappe?.options, "Passive\nOpen\nReplied");
 		const birthday = child(tree, "birthday");
-		assert.deepEqual([birthday.types, birthday.nullable, birthday.format], [["string"], true, "date"]);
+		assert.deepEqual([birthday.types, birthday.nullable, birthday.format], [["string"], false, "date"]);
+		// an insert may name its document
+		assert.equal(child(tree, "name").readOnly, false);
+	});
+
+	it("makes a Check one field that takes 0, 1, true or false", () => {
+		const check = child(tree, "unsubscribed");
+		assert.deepEqual(
+			[check.kind, check.types, check.enum, check.frappe?.fieldtype],
+			["field", ["integer", "boolean"], [0, 1, false, true], "Check"],
+		);
+		assert.equal(ruleKind(check), "field");
 	});
 
 	it("makes child tables collections with pointers that match rule keys", () => {
@@ -350,10 +440,12 @@ describe("fromDocTypeSchema", () => {
 		assert.deepEqual(
 			emails.children.map((c) => [c.pointer, c.required]),
 			[
+				["/email_ids/name", null],
 				["/email_ids/email_id", "hard"],
 				["/email_ids/is_primary", null],
 			],
 		);
+		assert.equal(emails.open, false);
 		assert.equal(findNode(tree, "/links/link_doctype")?.frappe?.link, "DocType");
 		assert.equal(findNode(tree, "/nope"), undefined);
 	});
@@ -363,12 +455,14 @@ describe("fromDocTypeSchema", () => {
 		assert.deepEqual(
 			nodes.map((n) => [n.pointer, ruleKind(n)]),
 			[
+				["/name", "field"],
 				["/first_name", "field"],
 				["/status", "field"],
 				["/unsubscribed", "field"],
 				["/birthday", "field"],
 				["/company_name", "field"],
 				["/email_ids", "collection"],
+				["/email_ids/name", "field"],
 				["/email_ids/email_id", "field"],
 				["/email_ids/is_primary", "field"],
 				["/links", "collection"],
@@ -379,5 +473,21 @@ describe("fromDocTypeSchema", () => {
 		assert.equal(ruleKind(tree), undefined);
 		assert.equal(ruleKind({ ...tree, kind: "scalar_collection" }), "scalar_collection");
 		assert.equal(ruleKind({ ...tree, kind: "cycle" }), undefined);
+	});
+
+	it("reads a document as an export does: standard fields read-only, nothing required", () => {
+		const read = fromDocTypeSchema(todoRead);
+		assert.deepEqual(
+			read.children.map((c) => [c.key, c.readOnly, c.required, c.types]),
+			[
+				["name", true, null, ["string"]],
+				["owner", true, null, ["string"]],
+				["modified", true, null, ["string"]],
+				["docstatus", true, null, ["integer"]],
+				["description", false, null, ["string"]],
+			],
+		);
+		assert.equal(child(read, "modified").format, "date-time");
+		assert.equal(child(read, "owner").frappe?.link, "User");
 	});
 });
