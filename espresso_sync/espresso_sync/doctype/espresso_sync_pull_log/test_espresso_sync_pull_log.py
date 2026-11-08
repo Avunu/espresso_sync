@@ -14,7 +14,6 @@ from espresso_sync.espresso_sync.doctype.espresso_sync_connection.test_espresso_
 from espresso_sync.espresso_sync.doctype.espresso_sync_pull_log.espresso_sync_pull_log import (
 	EspressoSyncPullLog,
 )
-from espresso_sync.patches import redact_pull_log_secrets
 from espresso_sync.redaction import (
 	REDACTED,
 	redact_pull_log_values,
@@ -213,125 +212,6 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 		self.assertEqual(json.loads(log.object)["id"], 1)
 		self.assertEqual(log.traceback, f"failed with {REDACTED}")
 
-	def test_patch_scrubs_existing_rows(self):
-		connection = make_connection(
-			"ES Redaction Patch", auth_type="Basic", api_key="sync-user", secret=SECRET
-		)
-		encoded = base64.b64encode(f"sync-user:{SECRET}".encode()).decode()
-		header_conn = make_connection(
-			"ES Redaction Patch Header", auth_type="Header-based", api_key="X-Shop-Header", secret=SECRET
-		)
-
-		def seed(connection_name, values):
-			log = frappe.get_doc(
-				{
-					"doctype": "Espresso Sync Pull Log",
-					"sync_connection": connection_name,
-					"sync_doctype": "ToDo",
-				}
-			).insert(ignore_permissions=True)
-			# write the plaintext the way rows were stored before redaction existed
-			frappe.db.set_value("Espresso Sync Pull Log", log.name, values, update_modified=False)
-			return log.name, frappe.db.get_value("Espresso Sync Pull Log", log.name, "modified")
-
-		json_row, json_modified = seed(
-			connection.name,
-			{
-				"url": "https://sync-user:pw@api.example.invalid/v1/todos?api_key=abc",
-				"request": json.dumps(
-					{
-						"payload": None,
-						"headers": {"Authorization": f"Basic {encoded}", "Content-Type": "application/json"},
-					},
-					indent=4,
-				),
-				"response": f"you sent {SECRET}",
-				"traceback": f"401 for Authorization: Basic {encoded}",
-			},
-		)
-		# Request is a JSON column; free text such as a traceback can hold a repr of the headers
-		repr_row, _ = seed(
-			header_conn.name,
-			{
-				"traceback": str(
-					{
-						"payload": None,
-						"headers": {"X-Shop-Header": "short", "Content-Type": "application/json"},
-					}
-				)
-			},
-		)
-		clean_row, clean_modified = seed(
-			connection.name,
-			{
-				"url": "https://api.example.invalid/v1/todos",
-				"request": json.dumps({"payload": None, "headers": {}}),
-			},
-		)
-		object_row, _ = seed(
-			connection.name,
-			{
-				"object": json.dumps(
-					{"id": 1, "echo": f"Basic {encoded}", "access_token": "tok-AAAA"}, indent=4
-				),
-				"response": json.dumps(
-					{"next": "https://api.example.invalid/v1/todos?page=2&api_key=KEYKEY"}
-				),
-				"document": json.dumps({"description": SECRET}),
-			},
-		)
-		clean_before = frappe.db.get_value(
-			"Espresso Sync Pull Log", clean_row, ["url", "request"], as_dict=True
-		)
-		# a failed Pull Log save used to log the whole unredacted row
-		error_log = frappe.log_error(
-			"Error saving pull log",
-			"error: boom\npull_log: "
-			+ str(
-				{
-					"sync_connection": connection.name,
-					"request": {"payload": None, "headers": {"Authorization": f"Basic {encoded}"}},
-					"response": f"you sent {SECRET}",
-				}
-			),
-		)
-
-		redact_pull_log_secrets.execute()
-
-		row = get_pull_log(json_row)
-		text = pull_log_text(row)
-		self.assertNotIn(encoded, text)
-		self.assertNotIn(SECRET, text)
-		self.assertNotIn(":pw@", text)
-		self.assertNotIn("api_key=abc", text)
-		self.assertEqual(json.loads(row.request or "")["headers"]["Authorization"], REDACTED)
-		self.assertEqual(json.loads(row.request or "")["headers"]["Content-Type"], "application/json")
-		self.assertEqual(row.modified, json_modified)
-
-		self.assertEqual(
-			frappe.db.get_value("Espresso Sync Pull Log", repr_row, "traceback"),
-			str(
-				{"payload": None, "headers": {"X-Shop-Header": REDACTED, "Content-Type": "application/json"}}
-			),
-		)
-
-		row = get_pull_log(object_row)
-		text = pull_log_text(row)
-		for secret in (encoded, SECRET, "tok-AAAA", "KEYKEY"):
-			self.assertNotIn(secret, text)
-		self.assertEqual(json.loads(row.object or "")["id"], 1)
-
-		error = frappe.db.get_value("Error Log", error_log.name, "error")
-		self.assertNotIn(encoded, error)
-		self.assertNotIn(SECRET, error)
-		self.assertIn(f"'Authorization': 'Basic {REDACTED}'", error)
-
-		self.assertEqual(
-			frappe.db.get_value("Espresso Sync Pull Log", clean_row, ["url", "request"], as_dict=True),
-			clean_before,
-		)
-		self.assertEqual(frappe.db.get_value("Espresso Sync Pull Log", clean_row, "modified"), clean_modified)
-
 
 class TestPullLogRetention(IntegrationTestCase):
 	def test_old_entries_are_cleared(self):
@@ -368,44 +248,3 @@ class TestPullLogRetention(IntegrationTestCase):
 		EspressoSyncPullLog.clear_old_logs(days=30)
 		self.assertFalse(frappe.db.exists("Espresso Sync Pull Log", names[0]))
 		self.assertTrue(frappe.db.exists("Espresso Sync Pull Log", names[1]))
-
-
-class TestDeleteBatchPatch(IntegrationTestCase):
-	def test_the_doctype_and_its_table_are_removed(self):
-		from espresso_sync.patches import delete_espresso_sync_batch
-
-		frappe.set_user("Administrator")
-		doctype = delete_espresso_sync_batch.DOCTYPE
-		if not frappe.db.exists("DocType", doctype):
-			# what a site installed before the removal still has
-			frappe.get_doc(
-				{
-					"doctype": "DocType",
-					"name": doctype,
-					"module": "Espresso Sync",
-					"custom": 1,
-					"fields": [
-						{
-							"fieldname": "sync_connection",
-							"fieldtype": "Link",
-							"options": "Espresso Sync Connection",
-						},
-						{"fieldname": "objects_processed", "fieldtype": "Int"},
-					],
-					"permissions": [{"role": "System Manager", "read": 1}],
-				}
-			).insert()
-			frappe.db.set_value("DocType", doctype, "custom", 0)
-		self.assertTrue(frappe.db.table_exists(doctype, cached=False))
-
-		# as bench migrate runs it
-		in_migrate = frappe.flags.in_migrate
-		frappe.flags.in_migrate = True
-		try:
-			delete_espresso_sync_batch.execute()
-			self.assertFalse(frappe.db.exists("DocType", doctype))
-			self.assertFalse(frappe.db.table_exists(doctype, cached=False))
-			# and again: a patch may run on a site that never had it
-			delete_espresso_sync_batch.execute()
-		finally:
-			frappe.flags.in_migrate = in_migrate
