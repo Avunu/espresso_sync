@@ -1,0 +1,33 @@
+{
+ "rules": [
+  {
+   "ptr": "",
+   "kind": "collection",
+   "expr": "orders"
+  },
+  {
+   "ptr": "/id",
+   "kind": "field",
+   "expr": "number"
+  }
+ ],
+ "input": {
+  "orders": [
+   {
+    "number": 1
+   },
+   {
+    "number": 2
+   }
+  ]
+ },
+ "output": [
+  {
+   "id": 1
+  },
+  {
+   "id": 2
+  }
+ ],
+ "errors": []
+}

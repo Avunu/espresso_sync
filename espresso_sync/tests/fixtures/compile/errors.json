@@ -1,0 +1,95 @@
+{
+ "rules": [
+  {
+   "ptr": "/title",
+   "kind": "field",
+   "expr": "title"
+  },
+  {
+   "ptr": "/title",
+   "kind": "field",
+   "expr": "subject"
+  },
+  {
+   "ptr": "/title/sub",
+   "kind": "field",
+   "expr": "x"
+  },
+  {
+   "ptr": "/tags",
+   "kind": "scalar_collection",
+   "expr": "tags"
+  },
+  {
+   "ptr": "/tags/name",
+   "kind": "field",
+   "expr": "name"
+  },
+  {
+   "ptr": "/blank",
+   "kind": "field",
+   "expr": "  "
+  },
+  {
+   "ptr": "no-slash",
+   "kind": "field",
+   "expr": "x"
+  },
+  {
+   "ptr": "/kind",
+   "kind": "object",
+   "expr": "x"
+  },
+  {
+   "kind": "field",
+   "expr": "x"
+  },
+  "not a rule"
+ ],
+ "errors": [
+  [
+   "/title",
+   "compile.duplicate"
+  ],
+  [
+   "/blank",
+   "compile.empty"
+  ],
+  [
+   "no-slash",
+   "compile.pointer"
+  ],
+  [
+   "/kind",
+   "compile.kind"
+  ],
+  [
+   "",
+   "compile.pointer"
+  ],
+  [
+   "",
+   "compile.rule"
+  ],
+  [
+   "/title/sub",
+   "compile.nested"
+  ],
+  [
+   "/tags/name",
+   "compile.nested"
+  ]
+ ],
+ "input": {
+  "title": "T",
+  "tags": [
+   "a"
+  ]
+ },
+ "output": {
+  "title": "T",
+  "tags": [
+   "a"
+  ]
+ }
+}

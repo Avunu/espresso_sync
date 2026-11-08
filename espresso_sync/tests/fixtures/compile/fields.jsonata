@@ -1,0 +1,15 @@
+{
+	"customer_name": (name),
+	"address": {
+		"city": (addr.city),
+		"zip": ($string(addr.zip))
+	},
+	"items": [(line_items).{
+		"item_code": (sku),
+		"qty": (quantity * 2),
+		"discount": (discount)
+	}],
+	"tags": [(labels.name)],
+	"missing": (no_such_field),
+	"note": (null)
+}

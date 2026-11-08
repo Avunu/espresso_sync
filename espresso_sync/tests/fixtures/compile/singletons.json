@@ -1,0 +1,66 @@
+{
+ "rules": [
+  {
+   "ptr": "/one",
+   "kind": "collection",
+   "expr": "order"
+  },
+  {
+   "ptr": "/one/id",
+   "kind": "field",
+   "expr": "id"
+  },
+  {
+   "ptr": "/none",
+   "kind": "collection",
+   "expr": "no_such_field"
+  },
+  {
+   "ptr": "/none/id",
+   "kind": "field",
+   "expr": "id"
+  },
+  {
+   "ptr": "/codes",
+   "kind": "scalar_collection",
+   "expr": "order.code"
+  },
+  {
+   "ptr": "/empty",
+   "kind": "scalar_collection",
+   "expr": "no_such_field"
+  },
+  {
+   "ptr": "/rows",
+   "kind": "collection",
+   "expr": "rows"
+  }
+ ],
+ "input": {
+  "order": {
+   "id": 7,
+   "code": "X"
+  },
+  "rows": [
+   {
+    "a": 1
+   }
+  ]
+ },
+ "output": {
+  "one": [
+   {
+    "id": 7
+   }
+  ],
+  "none": [],
+  "codes": [
+   "X"
+  ],
+  "empty": [],
+  "rows": [
+   {}
+  ]
+ },
+ "errors": []
+}
