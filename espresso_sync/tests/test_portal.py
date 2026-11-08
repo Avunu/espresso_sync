@@ -57,7 +57,7 @@ class TestPortalPage(IntegrationTestCase):
 					"auth_type": "Header-based",
 					"api_key": API_KEY,
 					"api_secret": SECRET,
-					"api_domain": "api.example.invalid",
+					"server_url": "https://api.example.invalid/v1",
 					"sync_frequency": "Manual",
 					"shots": [],
 				}

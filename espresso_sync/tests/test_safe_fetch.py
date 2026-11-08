@@ -15,12 +15,9 @@ import responses
 from frappe.tests import IntegrationTestCase
 from requests.adapters import HTTPAdapter
 
-from espresso_sync.espresso_sync.doctype.espresso_sync_connection import espresso_sync_connection as esc
-from espresso_sync.patches import set_connection_allowed_host
-from espresso_sync.requests_machine import RateLimitedSession
 from espresso_sync.tests.egress import PUBLIC_ADDRESS, public_dns
 from espresso_sync.utils import safe_fetch
-from espresso_sync.utils.safe_fetch import EgressError, safe_request
+from espresso_sync.utils.safe_fetch import EgressError, RateLimitedSession, safe_request
 
 API = "https://api.example.invalid/v1"
 OTHER = "https://other.example.invalid/v1"
@@ -340,24 +337,6 @@ class TestAllowedHost(IntegrationTestCase):
 		self.enterContext(public_dns())
 		frappe.set_user("Administrator")
 
-	def make_connection(self, name, **values):
-		name = f"ES Allowed Host {name}"
-		if frappe.db.exists("Espresso Sync Connection", name):
-			frappe.delete_doc("Espresso Sync Connection", name, force=True)
-		return frappe.get_doc(
-			{
-				"doctype": "Espresso Sync Connection",
-				"connection_name": name,
-				"auth_type": "Header-based",
-				"api_key": "X-Api-Key",
-				"api_secret": "allowed-host-secret",
-				"api_domain": "api.example.invalid",
-				"api_base": "/v1",
-				"sync_frequency": "Manual",
-				**values,
-			}
-		).insert(ignore_permissions=True)
-
 	def test_normalize_and_host_of(self):
 		self.assertEqual(safe_fetch.normalize_allowed_host(" API.Example.invalid. "), "api.example.invalid")
 		self.assertEqual(
@@ -380,99 +359,6 @@ class TestAllowedHost(IntegrationTestCase):
 		self.assertEqual(safe_fetch.host_of("api.example.invalid"), "api.example.invalid")
 		self.assertEqual(safe_fetch.host_of(None), "")
 		self.assertFalse(safe_fetch.credentials_apply("not a url", "api.example.invalid"))
-
-	def test_it_is_filled_from_the_api_domain(self):
-		connection = self.make_connection("filled")
-		self.assertEqual(connection.allowed_host, "api.example.invalid")
-		connection.allowed_host = "https://elsewhere.example.invalid/x"
-		self.assertRaises(frappe.ValidationError, connection.save)
-
-	def test_a_shot_on_another_host_gets_no_credentials(self):
-		connection = self.make_connection(
-			"override",
-			shots=[
-				{
-					"dt": "ToDo",
-					"uri": "todos",
-					"do_import": 1,
-					"id_field_map": "id",
-					"override_api_domain": 1,
-					"api_domain": "other.example.invalid",
-					"object_map_import": json.dumps({"description": "title"}),
-				}
-			],
-		)
-		connection = esc.get_connection(str(connection.name))
-		with responses.RequestsMock() as rsps:
-			rsps.add(responses.GET, f"{OTHER}/todos", json=[])
-			connection.pull_import_data(connection.shots[0])
-			self.assertNotIn("X-Api-Key", rsps.calls[0].request.headers)
-		diagnostics = json.loads(
-			frappe.get_all(
-				"Espresso Sync Pull Log",
-				filters={"sync_connection": connection.name},
-				pluck="diagnostics",
-				order_by="creation desc",
-				limit=1,
-			)[0]
-		)
-		self.assertEqual(diagnostics[0]["code"], "credentials-withheld")
-
-	def test_an_import_request_refused_is_logged(self):
-		connection = self.make_connection(
-			"refused",
-			api_domain="169.254.169.254",
-			shots=[{"dt": "ToDo", "uri": "todos", "do_import": 1, "object_map_import": "{}"}],
-		)
-		connection = esc.get_connection(str(connection.name))
-		self.assertEqual(connection.pull_import_data(connection.shots[0]), [])
-		log = frappe.get_all(
-			"Espresso Sync Pull Log",
-			filters={"sync_connection": connection.name},
-			fields=["sync_status", "traceback"],
-			order_by="creation desc",
-			limit=1,
-		)[0]
-		self.assertEqual(log.sync_status, "Failure")
-		self.assertIn("EgressError", log.traceback)
-
-	def test_the_patch_derives_it_from_the_urls(self):
-		plain = self.make_connection("patch plain")
-		moved = self.make_connection(
-			"patch moved",
-			shots=[
-				{
-					"dt": "ToDo",
-					"uri": "a",
-					"override_api_domain": 1,
-					"api_domain": "moved.example.invalid:8443",
-				},
-			],
-		)
-		split = self.make_connection(
-			"patch split",
-			shots=[
-				{"dt": "ToDo", "uri": "a"},
-				{"dt": "ToDo", "uri": "b", "override_api_domain": 1, "api_domain": "other.example.invalid"},
-			],
-		)
-		empty = self.make_connection("patch empty", api_domain="")
-		for doc in (plain, moved, split, empty):
-			frappe.db.set_value("Espresso Sync Connection", doc.name, "allowed_host", None)
-		set_connection_allowed_host.execute()
-		values = {
-			doc.name: frappe.db.get_value("Espresso Sync Connection", doc.name, "allowed_host")
-			for doc in (plain, moved, split, empty)
-		}
-		self.assertEqual(
-			values,
-			{
-				plain.name: "api.example.invalid",
-				moved.name: "moved.example.invalid:8443",
-				split.name: "api.example.invalid",
-				empty.name: None,
-			},
-		)
 
 	def test_requests_still_time_out(self):
 		with (

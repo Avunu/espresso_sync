@@ -1,0 +1,11 @@
+{
+	"one": [(order).{
+		"id": (id)
+	}],
+	"none": [(no_such_field).{
+		"id": (id)
+	}],
+	"codes": [(order.code)],
+	"empty": [(no_such_field)],
+	"rows": [(rows).{}]
+}

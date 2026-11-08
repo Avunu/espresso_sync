@@ -54,19 +54,6 @@
 			}
 		},
 		{
-			"files": ["espresso_sync/espresso_sync/doctype/espresso_sync_connection/espresso_sync_connection.js"],
-			"globals": {
-				"frappe": "readonly",
-				"__": "readonly",
-				"cur_frm": "readonly",
-				"cur_list": "readonly",
-				"locals": "readonly",
-				"$": "readonly",
-				"jQuery": "readonly",
-				"moment": "readonly"
-			}
-		},
-		{
 			"files": ["espresso_sync/public/js/editor/evalWorker.ts"],
 			"rules": {
 				"unicorn/require-post-message-target-origin": "off"

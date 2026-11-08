@@ -1,6 +1,3 @@
 [pre_model_sync]
 
 [post_model_sync]
-espresso_sync.patches.redact_pull_log_secrets
-espresso_sync.patches.delete_espresso_sync_batch
-espresso_sync.patches.set_connection_allowed_host

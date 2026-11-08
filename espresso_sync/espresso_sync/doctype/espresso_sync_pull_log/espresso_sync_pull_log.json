@@ -19,36 +19,21 @@
   "section_break_fdnd",
   "object",
   "document",
-  "shot_tab",
-  "map",
+  "transform_tab",
+  "transform",
+  "column_break_transform",
+  "transform_hash",
   "api_tab",
   "url",
   "column_break_gote",
   "request_type",
-  "section_break_bfam",
-  "request",
+  "section_break_response",
   "response",
   "errors_tab",
   "diagnostics",
   "traceback"
  ],
  "fields": [
-  {
-   "fieldname": "traceback",
-   "fieldtype": "Code",
-   "label": "Server Traceback",
-   "read_only": 1
-  },
-  {
-   "fieldname": "sync_direction",
-   "fieldtype": "Select",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Sync Direction",
-   "options": "Import\nExport",
-   "read_only": 1
-  },
   {
    "fieldname": "sync_connection",
    "fieldtype": "Link",
@@ -60,6 +45,10 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_rfue",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "sync_doctype",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -67,98 +56,6 @@
    "label": "Sync DocType",
    "options": "DocType",
    "read_only": 1
-  },
-  {
-   "fieldname": "sync_status",
-   "fieldtype": "Select",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Sync Status",
-   "options": "Success\nFailure",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_rfue",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_iekp",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_gqyj",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "section_break_fdnd",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "object",
-   "fieldtype": "JSON",
-   "label": "Object",
-   "read_only": 1
-  },
-  {
-   "fieldname": "document",
-   "fieldtype": "JSON",
-   "label": "Document",
-   "read_only": 1
-  },
-  {
-   "fieldname": "shot_tab",
-   "fieldtype": "Tab Break",
-   "label": "Shot"
-  },
-  {
-   "fieldname": "map",
-   "fieldtype": "JSON",
-   "label": "Map",
-   "read_only": 1
-  },
-  {
-   "fieldname": "api_tab",
-   "fieldtype": "Tab Break",
-   "label": "API"
-  },
-  {
-   "fieldname": "url",
-   "fieldtype": "Data",
-   "label": "URL",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_gote",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "request_type",
-   "fieldtype": "Select",
-   "label": "Request Type",
-   "options": "GET\nPOST\nPUT\nPATCH\nDELETE",
-   "read_only": 1
-  },
-  {
-   "fieldname": "section_break_bfam",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "request",
-   "fieldtype": "JSON",
-   "label": "Request Body",
-   "read_only": 1
-  },
-  {
-   "fieldname": "response",
-   "fieldtype": "Code",
-   "label": "Response",
-   "read_only": 1
-  },
-  {
-   "fieldname": "errors_tab",
-   "fieldtype": "Tab Break",
-   "label": "Errors"
   },
   {
    "fieldname": "column_break_njxw",
@@ -174,16 +71,131 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_iekp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sync_direction",
+   "fieldtype": "Select",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Sync Direction",
+   "options": "Import\nExport",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_gqyj",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sync_status",
+   "fieldtype": "Select",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Sync Status",
+   "options": "Success\nFailure",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_fdnd",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "object",
+   "fieldtype": "JSON",
+   "label": "Object",
+   "read_only": 1,
+   "description": "The API's side: the item imported, or the body exported."
+  },
+  {
+   "fieldname": "document",
+   "fieldtype": "JSON",
+   "label": "Document",
+   "read_only": 1,
+   "description": "The document as imported, or as read for an export."
+  },
+  {
+   "fieldname": "transform_tab",
+   "fieldtype": "Tab Break",
+   "label": "Transform"
+  },
+  {
+   "fieldname": "transform",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Transform",
+   "options": "Espresso Sync Transform",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_transform",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "SHA-256 of what ran: the transform's Active JSONata and the fields a sync reads, even after the transform is activated again.",
+   "fieldname": "transform_hash",
+   "fieldtype": "Data",
+   "label": "Transform Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "api_tab",
+   "fieldtype": "Tab Break",
+   "label": "API"
+  },
+  {
+   "fieldname": "url",
+   "fieldtype": "Data",
+   "label": "URL",
+   "read_only": 1,
+   "description": "The request's URL, query included."
+  },
+  {
+   "fieldname": "column_break_gote",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "request_type",
+   "fieldtype": "Select",
+   "label": "Request Type",
+   "options": "GET\nPOST\nPUT\nPATCH\nDELETE",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_response",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "response",
+   "fieldtype": "Code",
+   "label": "Response",
+   "read_only": 1,
+   "description": "The response, on the entry of the request only."
+  },
+  {
+   "fieldname": "errors_tab",
+   "fieldtype": "Tab Break",
+   "label": "Errors"
+  },
+  {
    "description": "What went wrong, or is worth a look: one entry per finding",
    "fieldname": "diagnostics",
    "fieldtype": "JSON",
    "label": "Diagnostics",
    "read_only": 1
+  },
+  {
+   "fieldname": "traceback",
+   "fieldtype": "Code",
+   "label": "Server Traceback",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-07 18:00:00.000000",
+ "modified": "2026-11-08 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Pull Log",

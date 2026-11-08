@@ -1,0 +1,46 @@
+{
+ "rules": [
+  {
+   "ptr": "/title",
+   "kind": "field",
+   "expr": "title"
+  },
+  {
+   "ptr": "/ascii",
+   "kind": "field",
+   "expr": " \t\n\u000b\f\r"
+  },
+  {
+   "ptr": "/bom",
+   "kind": "field",
+   "expr": "\ufeff"
+  },
+  {
+   "ptr": "/fs",
+   "kind": "field",
+   "expr": "\u001c"
+  },
+  {
+   "ptr": "/nel",
+   "kind": "field",
+   "expr": "\u0085"
+  },
+  {
+   "ptr": "/nbsp",
+   "kind": "field",
+   "expr": "\u00a0"
+  }
+ ],
+ "errors": [
+  [
+   "/ascii",
+   "compile.empty"
+  ]
+ ],
+ "input": {
+  "title": "T"
+ },
+ "output": {
+  "title": "T"
+ }
+}

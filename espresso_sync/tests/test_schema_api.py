@@ -69,7 +69,7 @@ class TestSchemaEndpoints(IntegrationTestCase):
 					"auth_type": "Header-based",
 					"api_key": "X-Api-Key",
 					"api_secret": "schema-api-secret",
-					"api_domain": "api.example.invalid",
+					"server_url": "https://api.example.invalid/v1",
 					"sync_frequency": "Manual",
 				}
 			).insert(ignore_permissions=True)

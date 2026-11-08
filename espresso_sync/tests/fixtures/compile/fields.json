@@ -1,0 +1,104 @@
+{
+ "rules": [
+  {
+   "ptr": "/customer_name",
+   "kind": "field",
+   "expr": "name"
+  },
+  {
+   "ptr": "/address/city",
+   "kind": "field",
+   "expr": "addr.city"
+  },
+  {
+   "ptr": "/address/zip",
+   "kind": "field",
+   "expr": "$string(addr.zip)"
+  },
+  {
+   "ptr": "/items",
+   "kind": "collection",
+   "expr": "line_items"
+  },
+  {
+   "ptr": "/items/item_code",
+   "kind": "field",
+   "expr": "sku"
+  },
+  {
+   "ptr": "/items/qty",
+   "kind": "field",
+   "expr": "quantity * 2"
+  },
+  {
+   "ptr": "/items/discount",
+   "kind": "field",
+   "expr": "discount"
+  },
+  {
+   "ptr": "/tags",
+   "kind": "scalar_collection",
+   "expr": "labels.name"
+  },
+  {
+   "ptr": "/missing",
+   "kind": "field",
+   "expr": "no_such_field"
+  },
+  {
+   "ptr": "/note",
+   "kind": "field",
+   "expr": "null"
+  }
+ ],
+ "input": {
+  "name": "Espresso Bar",
+  "addr": {
+   "city": "Lancaster",
+   "zip": 17601
+  },
+  "line_items": [
+   {
+    "sku": "A-1",
+    "quantity": 1
+   },
+   {
+    "sku": "B-2",
+    "quantity": 3,
+    "discount": 0.5
+   }
+  ],
+  "labels": [
+   {
+    "name": "cafe"
+   },
+   {
+    "name": "retail"
+   }
+  ]
+ },
+ "output": {
+  "customer_name": "Espresso Bar",
+  "address": {
+   "city": "Lancaster",
+   "zip": "17601"
+  },
+  "items": [
+   {
+    "item_code": "A-1",
+    "qty": 2
+   },
+   {
+    "item_code": "B-2",
+    "qty": 6,
+    "discount": 0.5
+   }
+  ],
+  "tags": [
+   "cafe",
+   "retail"
+  ],
+  "note": null
+ },
+ "errors": []
+}

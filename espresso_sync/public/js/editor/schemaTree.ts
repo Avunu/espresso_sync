@@ -20,7 +20,12 @@
  *   `collection` whose children are the item's fields.
  * - An object with no declared properties (a dictionary) is a `map` leaf.
  * - Requiredness has tiers: `hard` (the write fails without it), `server`
- *   (Frappe fills it in: a warning when unmapped) or none.
+ *   (Frappe fills it in: a warning when unmapped) or none. A DocType's
+ *   schema has tiers in its insert mode only.
+ * - A DocType's `doctype` property (every mode has it, the DocType's name as
+ *   its `const`) is left out of the tree. Its read mode's standard fields
+ *   (`name`, `modified`, …) are read-only fields like any other; a Check is
+ *   one field of types `integer` and `boolean`.
  *
  * Pointers follow pointer.ts, with collection items implied, so a node's
  * pointer is exactly the `ptr` a rule for it is keyed by.
@@ -375,9 +380,10 @@ function fillObject(node: TreeNode, schema: Schema, segments: readonly string[],
 	if (node.kind !== "variants") node.kind = "object";
 	node.open = open && "additionalProperties" in schema;
 	const required = new Set(stringList(schema["required"]));
-	node.children = Object.entries(properties).map(([name, child]) =>
-		build(child, name, [...segments, name], required.has(name), ctx),
-	);
+	node.children = Object.entries(properties)
+		// A document's `doctype` names its DocType: the sync sets it, no rule reads or fills it.
+		.filter(([name]) => !(ctx.doctype && name === "doctype"))
+		.map(([name, child]) => build(child, name, [...segments, name], required.has(name), ctx));
 }
 
 function fillArray(

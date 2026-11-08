@@ -14,14 +14,14 @@ from espresso_sync.espresso_sync.doctype.espresso_sync_connection.test_espresso_
 from espresso_sync.espresso_sync.doctype.espresso_sync_pull_log.espresso_sync_pull_log import (
 	EspressoSyncPullLog,
 )
-from espresso_sync.patches import redact_pull_log_secrets
 from espresso_sync.redaction import (
 	REDACTED,
+	redact_json,
 	redact_pull_log_values,
-	redact_request,
 	redact_text,
 	redact_url,
 )
+from espresso_sync.sync import Run
 
 SECRET = "hunter2-secret-value"
 
@@ -43,8 +43,7 @@ def latest_pull_log(connection_name):
 
 def pull_log_text(doc):
 	return " ".join(
-		str(doc.get(f) or "")
-		for f in ("url", "request", "response", "traceback", "object", "document", "map")
+		str(doc.get(f) or "") for f in ("url", "response", "traceback", "object", "document", "diagnostics")
 	)
 
 
@@ -60,7 +59,7 @@ class TestRedactionHelper(IntegrationTestCase):
 				"Content-Type": "application/json",
 			},
 		}
-		redacted = redact_request(request, header_names={"x-shop-header"})
+		redacted = redact_json(request, header_names={"x-shop-header"})
 		self.assertEqual(
 			redacted["headers"],
 			{
@@ -74,7 +73,7 @@ class TestRedactionHelper(IntegrationTestCase):
 		# the caller's dict is still used for requests: it must not change
 		self.assertEqual(request["headers"]["Authorization"], "Basic dXNlcjpwYXNz")
 		# JSON text in, JSON text out
-		self.assertEqual(json.loads(redact_request(json.dumps(request)))["headers"]["X-API-Key"], REDACTED)
+		self.assertEqual(json.loads(redact_json(json.dumps(request)))["headers"]["X-API-Key"], REDACTED)
 
 	def test_url(self):
 		self.assertEqual(
@@ -119,7 +118,7 @@ class TestRedactionHelper(IntegrationTestCase):
 			"response": json.dumps(echoed),
 			"object": json.dumps(echoed, indent=4),
 			"traceback": ValueError("boom Authorization: Basic dXNlcjpwYXNz"),
-			"map": json.dumps({"api_key": "customer.key"}),
+			"document": json.dumps({"api_key": "customer.key"}),
 		}
 		redacted = redact_pull_log_values(values)
 		for field in ("response", "object"):
@@ -129,8 +128,8 @@ class TestRedactionHelper(IntegrationTestCase):
 			self.assertEqual(parsed["next"], f"https://api.example.invalid/v1/o?page=2&api_key={REDACTED}")
 			self.assertEqual(parsed["id"], 7)
 		self.assertEqual(redacted["traceback"], f"boom Authorization: Basic {REDACTED}")
-		# the map only names fields: it is kept as it is
-		self.assertEqual(redacted["map"], values["map"])
+		# the local document: only literal secrets go
+		self.assertEqual(redacted["document"], values["document"])
 
 	def test_encoded_secret(self):
 		from urllib.parse import quote
@@ -156,16 +155,15 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 		connection = make_connection(
 			"ES Redaction Basic", auth_type="Basic", api_key="sync-user", secret=SECRET
 		)
-		headers = connection.get_request_headers()
+		headers = connection.get_credential_headers()
 		encoded = base64.b64encode(f"sync-user:{SECRET}".encode()).decode()
 		self.assertEqual(headers["Authorization"], f"Basic {encoded}")
 
-		connection.pull.sync_doctype = "ToDo"
-		connection.pull.url = "https://sync-user:pw@api.example.invalid/v1/todos?token=abc&page=1"
-		connection.pull.request = {"payload": None, "headers": headers}
-		connection.pull.response = json.dumps({"echo": f"Basic {encoded}"})
-		connection.pull.save()
-
+		Run(connection).log(
+			sync_doctype="ToDo",
+			url="https://sync-user:pw@api.example.invalid/v1/todos?token=abc&page=1",
+			response=json.dumps({"echo": f"Basic {encoded}", "headers": headers}),
+		)
 		# the live headers used for the request are untouched
 		self.assertEqual(headers["Authorization"], f"Basic {encoded}")
 
@@ -175,162 +173,50 @@ class TestEspressoSyncPullLog(IntegrationTestCase):
 		self.assertNotIn(SECRET, text)
 		self.assertNotIn(":pw@", text)
 		self.assertIn("page=1", log.url)
-		request = log.request if isinstance(log.request, dict) else json.loads(log.request)
-		self.assertEqual(request["headers"]["Authorization"], REDACTED)
-		self.assertEqual(request["headers"]["Content-Type"], "application/json")
+		self.assertEqual(json.loads(log.response)["headers"]["Authorization"], REDACTED)
 
 	def test_new_pull_log_is_redacted_header_auth(self):
 		connection = make_connection(
 			"ES Redaction Header", auth_type="Header-based", api_key="X-Shop-Header", secret=SECRET
 		)
-		connection.pull.sync_doctype = "ToDo"
-		connection.pull.url = "https://api.example.invalid/v1/todos"
-		connection.pull.request = json.dumps(
-			{"payload": {"q": 1}, "headers": connection.get_request_headers()}, indent=4
+		Run(connection).log(
+			sync_doctype="ToDo",
+			url="https://api.example.invalid/v1/todos",
+			object={"q": 1, "headers": connection.get_credential_headers()},
 		)
-		connection.pull.save()
-
 		log = latest_pull_log(connection.name)
 		self.assertNotIn(SECRET, pull_log_text(log))
-		self.assertEqual(json.loads(log.request)["headers"]["X-Shop-Header"], REDACTED)
-		self.assertEqual(json.loads(log.request)["payload"], {"q": 1})
+		self.assertEqual(json.loads(log.object)["headers"]["X-Shop-Header"], REDACTED)
+		self.assertEqual(json.loads(log.object)["q"], 1)
 
 	def test_new_pull_log_redacts_object_and_document(self):
 		connection = make_connection(
 			"ES Redaction Object", auth_type="Basic", api_key="sync-user", secret=SECRET
 		)
 		encoded = base64.b64encode(f"sync-user:{SECRET}".encode()).decode()
-		connection.pull.sync_doctype = "ToDo"
-		connection.pull.object = json.dumps({"id": 1, "auth": f"Basic {encoded}", "echo": SECRET}, indent=4)
-		connection.pull.document = json.dumps({"description": f"imported {SECRET}"})
-		connection.pull.traceback = ValueError(f"failed with {SECRET}")
-		connection.pull.save()
-
+		Run(connection).log(
+			sync_doctype="ToDo",
+			object={"id": 1, "auth": f"Basic {encoded}", "echo": SECRET},
+			document={"description": f"imported {SECRET}"},
+			traceback=ValueError(f"failed with {SECRET}"),
+			diagnostics=[{"message": f"echo {SECRET}"}],
+		)
 		log = latest_pull_log(connection.name)
 		text = pull_log_text(log)
 		self.assertNotIn(encoded, text)
 		self.assertNotIn(SECRET, text)
 		self.assertEqual(json.loads(log.object)["id"], 1)
 		self.assertEqual(log.traceback, f"failed with {REDACTED}")
-
-	def test_patch_scrubs_existing_rows(self):
-		connection = make_connection(
-			"ES Redaction Patch", auth_type="Basic", api_key="sync-user", secret=SECRET
-		)
-		encoded = base64.b64encode(f"sync-user:{SECRET}".encode()).decode()
-		header_conn = make_connection(
-			"ES Redaction Patch Header", auth_type="Header-based", api_key="X-Shop-Header", secret=SECRET
-		)
-
-		def seed(connection_name, values):
-			log = frappe.get_doc(
-				{
-					"doctype": "Espresso Sync Pull Log",
-					"sync_connection": connection_name,
-					"sync_doctype": "ToDo",
-				}
-			).insert(ignore_permissions=True)
-			# write the plaintext the way rows were stored before redaction existed
-			frappe.db.set_value("Espresso Sync Pull Log", log.name, values, update_modified=False)
-			return log.name, frappe.db.get_value("Espresso Sync Pull Log", log.name, "modified")
-
-		json_row, json_modified = seed(
-			connection.name,
+		# and when it is saved by hand, it redacts itself
+		doc = frappe.get_doc(
 			{
-				"url": "https://sync-user:pw@api.example.invalid/v1/todos?api_key=abc",
-				"request": json.dumps(
-					{
-						"payload": None,
-						"headers": {"Authorization": f"Basic {encoded}", "Content-Type": "application/json"},
-					},
-					indent=4,
-				),
-				"response": f"you sent {SECRET}",
-				"traceback": f"401 for Authorization: Basic {encoded}",
-			},
-		)
-		# Request is a JSON column; free text such as a traceback can hold a repr of the headers
-		repr_row, _ = seed(
-			header_conn.name,
-			{
-				"traceback": str(
-					{
-						"payload": None,
-						"headers": {"X-Shop-Header": "short", "Content-Type": "application/json"},
-					}
-				)
-			},
-		)
-		clean_row, clean_modified = seed(
-			connection.name,
-			{
-				"url": "https://api.example.invalid/v1/todos",
-				"request": json.dumps({"payload": None, "headers": {}}),
-			},
-		)
-		object_row, _ = seed(
-			connection.name,
-			{
-				"object": json.dumps(
-					{"id": 1, "echo": f"Basic {encoded}", "access_token": "tok-AAAA"}, indent=4
-				),
-				"response": json.dumps(
-					{"next": "https://api.example.invalid/v1/todos?page=2&api_key=KEYKEY"}
-				),
-				"document": json.dumps({"description": SECRET}),
-			},
-		)
-		clean_before = frappe.db.get_value(
-			"Espresso Sync Pull Log", clean_row, ["url", "request"], as_dict=True
-		)
-		# a failed Pull Log save used to log the whole unredacted row
-		error_log = frappe.log_error(
-			"Error saving pull log",
-			"error: boom\npull_log: "
-			+ str(
-				{
-					"sync_connection": connection.name,
-					"request": {"payload": None, "headers": {"Authorization": f"Basic {encoded}"}},
-					"response": f"you sent {SECRET}",
-				}
-			),
-		)
-
-		redact_pull_log_secrets.execute()
-
-		row = get_pull_log(json_row)
-		text = pull_log_text(row)
-		self.assertNotIn(encoded, text)
-		self.assertNotIn(SECRET, text)
-		self.assertNotIn(":pw@", text)
-		self.assertNotIn("api_key=abc", text)
-		self.assertEqual(json.loads(row.request or "")["headers"]["Authorization"], REDACTED)
-		self.assertEqual(json.loads(row.request or "")["headers"]["Content-Type"], "application/json")
-		self.assertEqual(row.modified, json_modified)
-
-		self.assertEqual(
-			frappe.db.get_value("Espresso Sync Pull Log", repr_row, "traceback"),
-			str(
-				{"payload": None, "headers": {"X-Shop-Header": REDACTED, "Content-Type": "application/json"}}
-			),
-		)
-
-		row = get_pull_log(object_row)
-		text = pull_log_text(row)
-		for secret in (encoded, SECRET, "tok-AAAA", "KEYKEY"):
-			self.assertNotIn(secret, text)
-		self.assertEqual(json.loads(row.object or "")["id"], 1)
-
-		error = frappe.db.get_value("Error Log", error_log.name, "error")
-		self.assertNotIn(encoded, error)
-		self.assertNotIn(SECRET, error)
-		self.assertIn(f"'Authorization': 'Basic {REDACTED}'", error)
-
-		self.assertEqual(
-			frappe.db.get_value("Espresso Sync Pull Log", clean_row, ["url", "request"], as_dict=True),
-			clean_before,
-		)
-		self.assertEqual(frappe.db.get_value("Espresso Sync Pull Log", clean_row, "modified"), clean_modified)
+				"doctype": "Espresso Sync Pull Log",
+				"sync_connection": connection.name,
+				"sync_doctype": "ToDo",
+				"response": SECRET,
+			}
+		).insert()
+		self.assertEqual(doc.get("response"), REDACTED)
 
 
 class TestPullLogRetention(IntegrationTestCase):
@@ -346,9 +232,7 @@ class TestPullLogRetention(IntegrationTestCase):
 		connection = make_connection("ES Retention Test")
 		names = []
 		for age in (40, 1):
-			connection.pull.sync_doctype = "ToDo"
-			connection.pull.sync_status = "Success"
-			connection.pull.save()
+			Run(connection).log(sync_doctype="ToDo", sync_status="Success")
 			name = frappe.get_all(
 				"Espresso Sync Pull Log",
 				filters={"sync_connection": connection.name},
@@ -368,44 +252,3 @@ class TestPullLogRetention(IntegrationTestCase):
 		EspressoSyncPullLog.clear_old_logs(days=30)
 		self.assertFalse(frappe.db.exists("Espresso Sync Pull Log", names[0]))
 		self.assertTrue(frappe.db.exists("Espresso Sync Pull Log", names[1]))
-
-
-class TestDeleteBatchPatch(IntegrationTestCase):
-	def test_the_doctype_and_its_table_are_removed(self):
-		from espresso_sync.patches import delete_espresso_sync_batch
-
-		frappe.set_user("Administrator")
-		doctype = delete_espresso_sync_batch.DOCTYPE
-		if not frappe.db.exists("DocType", doctype):
-			# what a site installed before the removal still has
-			frappe.get_doc(
-				{
-					"doctype": "DocType",
-					"name": doctype,
-					"module": "Espresso Sync",
-					"custom": 1,
-					"fields": [
-						{
-							"fieldname": "sync_connection",
-							"fieldtype": "Link",
-							"options": "Espresso Sync Connection",
-						},
-						{"fieldname": "objects_processed", "fieldtype": "Int"},
-					],
-					"permissions": [{"role": "System Manager", "read": 1}],
-				}
-			).insert()
-			frappe.db.set_value("DocType", doctype, "custom", 0)
-		self.assertTrue(frappe.db.table_exists(doctype, cached=False))
-
-		# as bench migrate runs it
-		in_migrate = frappe.flags.in_migrate
-		frappe.flags.in_migrate = True
-		try:
-			delete_espresso_sync_batch.execute()
-			self.assertFalse(frappe.db.exists("DocType", doctype))
-			self.assertFalse(frappe.db.table_exists(doctype, cached=False))
-			# and again: a patch may run on a site that never had it
-			delete_espresso_sync_batch.execute()
-		finally:
-			frappe.flags.in_migrate = in_migrate

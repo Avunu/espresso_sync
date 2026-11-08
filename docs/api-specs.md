@@ -3,7 +3,7 @@ title: API Specs and schemas
 description: Storing an API's OpenAPI description, and the schema endpoints the transform editor reads operations, DocTypes and payload checks from.
 nav_title: API Specs
 order: 2
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 The transform editor maps between an external API and a DocType. It learns the API's side from an **Espresso Sync API Spec**, the API's OpenAPI description, and the DocType's side from the DocType itself. Both are turned into JSON Schema, which the editor shows as trees and checks payloads against.
@@ -51,7 +51,7 @@ Every request the app sends (a sync, a sample, a spec fetched for import) goes t
 
 An API on a private network cannot be reached.
 
-**Credentials go to one host only**, the Connection's **Allowed Host** (`host`, or `host:port`), on that port: `host` alone means the scheme's default port (443 for https, 80 for http). It is filled from the API Domain when left empty. A request to any other host or port, a shot that overrides the API Domain or a redirect included, is sent without the credentials, and its Pull Log entry carries a `credentials-withheld` warning. The host is read from the URL as the request connects to it, so a URL such as `http://other.example\@api.example/` (which some parsers read as `api.example`) does not carry them to `other.example`. A redirect from https to http never carries them.
+**Credentials go to one host only**, the Connection's **Allowed Host** (`host`, or `host:port`), on that port: `host` alone means the scheme's default port (443 for https, 80 for http). It is filled from the Server URL when left empty, and the Server URL's host must be it. A request to any other host or port, a redirect included, is sent without the credentials. The host is read from the URL as the request connects to it, so a URL such as `http://other.example\@api.example/` (which some parsers read as `api.example`) does not carry them to `other.example`. A redirect from https to http never carries them.
 
 ## Endpoints
 
@@ -77,7 +77,7 @@ All are under `/api/method/espresso_sync.api.schema.<name>`.
 `get_doctype_schema` returns JSON Schema draft 2020-12, built from the DocType's meta, Custom Fields included:
 
 - `read` is a document as read, with its standard fields (`name`, `owner`, `creation`, `modified`, and so on). `insert` is a new document: its hard-required fields are `required`. `update` requires nothing.
-- Every mode takes `doctype`, as Frappe gives and takes a document, and only as the DocType's own name (the child DocType's in a row). Keys that start with `__`, such as `__unsaved`, are ignored.
+- Every mode takes `doctype`, as Frappe gives and takes a document, and only as the DocType's own name (the child DocType's in a row). Keys that start with `__`, such as `__unsaved`, are ignored, and so are the app's own `espresso_sync_ids` and `exclude_from_sync`, which a document read from the site has.
 - Layout fields, virtual fields, and the app's own `espresso_sync_ids` and `exclude_from_sync` are left out.
 - Each property has an `x-frappe` object: `fieldtype`, the raw `options`, `link` (a Link's DocType), `dynamic_link` (the field naming a Dynamic Link's DocType), `required`, `read_only` and `custom`. A child table is an array whose `items` is the child DocType's schema.
 - `required` is `"hard"` for a field an insert must give (mandatory, with no default, no fetch and not set by the naming series), `"server"` for a mandatory field Frappe fills in, and `null` otherwise. Only `insert` sets it.

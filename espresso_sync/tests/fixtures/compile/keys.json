@@ -1,0 +1,57 @@
+{
+ "rules": [
+  {
+   "ptr": "/名前",
+   "kind": "field",
+   "expr": "`名前`"
+  },
+  {
+   "ptr": "/Größe/Maß",
+   "kind": "field",
+   "expr": "size"
+  },
+  {
+   "ptr": "/a.b",
+   "kind": "field",
+   "expr": "`a.b`"
+  },
+  {
+   "ptr": "/path~1to",
+   "kind": "field",
+   "expr": "path"
+  },
+  {
+   "ptr": "/tilde~0key",
+   "kind": "field",
+   "expr": "\"~\""
+  },
+  {
+   "ptr": "/quote\"d",
+   "kind": "field",
+   "expr": "'\"'"
+  },
+  {
+   "ptr": "/0",
+   "kind": "field",
+   "expr": "0"
+  }
+ ],
+ "input": {
+  "名前": "エスプレッソ",
+  "size": 30,
+  "a.b": "dotted",
+  "path": "/v1/x"
+ },
+ "output": {
+  "名前": "エスプレッソ",
+  "Größe": {
+   "Maß": 30
+  },
+  "a.b": "dotted",
+  "path/to": "/v1/x",
+  "tilde~key": "~",
+  "quote\"d": "\"",
+  "0": 0
+ },
+ "errors": []
+}

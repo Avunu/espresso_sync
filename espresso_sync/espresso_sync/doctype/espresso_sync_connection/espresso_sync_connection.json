@@ -15,14 +15,13 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "pull_shot",
+  "enabled",
   "connection_name",
   "sync_frequency",
   "cron_rule",
   "api_rate_limit",
   "column_break_bgoy",
-  "api_domain",
-  "api_base",
+  "server_url",
   "allowed_host",
   "auth_type",
   "api_key",
@@ -34,10 +33,59 @@
  ],
  "fields": [
   {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
    "fieldname": "connection_name",
    "fieldtype": "Data",
    "label": "Connection Name",
    "unique": 1
+  },
+  {
+   "fieldname": "sync_frequency",
+   "fieldtype": "Select",
+   "label": "Sync Frequency",
+   "options": "Manual\nEvery Minute\nHourly\nDaily\nWeekly\nMonthly\nCron"
+  },
+  {
+   "fieldname": "cron_rule",
+   "fieldtype": "Data",
+   "label": "Cron Rule",
+   "depends_on": "eval:doc.sync_frequency==\"Cron\"",
+   "mandatory_depends_on": "eval:doc.sync_frequency==\"Cron\""
+  },
+  {
+   "description": "Rate limit in maximum requests per minute.",
+   "fieldname": "api_rate_limit",
+   "fieldtype": "Int",
+   "label": "API Rate Limit"
+  },
+  {
+   "fieldname": "column_break_bgoy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The base URL of the API (as a spec's servers give it, e.g. https://api.example.com/v1): each transform's operation path is appended to it. Its host must be the Allowed Host.",
+   "fieldname": "server_url",
+   "fieldtype": "Data",
+   "label": "Server URL",
+   "options": "URL",
+   "reqd": 1
+  },
+  {
+   "description": "Credentials are sent only to this host (host, or host:port), and to no other, redirects included. Filled from the Server URL when left empty.",
+   "fieldname": "allowed_host",
+   "fieldtype": "Data",
+   "label": "Allowed Host"
+  },
+  {
+   "fieldname": "auth_type",
+   "fieldtype": "Select",
+   "label": "Authentication Type",
+   "options": "Header-based\nBasic"
   },
   {
    "fieldname": "api_key",
@@ -50,51 +98,16 @@
    "label": "API Secret"
   },
   {
-   "fieldname": "sync_frequency",
-   "fieldtype": "Select",
-   "label": "Sync Frequency",
-   "options": "Manual\nEvery Minute\nHourly\nDaily\nWeekly\nMonthly\nCron"
-  },
-  {
-   "fieldname": "cron_rule",
-   "fieldtype": "Data",
-   "label": "Cron Rule"
-  },
-  {
-   "fieldname": "auth_type",
-   "fieldtype": "Select",
-   "label": "Authentication Type",
-   "options": "Header-based\nBasic"
-  },
-  {
-   "default": "0",
-   "fieldname": "pull_shot",
-   "fieldtype": "Check",
-   "label": "Enabled"
-  },
-  {
-   "fieldname": "column_break_bgoy",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "section_break_ebtb",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Shots"
   },
   {
    "fieldname": "shots",
    "fieldtype": "Table",
    "label": "Shots",
-   "options": "Espresso Sync Connection Shot"
-  },
-  {
-   "fieldname": "api_base",
-   "fieldtype": "Data",
-   "label": "API Base"
-  },
-  {
-   "fieldname": "api_domain",
-   "fieldtype": "Data",
-   "label": "API Domain"
+   "options": "Espresso Sync Connection Shot",
+   "description": "Each shot syncs one DocType: it imports with an Active import transform, exports with an Active export transform, or both."
   },
   {
    "fieldname": "last_pull",
@@ -108,23 +121,11 @@
    "hidden": 1,
    "label": "Last Sync Attempt",
    "read_only": 1
-  },
-  {
-   "description": "Rate limit in maximum requests per minute.",
-   "fieldname": "api_rate_limit",
-   "fieldtype": "Int",
-   "label": "API Rate Limit"
-  },
-  {
-   "description": "Credentials are sent only to this host (host, or host:port), and to no other, redirects included. Filled from the API Domain when left empty.",
-   "fieldname": "allowed_host",
-   "fieldtype": "Data",
-   "label": "Allowed Host"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-07 20:00:00.000000",
+ "modified": "2026-11-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection",

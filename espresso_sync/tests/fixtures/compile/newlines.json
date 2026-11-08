@@ -1,0 +1,36 @@
+{
+ "rules": [
+  {
+   "ptr": "/text",
+   "kind": "field",
+   "expr": "\"first line\nsecond line\""
+  },
+  {
+   "ptr": "/lines",
+   "kind": "collection",
+   "expr": "items"
+  },
+  {
+   "ptr": "/lines/label",
+   "kind": "field",
+   "expr": "(\n\t$n := name;\n\t$n & \":\n\" & code\n)"
+  }
+ ],
+ "input": {
+  "items": [
+   {
+    "name": "a",
+    "code": "1"
+   }
+  ]
+ },
+ "output": {
+  "text": "first line\nsecond line",
+  "lines": [
+   {
+    "label": "a:\n1"
+   }
+  ]
+ },
+ "errors": []
+}
