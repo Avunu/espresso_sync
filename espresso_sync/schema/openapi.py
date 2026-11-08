@@ -51,9 +51,16 @@ ANNOTATIONS = frozenset(
 		"$comment",
 	}
 )
-# values that are data, not schemas: never searched for references
+# a schema's keywords whose values are data, not schemas: never expanded
 DATA_KEYWORDS = frozenset({"example", "examples", "default", "const", "enum"})
+# a schema's keywords whose values map names to schemas: their keys are names, never keywords
+SCHEMA_MAPS = frozenset({"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"})
 YAML_12_BOOL = re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$")
+# the YAML 1.2 core schema's integers and floats ("0755" is 755, "12:30" and "1_000" are strings)
+YAML_12_INT = re.compile(r"^(?:[-+]?[0-9]+|0o[0-7]+|0x[0-9a-fA-F]+)$")
+YAML_12_FLOAT = re.compile(
+	r"^(?:[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$"
+)
 
 
 class SpecError(Exception):
@@ -65,19 +72,51 @@ class SpecError(Exception):
 
 
 class SpecLoader(yaml.SafeLoader):
-	"""YAML as OpenAPI expects it: timestamps stay strings ("2026-01-01" is not a date), and
-	only true and false are booleans (YAML 1.2: "on", "off", "yes" and "no" are strings)."""
+	"""YAML as OpenAPI expects it, the YAML 1.2 core schema: timestamps stay strings
+	("2026-01-01" is not a date), only true and false are booleans ("on", "off", "yes" and
+	"no" are strings), and numbers are decimal, 0o octal or 0x hexadecimal ("0755" is 755;
+	"12:30" and "1_000" are strings)."""
+
+
+def yaml_12_number(loader: SpecLoader, node: yaml.ScalarNode) -> int | float:
+	"""An int or a float of the YAML 1.2 core schema (the value of an !!int or !!float)."""
+	value = str(loader.construct_scalar(node))
+	try:
+		if node.tag == "tag:yaml.org,2002:float":
+			special = value.lower().lstrip("+")
+			if special in (".inf", "-.inf", ".nan"):
+				return float(special.replace(".", ""))
+			return float(value)
+		if value.startswith("0o"):
+			return int(value[2:], 8)
+		if value.startswith("0x"):
+			return int(value[2:], 16)
+		return int(value, 10)
+	except ValueError as e:
+		raise yaml.constructor.ConstructorError(
+			None, None, f"{value!r} is not a {node.tag.rsplit(':', 1)[-1]}", node.start_mark
+		) from e
 
 
 SpecLoader.yaml_implicit_resolvers = {
 	first: [
 		(tag, regexp)
 		for tag, regexp in resolvers
-		if tag not in ("tag:yaml.org,2002:timestamp", "tag:yaml.org,2002:bool")
+		if tag
+		not in (
+			"tag:yaml.org,2002:timestamp",
+			"tag:yaml.org,2002:bool",
+			"tag:yaml.org,2002:int",
+			"tag:yaml.org,2002:float",
+		)
 	]
 	for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
 }
 SpecLoader.add_implicit_resolver("tag:yaml.org,2002:bool", YAML_12_BOOL, list("tTfF"))
+SpecLoader.add_implicit_resolver("tag:yaml.org,2002:int", YAML_12_INT, list("-+0123456789"))
+SpecLoader.add_implicit_resolver("tag:yaml.org,2002:float", YAML_12_FLOAT, list("-+.0123456789"))
+SpecLoader.add_constructor("tag:yaml.org,2002:int", yaml_12_number)
+SpecLoader.add_constructor("tag:yaml.org,2002:float", yaml_12_number)
 
 
 def json_key(key: Any) -> str:
@@ -141,12 +180,13 @@ def escape(token: Any) -> str:
 
 
 def iter_refs(value: Any, pointer: str = "") -> Iterator[tuple[str, str]]:
-	"""(pointer, reference) for each $ref in `value`, examples and other data aside."""
+	"""(pointer, reference) for each $ref and $dynamicRef in `value`, wherever it is: in an
+	example or a default too, so that nothing a reader might follow is missed."""
 	if isinstance(value, dict):
 		for key, item in value.items():
 			if key in ("$ref", "$dynamicRef") and isinstance(item, str):
 				yield pointer, item
-			elif key not in DATA_KEYWORDS:
+			else:
 				yield from iter_refs(item, f"{pointer}/{escape(key)}")
 	elif isinstance(value, list):
 		for index, item in enumerate(value):
@@ -158,10 +198,29 @@ def external_refs(spec: dict[str, Any]) -> list[str]:
 	return [f"{pointer}: {ref}" for pointer, ref in iter_refs(spec) if not ref.startswith("#")]
 
 
-class SelfContainedSpecValidator(OpenAPIV31SpecValidator):
-	"""The 3.1 validator with no reference handlers: it never opens a file or a URL."""
+def refuse_retrieval(uri: str) -> Any:
+	raise SpecError(
+		_("{0} is outside the spec: a stored spec is never resolved against a file or a URL").format(uri)
+	)
 
-	resolver_handlers = {}  # noqa: RUF012 -- replaces the class attribute it overrides
+
+class RefuseAll(dict):
+	"""Reference handlers with one for every scheme, which refuses. jsonschema_path falls
+	back to requests.get or urlopen (file:// included) for a scheme it has no handler for,
+	so an empty mapping would still read files and URLs."""
+
+	def __missing__(self, scheme: str):
+		return refuse_retrieval
+
+	def __contains__(self, scheme: object) -> bool:
+		return True
+
+
+class SelfContainedSpecValidator(OpenAPIV31SpecValidator):
+	"""The 3.1 validator whose references never leave the spec: it never opens a file or a
+	URL."""
+
+	resolver_handlers = RefuseAll()
 
 
 def spec_errors(spec: Any) -> list[str]:
@@ -188,7 +247,7 @@ def spec_errors(spec: Any) -> list[str]:
 			errors.append(f"{where or '/'}: {error.message}"[:500])
 			if len(errors) >= 20:
 				break
-	except (Unresolvable, LookupError, ValueError, RecursionError) as e:
+	except (Unresolvable, SpecError, LookupError, ValueError, RecursionError) as e:
 		errors.append(_("The spec cannot be read: {0}").format(str(e)))
 	return errors
 
@@ -375,10 +434,16 @@ def operation_part(
 
 
 def dereference(
-	spec: dict[str, Any], node: Any, stack: tuple[str, ...] = (), budget: list[int] | None = None
+	spec: dict[str, Any],
+	node: Any,
+	stack: tuple[str, ...] = (),
+	budget: list[int] | None = None,
+	names: bool = False,
 ) -> Any:
 	"""`node` with each internal reference replaced by what it refers to. A reference met
-	again inside its own expansion becomes {"x-cycle": "<reference>"}."""
+	again inside its own expansion becomes {"x-cycle": "<reference>"}. `names` is true for
+	a map of names to schemas (properties, $defs...), whose keys are names, not keywords: a
+	property named "default" is a schema like any other."""
 	budget = budget if budget is not None else [MAX_SCHEMA_NODES]
 	budget[0] -= 1
 	if budget[0] < 0 or len(stack) > MAX_DEPTH:
@@ -387,6 +452,8 @@ def dereference(
 		return [dereference(spec, item, stack, budget) for item in node]
 	if not isinstance(node, dict):
 		return node
+	if names:
+		return {key: dereference(spec, value, stack, budget) for key, value in node.items()}
 	ref = node.get("$ref")
 	if isinstance(ref, str):
 		if ref in stack:
@@ -400,7 +467,9 @@ def dereference(
 			return {**resolved, **siblings}
 		return {**siblings, "allOf": [resolved, *siblings.get("allOf", [])]}
 	return {
-		key: value if key in DATA_KEYWORDS else dereference(spec, value, stack, budget)
+		key: value
+		if key in DATA_KEYWORDS
+		else dereference(spec, value, stack, budget, names=key in SCHEMA_MAPS)
 		for key, value in node.items()
 	}
 

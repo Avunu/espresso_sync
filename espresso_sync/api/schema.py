@@ -18,6 +18,10 @@ from espresso_sync.utils.safe_fetch import EgressError, safe_request
 SPEC = "Espresso Sync API Spec"
 CONNECTION = "Espresso Sync Connection"
 SPEC_FETCH_TIMEOUT = (10, 30)
+# the largest text fetched for the import screen: larger than a stored spec may be
+# (openapi.MAX_SPEC_BYTES), as published specs are pretty-printed and the screen saves
+# them minified (GitHub's REST description is 13 MB as published, 7 MB minified)
+MAX_SOURCE_BYTES = 32 * 1024 * 1024
 
 
 def require_manager():
@@ -51,7 +55,7 @@ def spec_failure(e: openapi.SpecError):
 @frappe.whitelist(methods=["POST"])
 def fetch_spec_source(url: str, connection: str | None = None) -> dict[str, Any]:
 	"""The text at `url` (a spec, or a file a spec refers to), fetched by the server for the
-	import screen: http(s) to public addresses only, at most openapi.MAX_SPEC_BYTES. With a
+	import screen: http(s) to public addresses only, at most MAX_SOURCE_BYTES. With a
 	`connection`, its credentials go along when the URL's host is its Allowed Host."""
 	require_manager()
 	credentials, allowed_host = None, None
@@ -66,7 +70,7 @@ def fetch_spec_source(url: str, connection: str | None = None) -> dict[str, Any]
 			headers={"Accept": "application/json, application/yaml;q=0.9, text/yaml;q=0.9, */*;q=0.5"},
 			credentials=credentials,
 			allowed_host=allowed_host,
-			max_bytes=openapi.MAX_SPEC_BYTES,
+			max_bytes=MAX_SOURCE_BYTES,
 			timeout=SPEC_FETCH_TIMEOUT,
 		)
 	except EgressError as e:

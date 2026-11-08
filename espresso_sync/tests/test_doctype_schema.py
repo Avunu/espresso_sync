@@ -15,9 +15,10 @@ from espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_
 from espresso_sync.schema.doctype_schema import doctype_json_schema, validate_doctype_payload
 
 GOLDEN = Path(__file__).parent / "fixtures" / "contact_insert.json"
-# the part of Contact's schema the golden file holds: a Data field, a Link, a Check, a
-# Select, a read-only field, and the three child tables (Dynamic Link among them)
+# the part of Contact's schema the golden file holds: the DocType, a Data field, a Link, a
+# Check, a Select, a read-only field, and the three child tables (Dynamic Link among them)
 GOLDEN_FIELDS = (
+	"doctype",
 	"first_name",
 	"user",
 	"status",
@@ -91,12 +92,25 @@ class TestDocTypeSchema(IntegrationTestCase):
 				"email_ids": [{"email_id": "schema.reader@example.com", "is_primary": 1}],
 			}
 		).insert(ignore_permissions=True)
-		payload = json.loads(frappe.as_json(contact.as_dict(no_default_fields=False)))
-		payload.pop("doctype", None)
-		for row in payload["email_ids"]:
-			row.pop("doctype", None)
+		# the shape Frappe gives a document in: doctype, and __unsaved on new rows, included
+		document = contact.as_dict(no_default_fields=False)
+		document["email_ids"][0]["__unsaved"] = 1
+		payload = json.loads(frappe.as_json(document))
+		self.assertEqual(payload["doctype"], "Contact")
+		self.assertEqual(payload["email_ids"][0]["doctype"], "Contact Email")
 		diagnostics = validate_doctype_payload("Contact", payload, "read")
-		self.assertEqual([d for d in diagnostics if d["severity"] == "error"], [])
+		self.assertEqual([d for d in diagnostics if d["severity"] != "info"], [])
+		schema = doctype_json_schema("Contact", "read")
+		self.assertEqual(schema["properties"]["doctype"]["const"], "Contact")
+		self.assertEqual(
+			schema["properties"]["email_ids"]["items"]["properties"]["doctype"]["const"], "Contact Email"
+		)
+		# another DocType's document is not this one's
+		payload["email_ids"][0]["doctype"] = "Contact Phone"
+		self.assertIn(
+			("/email_ids/0/doctype", "schema-const", "error"),
+			codes(validate_doctype_payload("Contact", payload, "read")),
+		)
 
 	def test_a_custom_field_appears(self):
 		create_custom_field(
@@ -183,6 +197,34 @@ class TestDocTypePayloads(IntegrationTestCase):
 		missing = validate_doctype_payload("Contact", {"email_ids": [{"is_primary": 1}]})
 		self.assertEqual(codes(missing), {("/email_ids/0/email_id", "required", "error")})
 		self.assertEqual(validate_doctype_payload("ToDo", {"priority": "Low"}, "update"), [])
+		# get_doc's shape: the DocType named in the payload
+		self.assertEqual(validate_doctype_payload("ToDo", {"doctype": "ToDo", "description": "x"}), [])
+
+	def test_an_empty_mandatory_value_is_an_error(self):
+		required = {("/description", "required", "error")}
+		for value in (None, "", "  ", "<p><br></p>"):
+			with self.subTest(value=value):
+				self.assertEqual(codes(validate_doctype_payload("ToDo", {"description": value})), required)
+				# an update fills nothing in: an empty mandatory field is refused on save
+				self.assertEqual(
+					codes(validate_doctype_payload("ToDo", {"description": value}, "update")), required
+				)
+		self.assertEqual(validate_doctype_payload("ToDo", {"description": '<p><img src="a.png"></p>'}), [])
+		self.assertEqual(
+			codes(validate_doctype_payload("User Group", {"name": "ES Group", "user_group_members": []})),
+			{("/user_group_members", "required", "error")},
+		)
+		self.assertEqual(
+			codes(validate_doctype_payload("Contact", {"email_ids": [{"email_id": ""}]})),
+			{("/email_ids/0/email_id", "required", "error")},
+		)
+		# a field left out of an update is left as it is
+		self.assertEqual(validate_doctype_payload("ToDo", {}, "update"), [])
+		# a saved document gets no defaults: a mandatory field with one is refused empty too
+		self.assertEqual(
+			codes(validate_doctype_payload("Reminder", {"remind_at": None}, "update")),
+			{("/remind_at", "required", "error")},
+		)
 
 	def test_numbers(self):
 		create_custom_field(

@@ -232,7 +232,12 @@ class TestSchemaEndpoints(IntegrationTestCase):
 			api.fetch_spec_source(SPEC_URL)
 		with responses.RequestsMock() as rsps:
 			rsps.add(responses.GET, SPEC_URL, body=b"x" * 64)
-			with patch.object(api.openapi, "MAX_SPEC_BYTES", 16), self.assertRaises(frappe.ValidationError):
+			rsps.add(responses.GET, SPEC_URL, body=b"x" * 64)
+			# the fetch has its own cap, above a stored spec's: a published spec is pretty-printed
+			self.assertGreater(api.MAX_SOURCE_BYTES, api.openapi.MAX_SPEC_BYTES)
+			with patch.object(api.openapi, "MAX_SPEC_BYTES", 16):
+				self.assertEqual(len(api.fetch_spec_source(SPEC_URL)["text"]), 64)
+			with patch.object(api, "MAX_SOURCE_BYTES", 16), self.assertRaises(frappe.ValidationError):
 				api.fetch_spec_source(SPEC_URL)
 
 	def test_a_spec_without_a_connection_is_named_by_its_title(self):

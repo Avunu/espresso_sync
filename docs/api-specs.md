@@ -25,9 +25,9 @@ Only a System Manager can see or change an API Spec or call the endpoints below.
 
 Changes are tracked: the form's activity shows each version of the spec.
 
-**Only OpenAPI 3.1 is stored.** The import screen upgrades Swagger 2.0 and OpenAPI 3.0 to 3.1 in the browser and bundles external references before it saves. The server refuses anything else: another version, a spec that does not validate as OpenAPI 3.1, or one with a `$ref` that leaves the document (`other.yaml#/...`, `https://...`, `file:///...`). It never opens a file or a URL to resolve a reference.
+**Only OpenAPI 3.1 is stored.** The import screen upgrades Swagger 2.0 and OpenAPI 3.0 to 3.1 in the browser and bundles external references before it saves. The server refuses anything else: another version, a spec that does not validate as OpenAPI 3.1, or one with a `$ref` that leaves the document (`other.yaml#/...`, `https://...`, `file:///...`), wherever it is, in an example or a default included. It never opens a file or a URL to resolve a reference.
 
-YAML is read the way OpenAPI means it: dates such as `2026-01-01` stay strings, only `true` and `false` are booleans (`on`, `off`, `yes` and `no` are strings), and keys such as `200:` become the string `"200"`.
+YAML is read the way OpenAPI means it, by the YAML 1.2 core schema: dates such as `2026-01-01` stay strings, only `true` and `false` are booleans (`on`, `off`, `yes` and `no` are strings), numbers are decimal, `0o` octal or `0x` hexadecimal (`0755` is 755, `1e3` is 1000.0, and `12:30` and `1_000` are strings), and keys such as `200:` become the string `"200"`.
 
 ### Authentication hints
 
@@ -47,7 +47,7 @@ Every request the app sends (a sync, a sample, a spec fetched for import) is che
 - Only `http` and `https` URLs, without `user:password@` in them.
 - The host must resolve to public addresses only. Loopback, private, link-local (the cloud metadata address `169.254.169.254` among them), shared and reserved ranges are refused, and so is a host with any such address. The connection is then made to the address that was checked.
 - At most 5 redirects, each checked the same way.
-- A response body of at most 20 MiB (10 MiB for a spec), arriving within 2 minutes.
+- A response body of at most 20 MiB (32 MiB for a spec fetched for the import screen, which saves it minified: a stored spec is at most 10 MiB), with the whole exchange done within 2 minutes, however slowly it trickles in.
 
 An API on a private network can be opened in the site config, by range:
 
@@ -57,7 +57,7 @@ An API on a private network can be opened in the site config, by range:
 
 The cloud metadata addresses stay refused whatever it says.
 
-**Credentials go to one host only**, the Connection's **Allowed Host** (`host`, or `host:port`). It is filled from the API Domain when left empty. A request to any other host, a shot that overrides the API Domain or a redirect included, is sent without the credentials, and its Pull Log entry carries a `credentials-withheld` warning.
+**Credentials go to one host only**, the Connection's **Allowed Host** (`host`, or `host:port`), on that port: `host` alone means the scheme's default port (443 for https, 80 for http). It is filled from the API Domain when left empty. A request to any other host or port, a shot that overrides the API Domain or a redirect included, is sent without the credentials, and its Pull Log entry carries a `credentials-withheld` warning. A redirect from https to http never carries them.
 
 ## Endpoints
 
@@ -83,6 +83,7 @@ All are under `/api/method/espresso_sync.api.schema.<name>`.
 `get_doctype_schema` returns JSON Schema draft 2020-12, built from the DocType's meta, Custom Fields included:
 
 - `read` is a document as read, with its standard fields (`name`, `owner`, `creation`, `modified`, and so on). `insert` is a new document: its hard-required fields are `required`. `update` requires nothing.
+- Every mode takes `doctype`, as Frappe gives and takes a document, and only as the DocType's own name (the child DocType's in a row). Keys that start with `__`, such as `__unsaved`, are ignored.
 - Layout fields, virtual fields, and the app's own `espresso_sync_ids` and `exclude_from_sync` are left out.
 - Each property has an `x-frappe` object: `fieldtype`, the raw `options`, `link` (a Link's DocType), `dynamic_link` (the field naming a Dynamic Link's DocType), `required`, `read_only` and `custom`. A child table is an array whose `items` is the child DocType's schema.
 - `required` is `"hard"` for a field an insert must give (mandatory, with no default, no fetch and not set by the naming series), `"server"` for a mandatory field Frappe fills in, and `null` otherwise. Only `insert` sets it.
@@ -99,6 +100,7 @@ Against a DocType, the check follows what Frappe does with the value:
 | Value                                           | Severity | Code             |
 | ----------------------------------------------- | -------- | ---------------- |
 | missing or empty hard-required field            | error    | `required`       |
+| mandatory field set empty in an update          | error    | `required`       |
 | not an option of a Select, too long, not a date | error    | `schema-...`     |
 | a number given as a string (`"12"`)             | warning  | `numeric-string` |
 | a Check given 2                                 | warning  | `check-number`   |
@@ -106,4 +108,4 @@ Against a DocType, the check follows what Frappe does with the value:
 | a mandatory field Frappe fills in, not given    | warning  | `server-filled`  |
 | a Check given `true` or `false`                 | info     | `check-boolean`  |
 
-An empty optional value (`null`, `""`) is not reported.
+Empty is what Frappe takes as missing: `null`, `[]`, or text with nothing in it but spaces and HTML tags. An update fills nothing in, so a mandatory field it sets empty is refused, whatever its default (but for `null` in a child row, which a new row fills with the default). An empty optional value is not reported.

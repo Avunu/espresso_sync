@@ -10,6 +10,20 @@
  "required": [],
  "additionalProperties": false,
  "properties": {
+  "doctype": {
+   "type": "string",
+   "title": "DocType",
+   "x-frappe": {
+    "fieldtype": "Data",
+    "options": null,
+    "link": null,
+    "dynamic_link": null,
+    "required": null,
+    "read_only": true,
+    "custom": false
+   },
+   "const": "Contact"
+  },
   "first_name": {
    "type": "string",
    "maxLength": 140,
@@ -104,6 +118,20 @@
      "istable": true
     },
     "properties": {
+     "doctype": {
+      "type": "string",
+      "title": "DocType",
+      "x-frappe": {
+       "fieldtype": "Data",
+       "options": null,
+       "link": null,
+       "dynamic_link": null,
+       "required": null,
+       "read_only": true,
+       "custom": false
+      },
+      "const": "Contact Email"
+     },
      "name": {
       "type": "string",
       "title": "ID",
@@ -182,6 +210,20 @@
      "istable": true
     },
     "properties": {
+     "doctype": {
+      "type": "string",
+      "title": "DocType",
+      "x-frappe": {
+       "fieldtype": "Data",
+       "options": null,
+       "link": null,
+       "dynamic_link": null,
+       "required": null,
+       "read_only": true,
+       "custom": false
+      },
+      "const": "Contact Phone"
+     },
      "name": {
       "type": "string",
       "title": "ID",
@@ -281,6 +323,20 @@
      "istable": true
     },
     "properties": {
+     "doctype": {
+      "type": "string",
+      "title": "DocType",
+      "x-frappe": {
+       "fieldtype": "Data",
+       "options": null,
+       "link": null,
+       "dynamic_link": null,
+       "required": null,
+       "read_only": true,
+       "custom": false
+      },
+      "const": "Dynamic Link"
+     },
      "name": {
       "type": "string",
       "title": "ID",

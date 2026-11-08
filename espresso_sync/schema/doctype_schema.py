@@ -20,7 +20,7 @@ import frappe
 from dateutil import parser as date_parser
 from frappe import _
 from frappe.model import default_fields, display_fieldtypes, table_fields
-from frappe.utils import validate_email_address
+from frappe.utils import strip_html, validate_email_address
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
 MODES = ("read", "insert", "update")
@@ -176,7 +176,10 @@ def doctype_json_schema(doctype: str, mode: str = "insert", *, _seen: tuple[str,
 		frappe.throw(_("{0} contains itself").format(doctype))
 	seen = (*_seen, doctype)
 	values = new_values(meta) if mode == "insert" else {}
-	properties: dict[str, Any] = {}
+	# a document as Frappe gives it (as_dict, the REST API) and takes it (get_doc) names its
+	# DocType: accepted, and only as this one
+	properties: dict[str, Any] = {"doctype": standard_field_schema("doctype", "Data", "DocType")}
+	properties["doctype"]["const"] = doctype
 	if mode == "read":
 		standard = {**STANDARD_READ_FIELDS, **(CHILD_READ_FIELDS if meta.istable else {})}
 		for fieldname, (fieldtype, label) in standard.items():
@@ -290,17 +293,55 @@ def classify(error: ValidationError, mode: str) -> dict[str, Any] | None:
 	return entry(path, "error", f"schema-{keyword}", error.message[:500])
 
 
+def is_blank(value: Any, fieldtype: str | None, options: str | None) -> bool:
+	"""Whether Frappe takes `value` of a mandatory field as missing: None, [], or text with
+	nothing in it but spaces and HTML tags (an image counts in a Text Editor)."""
+	if value is None or value == []:
+		return True
+	if fieldtype == "Check" or not isinstance(value, str):
+		return False
+	if "<img" in value and (fieldtype == "Text Editor" or (fieldtype == "Code" and options == "HTML")):
+		return False
+	return not strip_html(value).strip()
+
+
+def blank_and_mandatory(
+	field: dict[str, Any], doctype_meta, fieldname: str, value: Any, mode: str | None, in_row: bool
+) -> bool:
+	"""Whether a field given `value` is one Frappe refuses as missing: a hard-required one in
+	an insert, a mandatory one in an update (where nothing is filled in, but for None on a
+	new child row, which gets the field's default)."""
+	meta = field.get("x-frappe") or {}
+	if not is_blank(value, meta.get("fieldtype"), meta.get("options")):
+		return False
+	if mode == "insert":
+		return meta.get("required") == "hard"
+	if mode != "update" or doctype_meta is None:
+		return False
+	df = doctype_meta.get_field(fieldname)
+	if not df or not df.reqd:
+		return False
+	return not (value is None and in_row and (df.get("default") not in (None, "") or df.get("fetch_from")))
+
+
 def check_notes(schema: dict[str, Any], payload: Any, path: list) -> list[dict[str, Any]]:
-	"""Information on Check fields given as booleans, and warnings on required fields left
-	for Frappe to fill in, through child rows too."""
+	"""Errors on mandatory fields given an empty value, information on Check fields given
+	as booleans, and warnings on required fields left for Frappe to fill in, through child
+	rows too."""
 	if not isinstance(payload, dict):
 		return []
 	notes = []
 	properties = schema.get("properties") or {}
 	mode = (schema.get("x-frappe") or {}).get("mode")
+	doctype = (schema.get("x-frappe") or {}).get("doctype")
+	doctype_meta = frappe.get_meta(doctype) if mode == "update" and doctype else None
 	for fieldname, field in properties.items():
 		meta = field.get("x-frappe") or {}
 		value = payload.get(fieldname)
+		if fieldname in payload and blank_and_mandatory(
+			field, doctype_meta, fieldname, value, mode, in_row=bool(path)
+		):
+			notes.append(entry([*path, fieldname], "error", "required", _("A value is required")))
 		if meta.get("fieldtype") == "Check" and isinstance(value, bool):
 			notes.append(
 				entry(
@@ -325,9 +366,23 @@ def check_notes(schema: dict[str, Any], payload: Any, path: list) -> list[dict[s
 	return notes
 
 
+def without_dunder_keys(schema: dict[str, Any], payload: Any) -> Any:
+	"""`payload` without the keys Frappe marks a document's state with (__islocal,
+	__unsaved...), on the document and its child rows."""
+	if not isinstance(payload, dict):
+		return payload
+	document = {key: value for key, value in payload.items() if not str(key).startswith("__")}
+	for fieldname, field in (schema.get("properties") or {}).items():
+		rows = document.get(fieldname)
+		if (field.get("x-frappe") or {}).get("fieldtype") in table_fields and isinstance(rows, list):
+			document[fieldname] = [without_dunder_keys(field.get("items") or {}, row) for row in rows]
+	return document
+
+
 def validate_doctype_payload(doctype: str, payload: Any, mode: str = "insert") -> list[dict[str, Any]]:
 	"""Diagnostics ({rule, path, severity, code, message, origin}) for a document payload."""
 	schema = doctype_json_schema(doctype, mode)
+	payload = without_dunder_keys(schema, payload)
 	validator = Draft202012Validator(schema, format_checker=format_checker)
 	diagnostics: dict[tuple[str, str], dict[str, Any]] = {}
 	for error in validator.iter_errors(payload):

@@ -14,15 +14,23 @@
 - the response is no larger than ``max_bytes`` and arrives within ``deadline`` seconds.
 
 Credentials are passed apart from the other headers, and are added only when the host
-the request goes to (each hop of a redirect included) is the ``allowed_host`` given.
+the request goes to (each hop of a redirect included) is the ``allowed_host`` given, on
+its port (the scheme's default port when the allowed host names none), and never to an
+http hop of a request that began on https.
+
+The deadline holds for the whole exchange: a watchdog shuts the connection when it
+passes, however slowly the headers or the body trickle in.
 
 The connection itself is made to the address that was checked (``make_session``'s
 adapter re-resolves and re-checks when it connects), so a DNS answer that changes
 between the check and the connection cannot reach a private address.
 """
 
+import contextlib
+import contextvars
 import ipaddress
 import socket
+import threading
 import time
 from collections.abc import Mapping
 from typing import Any, cast
@@ -39,7 +47,7 @@ from urllib3.util import connection as urllib3_connection
 
 # (connect, read) seconds
 REQUEST_TIMEOUT = (10, 60)
-# seconds for a whole response, body included, however slowly it trickles in
+# seconds for a whole exchange, redirects and body included, however slowly it trickles in
 DEFAULT_DEADLINE = 120
 MAX_REDIRECTS = 5
 # the largest response body read (after decompression)
@@ -195,18 +203,18 @@ def check_url(url: str) -> tuple[str, str, int]:
 
 def credentials_apply(url: str, allowed_host: str | None) -> bool:
 	"""Whether a request to `url` may carry the credentials of a Connection whose allowed
-	host is `allowed_host`: the host is the same and, when the allowed host names a port,
-	so is the port."""
+	host is `allowed_host`: the host is the same, and so is the port, which is the URL
+	scheme's default (443, or 80 for http) when the allowed host names none."""
 	if not allowed_host:
 		return False
 	try:
 		allowed, allowed_port = split_host(allowed_host)
-		_scheme, host, port = check_url(url)
+		scheme, host, port = check_url(url)
 	except EgressRefused, ValueError:
 		return False
 	if not allowed or host.lower() != allowed.lower():
 		return False
-	return allowed_port is None or allowed_port == port
+	return port == (allowed_port or DEFAULT_PORTS[scheme])
 
 
 def _connect(conn: HTTPConnection):
@@ -231,14 +239,88 @@ def _connect(conn: HTTPConnection):
 		raise NewConnectionError(conn, f"Failed to establish a new connection: {e}") from e
 
 
+def shut(sock: socket.socket):
+	"""End the socket's exchange: a read waiting on it returns at once, and finds the end."""
+	with contextlib.suppress(OSError):
+		sock.shutdown(socket.SHUT_RDWR)
+
+
+class Watchdog:
+	"""Shuts the sockets of one safe_request when its deadline passes, so that a response
+	trickling in (a byte at a time, each within the read timeout) still ends."""
+
+	def __init__(self, seconds: float):
+		self.sockets: list[socket.socket] = []
+		self.fired = False
+		self.lock = threading.Lock()
+		self.timer = threading.Timer(max(seconds, 0), self.fire)
+		self.timer.daemon = True
+
+	def watch(self, sock: socket.socket | None):
+		if sock is None:
+			return
+		with self.lock:
+			self.sockets.append(sock)
+			fired = self.fired
+		if fired:
+			shut(sock)
+
+	def fire(self):
+		with self.lock:
+			self.fired = True
+			sockets = list(self.sockets)
+		for sock in sockets:
+			shut(sock)
+
+	def __enter__(self):
+		self.token = WATCHDOG.set(self)
+		self.timer.start()
+		return self
+
+	def __exit__(self, *_exc_info):
+		self.timer.cancel()
+		WATCHDOG.reset(self.token)
+
+
+# the watchdog of the safe_request under way in this thread (or task)
+WATCHDOG: contextvars.ContextVar[Watchdog | None] = contextvars.ContextVar(
+	"espresso_sync_watchdog", default=None
+)
+
+
+def watched(conn: HTTPConnection):
+	"""Put the connection's socket under the watchdog of the safe_request under way. The
+	socket, not the connection: http.client lets go of the connection's socket when the
+	response is to be read until the connection closes."""
+	watchdog = WATCHDOG.get()
+	if watchdog is not None:
+		watchdog.watch(cast(Any, conn.sock))
+
+
 class GuardedHTTPConnection(HTTPConnection):
 	def _new_conn(self):
 		return _connect(self)
+
+	def request(self, *args, **kwargs):
+		watched(self)
+		return super().request(*args, **kwargs)
+
+	def getresponse(self, *args, **kwargs):
+		watched(self)
+		return super().getresponse(*args, **kwargs)
 
 
 class GuardedHTTPSConnection(HTTPSConnection):
 	def _new_conn(self):
 		return _connect(self)
+
+	def request(self, *args, **kwargs):
+		watched(self)
+		return super().request(*args, **kwargs)
+
+	def getresponse(self, *args, **kwargs):
+		watched(self)
+		return super().getresponse(*args, **kwargs)
 
 
 class GuardedHTTPConnectionPool(HTTPConnectionPool):
@@ -304,34 +386,28 @@ def redirected(status: int, method: str, kwargs: dict[str, Any]) -> tuple[str, d
 	return method, kwargs
 
 
-def safe_request(
+def follow_redirects(
+	session: requests.Session,
 	method: str,
 	url: str,
 	*,
-	session: requests.Session | None = None,
-	headers: Mapping[str, str] | None = None,
-	credentials: Mapping[str, str] | None = None,
-	allowed_host: str | None = None,
-	max_bytes: int = DEFAULT_MAX_BYTES,
-	max_redirects: int = MAX_REDIRECTS,
-	deadline: float = DEFAULT_DEADLINE,
-	timeout: Any = REQUEST_TIMEOUT,
+	headers: Mapping[str, str] | None,
+	credentials: Mapping[str, str] | None,
+	allowed_host: str | None,
+	max_bytes: int,
+	max_redirects: int,
+	until: float,
+	timeout: Any,
 	**kwargs: Any,
 ) -> requests.Response:
-	"""Send a request under the checks above and return its response, body read.
-
-	`credentials` are headers (Authorization, an API key header) added only when the
-	host of the request is `allowed_host`. Raises EgressError (a requests.RequestException)
-	for a request refused or a response too large or too slow, and requests' own
-	exceptions for the rest."""
-	session = session or make_session()
-	method = method.upper()
-	until = time.monotonic() + deadline
+	began_on_https = urlsplit(url).scheme.lower() == "https"
 	for _hop in range(max_redirects + 1):
-		_scheme, host, port = check_url(url)
+		if time.monotonic() > until:
+			raise EgressTimeout(_("The response did not arrive in time"))
+		scheme, host, port = check_url(url)
 		checked_address(host, port)
 		send_headers = dict(headers or {})
-		if credentials and credentials_apply(url, allowed_host):
+		if credentials and credentials_apply(url, allowed_host) and not (began_on_https and scheme == "http"):
 			send_headers.update(credentials)
 		response = session.request(
 			method,
@@ -350,3 +426,52 @@ def safe_request(
 		url = urljoin(response.url or url, location)
 		method, kwargs = redirected(response.status_code, method, kwargs)
 	raise EgressRefused(_("More than {0} redirects").format(max_redirects))
+
+
+def safe_request(
+	method: str,
+	url: str,
+	*,
+	session: requests.Session | None = None,
+	headers: Mapping[str, str] | None = None,
+	credentials: Mapping[str, str] | None = None,
+	allowed_host: str | None = None,
+	max_bytes: int = DEFAULT_MAX_BYTES,
+	max_redirects: int = MAX_REDIRECTS,
+	deadline: float = DEFAULT_DEADLINE,
+	timeout: Any = REQUEST_TIMEOUT,
+	**kwargs: Any,
+) -> requests.Response:
+	"""Send a request under the checks above and return its response, body read.
+
+	`credentials` are headers (Authorization, an API key header) added only when the
+	host of the request is `allowed_host` (see credentials_apply), and never to an http
+	hop after an https one. Raises EgressError (a requests.RequestException) for a request
+	refused or a response too large or too slow, and requests' own exceptions for the
+	rest."""
+	session = session or make_session()
+	method = method.upper()
+	until = time.monotonic() + deadline
+	with Watchdog(deadline) as watchdog:
+		try:
+			response = follow_redirects(
+				session,
+				method,
+				url,
+				headers=headers,
+				credentials=credentials,
+				allowed_host=allowed_host,
+				max_bytes=max_bytes,
+				max_redirects=max_redirects,
+				until=until,
+				timeout=timeout,
+				**kwargs,
+			)
+		except requests.RequestException as e:
+			if watchdog.fired and not isinstance(e, EgressError):
+				raise EgressTimeout(_("The response did not arrive in time")) from e
+			raise
+		if watchdog.fired:
+			# the connection was shut: a body read to its end may have been cut short
+			raise EgressTimeout(_("The response did not arrive in time"))
+	return response

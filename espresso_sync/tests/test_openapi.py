@@ -4,10 +4,13 @@
 import builtins
 import copy
 import json
+import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
 from frappe.tests import IntegrationTestCase
+from jsonschema_path import retrievers
 from referencing.exceptions import Unresolvable
 
 from espresso_sync.schema import openapi
@@ -18,6 +21,21 @@ FIXTURES = Path(__file__).parent / "fixtures" / "openapi"
 
 def fixture(name: str) -> dict:
 	return openapi.load_spec_text((FIXTURES / name).read_text())
+
+
+@contextmanager
+def no_retrieval():
+	"""Fail the test if anything opens a URL or a file to resolve a reference."""
+
+	def refuse(*args, **kwargs):
+		raise AssertionError(f"a reference was retrieved: {args}")
+
+	with (
+		patch.object(retrievers, "urlopen", refuse),
+		patch.object(retrievers.requests, "get", refuse),
+		patch.object(urllib.request, "urlopen", refuse),
+	):
+		yield
 
 
 def schema_of(*args) -> dict:
@@ -40,6 +58,15 @@ class TestLoading(IntegrationTestCase):
 		self.assertEqual(schema["properties"]["state"]["enum"], ["on", "off", "yes", "no"])
 		self.assertEqual(schema["properties"]["since"]["example"], "2026-01-01")
 		self.assertEqual(openapi.spec_errors(spec), [])
+		# YAML 1.2 numbers: no sexagesimal, no leading-zero octal, no underscores
+		numbers = openapi.load_spec_text(
+			"a: [12:30, 0755, 1_000, 1e3, 0o17, 0x1F, +5, -3, .5, 1.5e-3, -.inf, 0b11, 1.2.3]\n"
+		)["a"]
+		self.assertEqual(numbers[:10], ["12:30", 755, "1_000", 1000.0, 15, 31, 5, -3, 0.5, 0.0015])
+		self.assertIsInstance(numbers[3], float)
+		self.assertEqual(numbers[10:], [float("-inf"), "0b11", "1.2.3"])
+		with self.assertRaises(SpecError):
+			openapi.load_spec_text("a: !!int 0b11\n")
 
 	def test_other_keys_and_values(self):
 		spec = openapi.load_spec_text("a: {true: 1, null: 2, 1.5: 3, 7: yes}\nb: [true, false, ~]\n")
@@ -111,20 +138,48 @@ class TestValidation(IntegrationTestCase):
 				raise AssertionError("the spec's reference was read")
 			return real_open(file, *args, **kwargs)
 
-		with patch.object(builtins, "open", guarded_open):
+		with patch.object(builtins, "open", guarded_open), no_retrieval():
 			errors = openapi.spec_errors(spec)
 			self.assertTrue(errors)
 			self.assertTrue(all("refers outside itself" in error for error in errors))
-			# the validator itself has nothing to read a reference with
-			self.assertEqual(openapi.SelfContainedSpecValidator.resolver_handlers, {})
+			# the validator itself refuses to read a reference, whatever its scheme
 			with self.assertRaises(Unresolvable):
 				list(openapi.SelfContainedSpecValidator(spec).iter_errors())
+		# a $ref in data counts too: whatever a reader might follow is refused
 		self.assertEqual(
 			openapi.external_refs(
 				{"examples": {"a": {"$ref": "http://x"}}, "x": {"$ref": "http://169.254.169.254/"}}
 			),
-			["/x: http://169.254.169.254/"],
+			["/examples/a: http://x", "/x: http://169.254.169.254/"],
 		)
+
+	def test_a_reference_under_a_data_named_property_is_refused_and_never_followed(self):
+		for name in ("default", "examples", "enum", "example", "const"):
+			for ref in ("file:///etc/hostname", "http://169.254.169.254/latest/meta-data/iam"):
+				spec = fixture("oas31.yaml")
+				spec["components"]["schemas"]["Order"]["properties"][name] = {"$ref": ref}
+				with self.subTest(name=name, ref=ref), no_retrieval():
+					errors = openapi.spec_errors(spec)
+					self.assertEqual(len(errors), 1)
+					self.assertIn("refers outside itself", errors[0])
+					self.assertIn(f"/properties/{name}: {ref}", errors[0])
+					# and the validator, given it anyway, reads nothing either
+					with self.assertRaises(Unresolvable):
+						list(openapi.SelfContainedSpecValidator(spec).iter_errors())
+
+	def test_a_base_uri_does_not_make_the_validator_read(self):
+		# "#/..." is relative to $id: a schema that sets one points its references elsewhere
+		spec = fixture("oas31.yaml")
+		order = spec["components"]["schemas"]["Order"]
+		order["$id"] = "file:///etc/hostname"
+		order["properties"]["self"] = {"$ref": "#/x"}
+		with no_retrieval():
+			self.assertTrue(openapi.spec_errors(spec))
+		self.assertTrue(isinstance(openapi.SelfContainedSpecValidator.resolver_handlers, dict))
+		for scheme in ("file", "http", "https", "ftp", "", "urn"):
+			self.assertIn(scheme, openapi.SelfContainedSpecValidator.resolver_handlers)
+			with self.assertRaises(SpecError):
+				openapi.SelfContainedSpecValidator.resolver_handlers[scheme](f"{scheme}:x")
 
 
 class TestOperations(IntegrationTestCase):
@@ -300,6 +355,34 @@ class TestOperations(IntegrationTestCase):
 			openapi.dereference(spec, {"enum": [{"$ref": "not followed"}], "examples": [{"$ref": "#/x"}]}),
 			{"enum": [{"$ref": "not followed"}], "examples": [{"$ref": "#/x"}]},
 		)
+
+	def test_properties_named_like_data_keywords_are_expanded(self):
+		spec = fixture("oas31.yaml")
+		spec["components"]["schemas"]["Profile"] = {"type": "object", "properties": {"n": {"type": "string"}}}
+		profile = {"$ref": "#/components/schemas/Profile"}
+		order = spec["components"]["schemas"]["Order"]
+		order["properties"].update(
+			{
+				"default": profile,
+				"enum": profile,
+				"examples": {"type": "array", "items": profile, "examples": [[profile]]},
+				"const": {"type": "object", "$defs": {"example": profile}},
+			}
+		)
+		order["patternProperties"] = {"^x-": profile}
+		self.assertEqual(openapi.spec_errors(spec), [])
+		schema = schema_of(spec, "post", "/orders", "requestBody")
+		expanded = openapi.dereference(spec, profile)
+		self.assertEqual(expanded["properties"], {"n": {"type": "string"}})
+		properties = schema["properties"]
+		self.assertEqual(properties["default"], expanded)
+		self.assertEqual(properties["enum"], expanded)
+		self.assertEqual(properties["examples"]["items"], expanded)
+		# an example is data, and stays as written
+		self.assertEqual(properties["examples"]["examples"], [[profile]])
+		self.assertEqual(properties["const"]["$defs"]["example"], expanded)
+		self.assertEqual(schema["patternProperties"]["^x-"], expanded)
+		self.assertNotIn('"$ref"', json.dumps(properties["default"]))
 		with self.assertRaises(SpecError):
 			openapi.resolve_ref(spec, "other.yaml#/A")
 		with self.assertRaises(SpecError):

@@ -1,7 +1,11 @@
 # Copyright (c) 2026, Avunu LLC and contributors
 # For license information, please see license.txt
 
+import ipaddress
 import json
+import socket
+import threading
+import time
 from typing import cast
 from unittest.mock import patch
 
@@ -21,6 +25,44 @@ from espresso_sync.utils.safe_fetch import EgressRefused, EgressTimeout, Respons
 API = "https://api.example.invalid/v1"
 OTHER = "https://other.example.invalid/v1"
 SECRET = {"Authorization": "Basic c3luYzpodW50ZXIy"}
+
+
+def trickling_server(test, head: bytes) -> str:
+	"""The URL of a server on the loopback address that answers with `head`, then a byte
+	every 0.2 seconds; the loopback range is opened for the test."""
+	listener = socket.create_server(("127.0.0.1", 0))
+	listener.settimeout(10)
+	stop = threading.Event()
+
+	def serve():
+		try:
+			connection, _address = listener.accept()
+		except OSError:
+			return
+		with connection:
+			connection.recv(65536)
+			connection.sendall(head)
+			while not stop.wait(0.2):
+				try:
+					connection.sendall(b"x")
+				except OSError:
+					return
+
+	thread = threading.Thread(target=serve, daemon=True)
+	thread.start()
+
+	def cleanup():
+		stop.set()
+		listener.close()
+		thread.join(5)
+
+	test.addCleanup(cleanup)
+	test.enterContext(
+		patch.object(
+			safe_fetch, "private_networks_allowed", return_value=[ipaddress.ip_network("127.0.0.0/8")]
+		)
+	)
+	return f"http://127.0.0.1:{listener.getsockname()[1]}/spec.json"
 
 
 class TestUrlChecks(IntegrationTestCase):
@@ -165,6 +207,37 @@ class TestRequests(IntegrationTestCase):
 			sent = [call.request.headers.get("Authorization") for call in rsps.calls]
 		self.assertEqual(sent, [SECRET["Authorization"], None, None])
 
+	def test_credentials_are_bound_to_the_port_and_scheme(self):
+		allowed = "api.example.invalid"
+		self.assertTrue(safe_fetch.credentials_apply("https://api.example.invalid/x", allowed))
+		self.assertTrue(safe_fetch.credentials_apply("http://api.example.invalid/x", allowed))
+		# no port named: the scheme's default port only
+		self.assertFalse(safe_fetch.credentials_apply("https://api.example.invalid:8443/x", allowed))
+		self.assertFalse(safe_fetch.credentials_apply("http://api.example.invalid:8080/x", allowed))
+		self.assertTrue(safe_fetch.credentials_apply("http://api.example.invalid:8080/x", f"{allowed}:8080"))
+		self.assertFalse(safe_fetch.credentials_apply("http://api.example.invalid/x", f"{allowed}:8080"))
+
+	def test_a_redirect_to_http_or_another_port_drops_the_credentials(self):
+		plain = "http://api.example.invalid/v1"
+		for location in (
+			f"{plain}/y",
+			"http://api.example.invalid:8080/v1/y",
+			f"{API.replace('/v1', ':8443/v1')}/y",
+		):
+			with self.subTest(location=location), responses.RequestsMock() as rsps:
+				rsps.add(responses.GET, f"{API}/x", status=302, headers={"Location": location})
+				rsps.add(responses.GET, location, json={})
+				safe_request("GET", f"{API}/x", credentials=SECRET, allowed_host="api.example.invalid")
+				self.assertEqual(rsps.calls[0].request.headers.get("Authorization"), SECRET["Authorization"])
+				self.assertNotIn("Authorization", rsps.calls[1].request.headers)
+		# an upgrade from http to https keeps them, as requests does
+		with responses.RequestsMock() as rsps:
+			rsps.add(responses.GET, f"{plain}/x", status=301, headers={"Location": f"{API}/x"})
+			rsps.add(responses.GET, f"{API}/x", json={})
+			safe_request("GET", f"{plain}/x", credentials=SECRET, allowed_host="api.example.invalid")
+			sent = [call.request.headers.get("Authorization") for call in rsps.calls]
+		self.assertEqual(sent, [SECRET["Authorization"], SECRET["Authorization"]])
+
 	def test_no_allowed_host_no_credentials(self):
 		with responses.RequestsMock() as rsps:
 			rsps.add(responses.GET, f"{API}/x", json={})
@@ -229,7 +302,25 @@ class TestRequests(IntegrationTestCase):
 		with responses.RequestsMock() as rsps:
 			rsps.add(responses.GET, f"{API}/slow", body=b"x" * 10)
 			with self.assertRaises(EgressTimeout):
+				safe_fetch.read_capped(requests.get(f"{API}/slow", stream=True), 1024, time.monotonic() - 1)
+			with self.assertRaises(EgressTimeout):
 				safe_request("GET", f"{API}/slow", deadline=-1)
+
+	def test_the_deadline_holds_for_a_response_that_trickles_in(self):
+		# each byte comes well within the read timeout; the whole never arrives in time
+		for name, head in (
+			("a body with a length", b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n"),
+			("a chunked body", b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1000\r\n"),
+			("a body read to the end", b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n"),
+			("the headers", b"HTTP/1.1 200 OK\r\n"),
+		):
+			url = trickling_server(self, head)
+			with self.subTest(name), self.assertRaises(EgressTimeout):
+				started = time.monotonic()
+				try:
+					safe_request("GET", url, deadline=1, timeout=(2, 3))
+				finally:
+					self.assertLess(time.monotonic() - started, 4)
 
 	def test_the_body_is_read(self):
 		with responses.RequestsMock() as rsps:
