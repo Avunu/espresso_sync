@@ -16,7 +16,8 @@ order the rules first name them. A collection is always an array, of one item or
 too. Each expression is kept as written, in parentheses, its newlines included: one may
 be inside a string literal.
 
-The editor's compile.ts gives the same text for the same rules, byte for byte: both are
+The editor's compile.ts gives the same text for the same rules, byte for byte, and leaves
+out the same rules, for the same error codes (the messages are each side's own): both are
 checked against the golden files in tests/fixtures/compile.
 """
 
@@ -27,6 +28,9 @@ from frappe import _
 
 KINDS = ("field", "collection", "scalar_collection")
 INDENT = "\t"
+# what an empty expression may hold: ASCII whitespace, as compile.ts reads it too (str.strip()
+# and String.trim() disagree on the rest of Unicode's)
+BLANK = " \t\n\v\f\r"
 
 
 class CompileError(NamedTuple):
@@ -63,6 +67,10 @@ def rule_errors(rule: Any) -> CompileError | None:
 	if not isinstance(pointer, str) or (pointer and not pointer.startswith("/")):
 		shown = pointer if isinstance(pointer, str) else ""
 		return CompileError(shown, "compile.pointer", _("{0} is not a JSON Pointer").format(pointer))
+	if any("\ud800" <= char <= "\udfff" for char in pointer):
+		# JSON can escape one, but it is not text: json.dumps and JSON.stringify would write
+		# its key differently, and the database cannot store it
+		return CompileError("", "compile.pointer", _("A pointer cannot hold a lone surrogate"))
 	if rule.get("kind") not in KINDS:
 		return CompileError(
 			pointer,
@@ -70,7 +78,7 @@ def rule_errors(rule: Any) -> CompileError | None:
 			_("{0} is not field, collection or scalar_collection").format(rule.get("kind")),
 		)
 	expression = rule.get("expr")
-	if not isinstance(expression, str) or not expression.strip():
+	if not isinstance(expression, str) or not expression.strip(BLANK):
 		return CompileError(pointer, "compile.empty", _("An expression is required"))
 	return None
 

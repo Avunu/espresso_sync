@@ -5,7 +5,8 @@
  * A Transform's rules, compiled to the one JSONata expression it runs.
  *
  * The server's transform/compile.py gives the same text for the same rules,
- * byte for byte: both are checked against the golden files in
+ * byte for byte, and leaves out the same rules, for the same error codes (the
+ * messages are each side's own): both are checked against the golden files in
  * espresso_sync/tests/fixtures/compile. See there for what each kind of rule
  * compiles to; in short, a `field` is its expression, a `collection` is
  * `[(expr).{…rules under it…}]` and a `scalar_collection` is `[(expr)]`, so a
@@ -38,6 +39,10 @@ export interface Compiled {
 
 const KINDS: ReadonlySet<string> = new Set(["field", "collection", "scalar_collection"]);
 const INDENT = "\t";
+// what an empty expression may hold: ASCII whitespace, as compile.py reads it too
+// (String.trim() and str.strip() disagree on the rest of Unicode's)
+const BLANK = /^[ \t\n\v\f\r]*$/;
+const LONE_SURROGATE = /\p{Cs}/u;
 
 interface Node {
 	rule?: Rule;
@@ -53,6 +58,11 @@ function ruleError(rule: unknown): CompileError | undefined {
 		const shown = typeof ptr === "string" ? ptr : "";
 		return { rule: shown, code: "compile.pointer", message: `${String(ptr)} is not a JSON Pointer` };
 	}
+	if (LONE_SURROGATE.test(ptr)) {
+		// JSON can escape one, but it is not text: JSON.stringify and json.dumps would write
+		// its key differently, and the database cannot store it
+		return { rule: "", code: "compile.pointer", message: "A pointer cannot hold a lone surrogate" };
+	}
 	if (typeof kind !== "string" || !KINDS.has(kind)) {
 		return {
 			rule: ptr,
@@ -60,7 +70,7 @@ function ruleError(rule: unknown): CompileError | undefined {
 			message: `${String(kind)} is not field, collection or scalar_collection`,
 		};
 	}
-	if (typeof expr !== "string" || expr.trim() === "") {
+	if (typeof expr !== "string" || BLANK.test(expr)) {
 		return { rule: ptr, code: "compile.empty", message: "An expression is required" };
 	}
 	return undefined;
