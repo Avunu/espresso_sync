@@ -199,7 +199,6 @@ describe("EvalClient", () => {
 		assert.deepEqual([a.value, b.value], [2, 5]);
 		assert.notEqual(a.id, b.id);
 		assert.equal(workers.length, 1);
-		assert.equal(client.inFlight, 0);
 		client.dispose();
 		assert.ok(workers[0]?.terminated);
 	});
@@ -254,7 +253,6 @@ describe("EvalClient", () => {
 		);
 		assert.equal(workers.length, 1);
 		assert.equal(workers[0]?.maxBusy, 1);
-		assert.equal(client.inFlight, 0);
 		client.dispose();
 	});
 
@@ -269,7 +267,6 @@ describe("EvalClient", () => {
 		const stale = client.evaluate({ expression: "2", input: null, key: "/a" });
 		const other = client.evaluate({ expression: "3", input: null, key: "/b" });
 		const fresh = client.evaluate({ expression: "4", input: null, key: "/a" });
-		assert.equal(client.inFlight, 3);
 		const responses = await Promise.all([running, stale, other, fresh]);
 		assert.deepEqual(
 			responses.map((response) => (response.ok ? response.value : response.error.code)),
@@ -296,7 +293,6 @@ describe("EvalClient", () => {
 
 		const pending = client.evaluate({ expression: "1", input: null });
 		const queued = client.evaluate({ expression: "2", input: null });
-		assert.equal(client.inFlight, 2);
 		client.dispose();
 		const aborted = await Promise.all([pending, queued]);
 		assert.deepEqual(
@@ -321,6 +317,6 @@ describe("EvalClient", () => {
 		const late: EvalResponse = { id: response.id, ok: true, value: 1, defined: true, elapsedMs: 1 };
 		worker?.answer(late);
 		worker?.fail("too late to matter");
-		assert.equal(client.inFlight, 0);
+		assert.equal(response.error.code, "ES_DEADLINE");
 	});
 });

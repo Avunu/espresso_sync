@@ -25,7 +25,6 @@ API_KEY = "X-Portal-Test-Key"
 ASSETS = {
 	"espresso-sync.bundle.js": "/assets/espresso_sync/dist/js/espresso-sync.bundle.T3stH4sh.js",
 	"espresso-sync.bundle.css": "/assets/espresso_sync/dist/css/espresso-sync.bundle.T3stH4sh.css",
-	"jsonata-worker.bundle.js": "/assets/espresso_sync/dist/js/jsonata-worker.bundle.T3stH4sh.js",
 }
 
 
@@ -145,11 +144,9 @@ class TestPortalPage(IntegrationTestCase):
 
 		self.assertFalse(context.forbidden)
 		boot = context["boot"]
-		self.assertEqual(set(boot), {"user", "session_expiry", "jsonata_worker_url"})
+		self.assertEqual(set(boot), {"user", "session_expiry"})
 		self.assertEqual(boot["user"], self.manager)
 		self.assertEqual(boot["session_expiry"], frappe.get_system_settings("session_expiry"))
-		# The worker is asked for by its bundle name, so a build's hash reaches the page.
-		self.assertEqual(boot["jsonata_worker_url"], ASSETS["jsonata-worker.bundle.js"])
 		self.assertTrue(context.csrf_token)
 		self.assertEqual(context.sitename, frappe.local.site)
 

@@ -25,8 +25,6 @@ export type ShowToast = (toast: Omit<ToastState, "id">) => void;
 export interface PortalBoot {
 	user: string;
 	session_expiry?: string;
-	/** The expression engine's worker script (public/js/jsonata-worker.bundle.js). */
-	jsonata_worker_url: string;
 }
 
 declare global {

@@ -214,11 +214,6 @@ export class EvalClient {
 		});
 	}
 
-	/** How many requests are waiting for an answer: the one being evaluated and those queued. */
-	get inFlight(): number {
-		return this.queue.length + (this.current ? 1 : 0);
-	}
-
 	/** Stop the worker; anything still waiting resolves as aborted. */
 	dispose(): void {
 		this.stopWorker();

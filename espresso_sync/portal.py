@@ -17,7 +17,6 @@ from urllib.parse import urlencode
 import frappe
 from frappe import _
 from frappe.sessions import get_csrf_token
-from frappe.utils.jinja_globals import bundled_asset
 
 #: Who may use the page. The editor writes transforms that run as background
 #: jobs against external systems, so it is the same role the sync endpoints require.
@@ -76,6 +75,4 @@ def set_portal_context(context: frappe._dict) -> None:
 		# The React side times the session out from this and reloads the
 		# page when it runs out, which lands on require_login() above.
 		"session_expiry": frappe.get_system_settings("session_expiry"),
-		# The expression engine's worker, built by Frappe's esbuild like any bundle.
-		"jsonata_worker_url": bundled_asset("jsonata-worker.bundle.js"),
 	}
