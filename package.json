@@ -15,6 +15,7 @@
 		"test:unit": "node --test --experimental-test-coverage --test-coverage-include='espresso_sync/public/js/**' --test-coverage-lines=50 'test/unit/**/*.test.ts'",
 		"lint:py": "uv run --frozen --project tools ruff check . && uv run --frozen --project tools ruff format --check .",
 		"typecheck:py": "uv run --frozen --project tools ty check --python \"${FRAPPE_BENCH_ROOT:-.frappe-nix/bench}/env\"",
+		"ci:lint": "oxlint -c oxlint.react.json espresso_sync/www/espresso_sync/src",
 		"check": "yarn -s format:check && yarn -s lint && yarn -s lint:css && yarn -s typecheck && yarn -s test:unit"
 	},
 	"dependencies": {
