@@ -37,6 +37,15 @@ export function parseRoute(hash: string): Route {
 	return { page: "not-found", hash };
 }
 
+/**
+ * Whether a hash is an in-page anchor (`#main-content`) rather than a route:
+ * one word, no slash. Following one mustn't change the screen, so the router
+ * keeps the route it had.
+ */
+export function isAnchorHash(hash: string): boolean {
+	return /^#[^/]+$/.test(hash);
+}
+
 /** The hash for a route: `href(parseRoute(h))` gives back the canonical form of `h`. */
 export function href(route: Route): string {
 	switch (route.page) {

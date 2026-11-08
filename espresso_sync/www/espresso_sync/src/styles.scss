@@ -49,6 +49,11 @@
 .es-main {
 	padding: calc(3rem + #{$spacing-07}) $spacing-05 $spacing-09;
 
+	// Focused only by the skip link, from script: the region itself isn't a control.
+	&:focus {
+		outline: none;
+	}
+
 	@media (min-width: 42rem) {
 		padding-inline: $spacing-07;
 	}

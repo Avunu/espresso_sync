@@ -3,11 +3,27 @@
 
 import { Header, HeaderGlobalAction, HeaderGlobalBar, HeaderName, SkipToContent, Theme } from "@carbon/react";
 import { type CarbonIconType, Home, Renew } from "@carbon/react/icons";
+import type { MouseEvent } from "react";
+
+/** The id of App's `<main>`, which the skip link focuses. */
+export const MAIN_CONTENT_ID = "main-content";
 
 interface UtilityAction {
 	label: string;
 	icon: CarbonIconType;
 	onClick: () => void;
+}
+
+/**
+ * Carbon's skip link is a plain `<a href="#main-content">`: followed, it would
+ * put `#main-content` in the URL in place of the route (a reload or a shared
+ * link would then lose the screen; useRoute only keeps it for this page view).
+ * It moves focus to the page's main region instead (App gives it tabIndex -1),
+ * leaving the hash alone.
+ */
+function skipToMain(event: MouseEvent<HTMLAnchorElement>): void {
+	event.preventDefault();
+	document.getElementById(MAIN_CONTENT_ID)?.focus();
 }
 
 /**
@@ -29,7 +45,7 @@ export function PortalHeader() {
 	return (
 		<Theme theme="g100">
 			<Header aria-label="Espresso Sync">
-				<SkipToContent href="#main-content" />
+				<SkipToContent href={`#${MAIN_CONTENT_ID}`} onClick={skipToMain} />
 				<HeaderName href="#/" prefix="">
 					Espresso Sync
 				</HeaderName>

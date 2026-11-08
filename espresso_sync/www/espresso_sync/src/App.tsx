@@ -7,7 +7,7 @@ import { NotFound } from "./pages/NotFound";
 import { Overview } from "./pages/Overview";
 import { SpecPage } from "./pages/SpecPage";
 import { TransformPage } from "./pages/TransformPage";
-import { PortalHeader } from "./portal/PortalHeader";
+import { MAIN_CONTENT_ID, PortalHeader } from "./portal/PortalHeader";
 import { useRoute } from "./useRoute";
 
 function titleOf(route: Route): string {
@@ -47,7 +47,8 @@ export function App() {
 	return (
 		<>
 			<PortalHeader />
-			<main id="main-content" className="es-main">
+			{/* Focusable from script only, for the header's skip link. */}
+			<main id={MAIN_CONTENT_ID} className="es-main" tabIndex={-1}>
 				<Page route={route} />
 			</main>
 		</>

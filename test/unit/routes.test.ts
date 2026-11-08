@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { deskFormUrl, href, parseRoute } from "../../espresso_sync/public/js/editor/routes.ts";
+import { deskFormUrl, href, isAnchorHash, parseRoute } from "../../espresso_sync/public/js/editor/routes.ts";
 import {
 	escapeSegment,
 	fromPointer,
@@ -23,6 +23,12 @@ describe("routes", () => {
 		for (const hash of ["#/specs", "#/specs/", "#/specs/a/b", "#/other/a", "#/transforms/%E0%A4%A"]) {
 			assert.deepEqual(parseRoute(hash), { page: "not-found", hash });
 		}
+	});
+
+	it("tells in-page anchors from routes", () => {
+		assert.equal(isAnchorHash("#main-content"), true);
+		for (const hash of ["", "#", "#/", "#/specs/x", "#specs/x", "#/nope"])
+			assert.equal(isAnchorHash(hash), false, hash);
 	});
 
 	it("writes hashes that read back as the same route", () => {
