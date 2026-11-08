@@ -8,6 +8,7 @@ from unittest.mock import patch
 import frappe
 import jsonata
 import jsonata.timebox
+import re2
 from frappe.tests import IntegrationTestCase
 
 from espresso_sync.sync import ensure_sync_fields
@@ -90,6 +91,20 @@ class TestEngine(IntegrationTestCase):
 		self.assertEqual(raised.exception.error, "D1011")
 		# the timebox starts with each evaluation, not when the expression was cached
 		self.assertEqual(engine.evaluate("$sum(lines)", {"lines": [1, 2]}), 3)
+
+	def test_regular_expressions_run_on_re2(self):
+		# a backtracking engine takes hours on this; RE2 takes linear time
+		self.assertFalse(engine.evaluate("$contains(s, /(a+)+$/)", {"s": "a" * 5000 + "!"}))
+		self.assertEqual(
+			engine.evaluate('$replace("John Smith", /(\\w+)\\s(\\w+)/, "$2, $1")', {}), "Smith, John"
+		)
+		self.assertTrue(engine.evaluate('$contains("HELLO", /hello/i)', {}))
+		self.assertEqual(engine.evaluate('$match("a\\nb", /^b$/m).index', {}), 2)
+		self.assertEqual(engine.evaluate('$split("a1b22c", /[0-9]+/)', {}), ["a", "b", "c"])
+		# what RE2 does not support does not parse
+		for expression in ("$match(s, /(a)\\1/)", "$match(s, /a(?=b)/)"):
+			with self.subTest(expression), self.assertRaises(re2.error):
+				engine.compile_expression(expression)
 
 	def test_dates_checks_and_values(self):
 		frappe.db.set_single_value("System Settings", "time_zone", "America/New_York")

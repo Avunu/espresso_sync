@@ -5,9 +5,12 @@
 call besides JSONata's own.
 
 Every evaluation is timeboxed: a runaway expression (an endless loop, a deep recursion)
-raises D1012 or D1011 instead of holding the worker. The input goes through Frappe's JSON
-encoder first, as jsonata-python reads only JSON types: datetimes, dates, Decimals and the
-like become what an API would send, as strings or numbers.
+raises D1012 or D1011 instead of holding the worker. The timebox is checked between the
+steps of an evaluation, not inside one, so regular expressions run on RE2, in time linear
+in their input: a pattern RE2 does not support (a backreference, a lookaround) is a
+syntax error. The input goes through Frappe's JSON encoder first, as jsonata-python reads
+only JSON types: datetimes, dates, Decimals and the like become what an API would send,
+as strings or numbers.
 
 The functions read the database as the session user, through frappe.get_list and
 frappe.has_permission: an expression sees what its user may read, and nothing else.
@@ -29,9 +32,11 @@ from typing import Any
 
 import frappe
 import jsonata
+import re2
 from frappe import _
 from frappe.model import default_fields
 from frappe.utils import convert_utc_to_system_timezone, get_date_str, get_datetime, get_datetime_str, sbool
+from jsonata.regex_engine import RegexFlags
 
 TIMEOUT_MS = 5000
 MAX_DEPTH = 200
@@ -39,10 +44,19 @@ SYNC_ID = "Espresso Sync ID"
 SYNC_IDS_FIELD = "espresso_sync_ids"
 
 
+def regex_engine(pattern: str, flags: RegexFlags):
+	"""A JSONata regular expression, compiled by RE2 (jsonata-python's regex_engine hook)."""
+	options = re2.Options()
+	# the syntax error is raised, not also written to stderr
+	options.log_errors = False
+	options.case_sensitive = not flags.case_insensitive
+	return re2.compile(f"(?m){pattern}" if flags.multiline else pattern, options)
+
+
 @lru_cache(maxsize=512)
 def compile_expression(expression: str) -> jsonata.Jsonata:
 	"""Parse a JSONata expression once per process. A syntax error raises, and is not cached."""
-	expr = jsonata.Jsonata(expression)
+	expr = jsonata.Jsonata(expression, regex_engine)
 	# keep JSONata null (Utils.NULL_VALUE) apart from undefined (None)
 	expr.set_output_convert_nulls(False)
 	return expr
