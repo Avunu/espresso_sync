@@ -10,7 +10,7 @@ steps of an evaluation, not inside one, so regular expressions run on RE2, in ti
 in their input: a pattern RE2 does not support (a backreference, a lookaround) is a
 syntax error. The input goes through Frappe's JSON encoder first, as jsonata-python reads
 only JSON types: datetimes, dates, Decimals and the like become what an API would send,
-as strings or numbers.
+as strings or numbers, and an object's keys keep their order.
 
 The functions read the database as the session user, through frappe.get_list and
 frappe.has_permission: an expression sees what its user may read, and nothing else.
@@ -36,6 +36,7 @@ import re2
 from frappe import _
 from frappe.model import default_fields
 from frappe.utils import convert_utc_to_system_timezone, get_date_str, get_datetime, get_datetime_str, sbool
+from frappe.utils.response import json_handler
 from jsonata.regex_engine import RegexFlags
 
 TIMEOUT_MS = 5000
@@ -63,8 +64,10 @@ def compile_expression(expression: str) -> jsonata.Jsonata:
 
 
 def as_json_value(value: Any) -> Any:
-	"""`value` as JSON would carry it, through Frappe's encoder."""
-	return json.loads(frappe.as_json(value, indent=None))
+	"""`value` as JSON would carry it, through Frappe's encoder, its keys in the order they
+	came in (frappe.as_json sorts them): what a rule reads of an object's order ($keys, $string,
+	`$.*`) is what the editor's preview reads."""
+	return json.loads(json.dumps(value, default=json_handler))
 
 
 def document_item(doc) -> dict[str, Any]:

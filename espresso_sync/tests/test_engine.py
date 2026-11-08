@@ -52,6 +52,12 @@ class TestEngine(IntegrationTestCase):
 		self.assertEqual(engine.evaluate("day", data), "2026-01-15")
 		self.assertEqual(engine.evaluate("amount", data), 12.5)
 		self.assertEqual(engine.evaluate("$sum(lines.(qty * rate))", data), 2.5)
+		# an object's keys stay in their order, as the editor's preview reads them
+		item = {"b": 1, "a": 2, "addr": {"zip": "1", "city": "x"}}
+		self.assertEqual(
+			engine.evaluate('{"keys": $keys($), "text": $string(addr), "first": $.*[0]}', item),
+			{"keys": ["b", "a", "addr"], "text": '{"zip":"1","city":"x"}', "first": 1},
+		)
 
 	def test_undefined_and_null(self):
 		self.assertIsNone(engine.evaluate("no_such_field", {}))

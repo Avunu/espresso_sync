@@ -41,8 +41,8 @@ const STARTING: Preview = { outputs: [], results: new Map(), busy: true };
  * (evalWorker.ts), with the app's functions answered by the server.
  * Each item gets two evaluations: the compiled transform, and every rule's
  * probe at once; an item whose probes fail is probed rule by rule, to find
- * which rules fail. A change of rules or sample starts over, and what an older
- * evaluation finds is dropped.
+ * which rules fail. A change of rules or sample starts over: the older
+ * evaluation stops, and what it found is dropped.
  */
 export function useTransformPreview(
 	transform: string,
@@ -72,7 +72,9 @@ export function useTransformPreview(
 	useEffect(() => {
 		const engine = client.current;
 		if (!engine) return undefined;
-		let stale = false;
+		// cleared when the rules or the sample change: this evaluation then stops where it is
+		const evaluation = new AbortController();
+		const { signal } = evaluation;
 		const resolve = async (calls: FunctionCall[]) => {
 			const result = await call({ calls: JSON.stringify(calls), transform });
 			return result.ok ? result.data : undefined;
@@ -86,8 +88,8 @@ export function useTransformPreview(
 		]);
 		setPreview((current) => ({ ...current, busy: true }));
 		void (async () => {
-			const responses = await evaluateAll(engine, calls, answers.current, resolve);
-			if (stale) return;
+			const responses = await evaluateAll(engine, calls, answers.current, resolve, signal);
+			if (signal.aborted) return;
 			const outputs = items.map((_item, index) => responses[index * 2] as EvalResponse);
 			const combined = items.map((_item, index) => responses[index * 2 + 1]);
 			// the items whose probes failed together, probed one rule at a time
@@ -99,8 +101,9 @@ export function useTransformPreview(
 					input: items[index],
 				})),
 			);
-			const singles = single.length > 0 ? await evaluateAll(engine, single, answers.current, resolve) : [];
-			if (stale) return;
+			const singles =
+				single.length > 0 ? await evaluateAll(engine, single, answers.current, resolve, signal) : [];
+			if (signal.aborted) return;
 			const results = new Map<string, RuleResults>();
 			for (const [position, rule] of probed.entries()) {
 				const ruleAnswers = items.map((_item, index): ProbeAnswer => {
@@ -116,9 +119,7 @@ export function useTransformPreview(
 			}
 			setPreview({ outputs, results, busy: false });
 		})();
-		return () => {
-			stale = true;
-		};
+		return () => evaluation.abort();
 	}, [transform, jsonata, rules, items, call]);
 
 	return preview;
