@@ -1,16 +1,13 @@
 # Copyright (c) 2026, Avunu LLC and contributors
 # For license information, please see license.txt
 
-import copy
-import json
 import re
-from functools import lru_cache
 
 import frappe
-import jsonata
 from jsonpath_ng import parse
 
 from espresso_sync.dynamic_tags import extract_dynamic_tag
+from espresso_sync.transform import engine
 
 
 def apply_quotes(value):
@@ -127,50 +124,18 @@ def tamp_dynamic_parameter(parameter, shot, sync_connection, doc_names=None):
 	return finished_parameters
 
 
-# Every evaluation is timeboxed: a runaway expression (an endless loop, a deep recursion)
-# raises D1012 or D1011 instead of holding the worker.
-JSONATA_TIMEOUT_MS = 5000
-JSONATA_MAX_DEPTH = 200
 # returned by evaluate_jsonata for an undefined result when the caller asks to tell it apart
 UNDEFINED = object()
 
 
-@lru_cache(maxsize=512)
-def compile_jsonata(expression: str) -> jsonata.Jsonata:
-	"""Parse a JSONata expression once per process. A syntax error raises, and is not cached."""
-	expr = jsonata.Jsonata(expression)
-	# keep JSONata null (Utils.NULL_VALUE) apart from undefined (None)
-	expr.set_output_convert_nulls(False)
-	return expr
-
-
 def evaluate_jsonata(expression, data, default=None):
-	"""
-	Evaluate a JSONata expression against the given data.
-	Returns the result, None for JSONata null, and `default` when the result is
-	undefined or the evaluation fails (the error is logged).
-
-	jsonata-python reads only JSON types, so the data goes through Frappe's JSON
-	encoder first: datetimes, dates, Decimals and the like become what an API
-	would send, as strings or numbers.
-	"""
+	"""The result of a JSONata expression on `data` (engine.evaluate), or `default` when it
+	is undefined or the evaluation fails (the error is logged)."""
 	try:
-		# jsonata-python evaluates on the thread's current instance (Jsonata.CURRENT), which
-		# only its constructor sets, and $now() and $millis() read that instance's timestamp.
-		# A cached expression is not constructed again, so a copy of it is made current: the
-		# time is this evaluation's, and the cached instance is not changed by it.
-		expr = copy.copy(compile_jsonata(expression))
-		jsonata.Jsonata.CURRENT.jsonata = expr
-		# a fresh frame per evaluation: its timebox starts now, not when the expression was cached
-		bounds = jsonata.Jsonata.Frame(None)
-		bounds.set_runtime_bounds(JSONATA_TIMEOUT_MS, JSONATA_MAX_DEPTH)
-		result = expr.evaluate(json.loads(frappe.as_json(data)), bounds)
+		return engine.evaluate(expression, data, default=default)
 	except Exception as e:
 		frappe.log_error(f"Error evaluating JSONata expression '{expression}': {e}")
 		return default
-	if result is None:
-		return default
-	return jsonata.Utils.convert_nulls(result)
 
 
 def extract_object(object_map, object, sync_connection=None, doc=None):

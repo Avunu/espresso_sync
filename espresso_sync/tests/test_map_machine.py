@@ -1,13 +1,11 @@
 # Copyright (c) 2026, Avunu LLC and contributors
 # For license information, please see license.txt
 
-import datetime
 from decimal import Decimal
 from unittest.mock import patch
 
 import frappe
 import frappe.apps
-import jsonata.timebox
 from frappe.tests import IntegrationTestCase
 
 from espresso_sync import map_machine
@@ -16,18 +14,6 @@ from espresso_sync.map_machine import evaluate_jsonata, extract_object, tamp_dyn
 
 
 class TestEvaluateJsonata(IntegrationTestCase):
-	def test_frappe_values_are_read_as_json(self):
-		data = frappe._dict(
-			when=datetime.datetime(2026, 1, 15, 9, 30),
-			day=datetime.date(2026, 1, 15),
-			amount=Decimal("12.50"),
-			lines=[frappe._dict(qty=Decimal("2"), rate=Decimal("1.25"))],
-		)
-		self.assertEqual(evaluate_jsonata("when", data), "2026-01-15 09:30:00")
-		self.assertEqual(evaluate_jsonata("day", data), "2026-01-15")
-		self.assertEqual(evaluate_jsonata("amount", data), 12.5)
-		self.assertEqual(evaluate_jsonata("$sum(lines.(qty * rate))", data), 2.5)
-
 	def test_a_bad_expression_gives_none(self):
 		self.assertIsNone(evaluate_jsonata("lines[", {"lines": []}))
 
@@ -54,38 +40,6 @@ class TestEvaluateJsonata(IntegrationTestCase):
 			evaluate_jsonata("no_such_field", {}, default=map_machine.UNDEFINED), map_machine.UNDEFINED
 		)
 		self.assertEqual(evaluate_jsonata("[a, null]", {"a": 1}), [1, None])
-
-	def test_expressions_are_compiled_once(self):
-		map_machine.compile_jsonata.cache_clear()
-		for n in range(3):
-			self.assertEqual(evaluate_jsonata("n + 1", {"n": n}), n + 1)
-		info = map_machine.compile_jsonata.cache_info()
-		self.assertEqual((info.misses, info.hits), (1, 2))
-
-	def test_now_is_the_time_of_each_evaluation(self):
-		map_machine.compile_jsonata.cache_clear()
-		clock = [1_794_000_000_000]
-		with patch.object(jsonata.timebox.Timebox, "current_milli_time", side_effect=lambda: clock[0]):
-			self.assertEqual(evaluate_jsonata("$millis()", {}), clock[0])
-			# compiled after it: jsonata-python makes this one the thread's current instance
-			self.assertEqual(evaluate_jsonata("n", {"n": 1}), 1)
-			clock[0] += 5000
-			self.assertEqual(evaluate_jsonata("$millis()", {}), clock[0])
-			self.assertEqual(evaluate_jsonata("$now()", {}), "2026-11-06T21:20:05.000Z")
-		self.assertEqual(map_machine.compile_jsonata.cache_info().misses, 3)
-
-	def test_every_evaluation_is_timeboxed(self):
-		endless = "($f := function($n){ $n > 0 ? $f($n + 1) : 0 }; $f(1))"
-		deep = "($f := function($n){ $n = 0 ? 0 : 1 + $f($n - 1) }; $f(100000))"
-		with patch.object(map_machine.frappe, "log_error") as log_error:
-			with patch.object(map_machine, "JSONATA_TIMEOUT_MS", 200):
-				self.assertIsNone(evaluate_jsonata(endless, {}))
-			self.assertIsNone(evaluate_jsonata(deep, {}))
-		errors = " ".join(str(c.args[0]) for c in log_error.call_args_list)
-		self.assertIn("timeout", errors.lower())
-		self.assertIn("Stack overflow", errors)
-		# the timebox starts with each evaluation, not when the expression was cached
-		self.assertEqual(evaluate_jsonata("$sum(lines)", {"lines": [1, 2]}), 3)
 
 	def test_match_reads_whole_numbers_as_integers(self):
 		object_map = {
