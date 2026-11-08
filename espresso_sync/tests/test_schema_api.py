@@ -93,6 +93,7 @@ class TestSchemaEndpoints(IntegrationTestCase):
 			"save_spec": lambda: api.save_spec(as_json("oas31.yaml"), "Other"),
 			"list_operations": lambda: api.list_operations(self.spec),
 			"get_operation_schema": lambda: api.get_operation_schema(self.spec, "post", "/payments"),
+			"list_doctypes": api.list_doctypes,
 			"get_doctype_schema": lambda: api.get_doctype_schema("Contact"),
 			"validate_payload": lambda: api.validate_payload("{}", doctype="Contact"),
 		}
@@ -198,6 +199,17 @@ class TestSchemaEndpoints(IntegrationTestCase):
 		self.assertRaises(frappe.ValidationError, api.get_doctype_schema, "Contact Email")
 		self.assertRaises(frappe.DoesNotExistError, api.get_doctype_schema, "No Such DocType")
 		self.assertRaises(frappe.ValidationError, api.get_doctype_schema, "Contact", "delete")
+
+	def test_list_doctypes(self):
+		frappe.set_user(MANAGER_USER)
+		doctypes = api.list_doctypes()
+		self.assertIn("Contact", doctypes)
+		self.assertEqual(doctypes, sorted(doctypes, key=str.casefold))
+		# a child table, a Single, and a DocType the user can't read are not offered
+		self.assertNotIn("Contact Email", doctypes)
+		self.assertNotIn("System Settings", doctypes)
+		with patch.object(frappe.get_user(), "get_can_read", return_value=["ToDo", "Contact Email"]):
+			self.assertEqual(api.list_doctypes(), ["ToDo"])
 
 	def test_fetch_spec_source(self):
 		with responses.RequestsMock() as rsps:

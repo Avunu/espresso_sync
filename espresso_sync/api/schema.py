@@ -164,6 +164,18 @@ def check_doctype(doctype: str, mode: str):
 
 
 @frappe.whitelist()
+def list_doctypes() -> list[str]:
+	"""The DocTypes a transform can map: those the user can read, but child tables and Singles."""
+	frappe.only_for("System Manager")
+	return frappe.get_all(
+		"DocType",
+		filters={"name": ("in", frappe.get_user().get_can_read()), "istable": 0, "issingle": 0},
+		pluck="name",
+		order_by="name",
+	)
+
+
+@frappe.whitelist()
 def get_doctype_schema(doctype: str, mode: str = "insert") -> dict[str, Any]:
 	"""The JSON Schema of `doctype`'s documents as read, inserted or updated."""
 	frappe.only_for("System Manager")
