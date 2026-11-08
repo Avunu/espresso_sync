@@ -314,13 +314,19 @@ function build(
 		if (options.length === 1 || (options.length > 1 && scalars)) {
 			// Fold the option(s) into the schema: a nullable value, or one scalar field of several types.
 			const types = [...new Set(options.flatMap((option) => impliedTypes(option.schema)))];
-			const enums = options.flatMap((option) =>
-				Array.isArray(option.schema["enum"]) ? option.schema["enum"] : [],
+			// The field takes a fixed set of values only when every option does: one
+			// unconstrained option (any integer, any string) accepts values no enum lists.
+			const allowed = options.map((option) =>
+				Array.isArray(option.schema["enum"])
+					? option.schema["enum"]
+					: "const" in option.schema
+						? [option.schema["const"]]
+						: undefined,
 			);
 			const only = options.length === 1 ? options[0] : undefined;
 			schema = only ? mergeTwo(only.schema, rest) : { ...rest };
 			if (!only && types.length > 0) schema["type"] = types;
-			if (!only && enums.length > 0) schema["enum"] = enums;
+			if (!only && allowed.every((values) => values !== undefined)) schema["enum"] = allowed.flat();
 			options = [];
 		}
 	}

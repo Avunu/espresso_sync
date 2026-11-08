@@ -123,6 +123,23 @@ describe("fromOpenApiSchema", () => {
 		assert.deepEqual(child(tree, "status").enum, ["open", "paid"]);
 	});
 
+	it("gives a folded union an enum only when every option is a fixed set", () => {
+		const mixed = fromOpenApiSchema({
+			type: "object",
+			properties: {
+				status: { oneOf: [{ type: "string", enum: ["a", "b"] }, { type: "integer" }] },
+				level: { anyOf: [{ enum: ["low", "high"] }, { const: 3 }, { type: "null" }] },
+			},
+		});
+		const status = child(mixed, "status");
+		assert.deepEqual([status.kind, status.types, status.enum], ["field", ["string", "integer"], undefined]);
+		const level = child(mixed, "level");
+		assert.deepEqual(
+			[level.types, level.enum, level.nullable],
+			[["string", "integer"], ["low", "high", 3], true],
+		);
+	});
+
 	it("makes object variants a variant group", () => {
 		const payment = child(tree, "payment");
 		assert.equal(payment.kind, "variants");
