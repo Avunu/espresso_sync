@@ -151,9 +151,13 @@ export function Spec({ name }: { name: string }) {
 
 	function reimported(saved: SavedSpec) {
 		setReimporting(false);
+		const count = saved.operations.length;
 		showToast(
 			saved.changed
-				? { kind: "success", title: `The spec changed: it has ${saved.operations.length} operations.` }
+				? {
+						kind: "success",
+						title: `The spec changed: it has ${count} ${count === 1 ? "operation" : "operations"}.`,
+					}
 				: { kind: "info", title: "The spec is unchanged." },
 		);
 		void specs.mutate();
@@ -269,6 +273,15 @@ export function Spec({ name }: { name: string }) {
 								</TableRow>
 							</TableHead>
 							<TableBody>
+								{tableRows.length === 0 && (
+									<TableRow>
+										<TableCell colSpan={headers.length}>
+											{search.trim()
+												? `No operations match "${search.trim()}".`
+												: "This spec has no operations."}
+										</TableCell>
+									</TableRow>
+								)}
 								{tableRows.map((tableRow) => {
 									const record = byId.get(tableRow.id);
 									return (

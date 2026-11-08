@@ -90,7 +90,11 @@ export function Specs() {
 
 	function imported(saved: SavedSpec) {
 		setImporting(false);
-		showToast({ kind: "success", title: `${saved.name} imported: ${saved.operations.length} operations.` });
+		const count = saved.operations.length;
+		showToast({
+			kind: "success",
+			title: `${saved.name} imported: ${count} ${count === 1 ? "operation" : "operations"}.`,
+		});
 		window.location.hash = hrefFor("specs", saved.name);
 	}
 
@@ -144,6 +148,11 @@ export function Specs() {
 								</TableRow>
 							</TableHead>
 							<TableBody>
+								{tableRows.length === 0 && (
+									<TableRow>
+										<TableCell colSpan={headers.length}>No API specs yet: import one.</TableCell>
+									</TableRow>
+								)}
 								{tableRows.map((tableRow) => {
 									const record = byId.get(tableRow.id);
 									return (

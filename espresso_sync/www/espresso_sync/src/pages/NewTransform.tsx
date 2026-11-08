@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Avunu LLC and contributors
 // For license information, please see license.txt
 
-import { type RefObject, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import {
 	ComboBox,
 	InlineNotification,
@@ -67,9 +67,19 @@ export function NewTransform({ open, spec, operation, launcherButtonRef, onClose
 	useSessionRead(doctypes.data, doctypes.error);
 	useSessionRead(isCompleted, error);
 	const showToast = useToasts();
+	const failureRef = useRef<HTMLDivElement>(null);
+	// read by onRequestClose: Carbon's Escape handler keeps the one given when the modal opened
+	const busy = useRef(false);
+
+	// the Create button had the focus, and is disabled while it runs: the keyboard
+	// goes on from the reason it failed
+	useEffect(() => {
+		if (error) failureRef.current?.focus();
+	}, [error]);
 
 	function submit() {
 		if (!operation || !doctype) return;
+		busy.current = true;
 		createDoc(TRANSFORM, {
 			title: title.trim(),
 			direction,
@@ -77,14 +87,18 @@ export function NewTransform({ open, spec, operation, launcherButtonRef, onClose
 			api_spec: spec,
 			method: operation.method,
 			path: operation.path,
-		}).then(
-			(doc) => {
-				showToast({ kind: "success", title: `${doc.name} was made as a Draft.` });
-				window.location.hash = hrefFor("transforms", doc.name);
-			},
-			// shown below, from the hook's error
-			() => {},
-		);
+		})
+			.then(
+				(doc) => {
+					showToast({ kind: "success", title: `${doc.name} was made as a Draft.` });
+					window.location.hash = hrefFor("transforms", doc.name);
+				},
+				// shown below, from the hook's error
+				() => {},
+			)
+			.finally(() => {
+				busy.current = false;
+			});
 	}
 
 	return (
@@ -95,13 +109,16 @@ export function NewTransform({ open, spec, operation, launcherButtonRef, onClose
 			modalLabel={operation && `${operation.method} ${operation.path}`}
 			primaryButtonText="Create"
 			secondaryButtonText="Cancel"
-			primaryButtonDisabled={!title.trim() || !doctype || loading}
+			primaryButtonDisabled={!title.trim() || !doctype}
 			loadingStatus={loading ? "active" : "inactive"}
 			loadingDescription="Creating"
 			launcherButtonRef={launcherButtonRef}
 			preventCloseOnClickOutside
 			selectorPrimaryFocus="#transform-title"
-			onRequestClose={onClose}
+			// Carbon disables Cancel while it runs, but not the close button or Escape
+			onRequestClose={() => {
+				if (!busy.current) onClose();
+			}}
 			onRequestSubmit={submit}
 		>
 			<Stack gap={6}>
@@ -143,13 +160,15 @@ export function NewTransform({ open, spec, operation, launcherButtonRef, onClose
 					onChange={({ selectedItem }) => setDoctype(selectedItem ?? null)}
 				/>
 				{error && (
-					<InlineNotification
-						kind="error"
-						lowContrast
-						hideCloseButton
-						title="The transform couldn't be created."
-						subtitle={getErrorMessage(error, "Try again.")}
-					/>
+					<div ref={failureRef} tabIndex={-1}>
+						<InlineNotification
+							kind="error"
+							lowContrast
+							hideCloseButton
+							title="The transform couldn't be created."
+							subtitle={getErrorMessage(error, "Try again.")}
+						/>
+					</div>
 				)}
 			</Stack>
 		</Modal>

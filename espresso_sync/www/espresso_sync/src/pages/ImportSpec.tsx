@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Avunu LLC and contributors
 // For license information, please see license.txt
 
-import { type RefObject, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import {
 	FileUploader,
 	InlineNotification,
@@ -19,9 +19,9 @@ import {
 } from "@carbon/react";
 import { useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import { MAX_SOURCE_BYTES, prepareSpec, SpecImportError } from "../../../../public/js/editor/specImport.ts";
-import { useSession } from "../portal/session";
 import type { FrappeEnvelope } from "../portal/types";
-import { getErrorMessage, readFailure } from "../portal/useBackendCall";
+import { getErrorMessage } from "../portal/useBackendCall";
+import { useSessionRead } from "../useSessionRead";
 
 const CONNECTION = "Espresso Sync Connection";
 const SOURCES = ["URL", "File", "Paste"] as const;
@@ -53,28 +53,13 @@ interface ImportFailure {
 	details: string[];
 }
 
-/**
- * A whitelisted method whose failure is shown in the form rather than as a toast:
- * it throws an Error with the server's message. A 403 ends the session, as anywhere.
- */
-function useFormCall<T>(method: string, fallback: string) {
-	const { call } = useFrappePostCall<FrappeEnvelope<T>>(method);
-	const { recordActivity, reportForbidden } = useSession();
-	return async (params: Record<string, unknown>): Promise<T> => {
-		try {
-			const { message } = await call(params);
-			recordActivity();
-			return message;
-		} catch (error) {
-			if (readFailure(error).httpStatus === 403) reportForbidden();
-			throw new Error(getErrorMessage(error, fallback), { cause: error });
-		}
-	};
-}
-
+/** Why the import failed: specImport's reasons, or save_spec's, one to a line. */
 function toFailure(error: unknown): ImportFailure {
 	if (error instanceof SpecImportError) return { title: error.message, details: error.details };
-	return { title: error instanceof Error ? error.message : String(error), details: [] };
+	const [title = "", ...details] = (
+		error instanceof Error ? error.message : getErrorMessage(error, "The spec couldn't be saved.")
+	).split("\n");
+	return { title, details };
 }
 
 interface ImportSpecProps {
@@ -88,8 +73,8 @@ interface ImportSpecProps {
 
 /**
  * Import an API's OpenAPI description from a URL, a file or pasted text. The text
- * is bundled, upgraded and checked in the browser (specImport.ts), with every
- * URL fetched by the server's fetch_spec_source, then stored with save_spec.
+ * is bundled and upgraded in the browser (specImport.ts), with every URL
+ * fetched by the server's fetch_spec_source, then checked and stored by save_spec.
  */
 export function ImportSpec({ open, spec, launcherButtonRef, onClose, onImported }: ImportSpecProps) {
 	const [source, setSource] = useState(spec?.source_url || !spec ? 0 : 2);
@@ -100,54 +85,74 @@ export function ImportSpec({ open, spec, launcherButtonRef, onClose, onImported 
 	const [title, setTitle] = useState("");
 	const [stage, setStage] = useState<string | undefined>();
 	const [failure, setFailure] = useState<ImportFailure | undefined>();
+	const failureRef = useRef<HTMLDivElement>(null);
+	// read by onRequestClose: Carbon's Escape handler keeps the one given when the modal opened
+	const busy = useRef(false);
 
 	const { data: connections } = useFrappeGetDocList<{ name: string }>(
 		CONNECTION,
 		{ fields: ["name"], orderBy: { field: "name", order: "asc" }, limit: 500 },
 		spec ? null : undefined,
 	);
-	const fetchSource = useFormCall<SourceText>(
+	const fetchSource = useFrappePostCall<FrappeEnvelope<SourceText>>(
 		"espresso_sync.api.schema.fetch_spec_source",
-		"The URL couldn't be fetched.",
 	);
-	const saveSpec = useFormCall<SavedSpec>(
-		"espresso_sync.api.schema.save_spec",
-		"The spec couldn't be saved.",
-	);
+	const saveSpec = useFrappePostCall<FrappeEnvelope<SavedSpec>>("espresso_sync.api.schema.save_spec");
+	useSessionRead(fetchSource.result, fetchSource.error);
+	useSessionRead(saveSpec.result, saveSpec.error);
+
+	// the primary button had the focus, and is disabled while the import runs: the
+	// keyboard goes on from the reason it failed
+	useEffect(() => {
+		if (failure) failureRef.current?.focus();
+	}, [failure]);
 
 	// a re-import fetches with the credentials of the Connection the spec belongs to
 	const credentials = (spec ? spec.connection : connection) || undefined;
 	const ready = [url.trim(), file, text.trim()][source];
 
+	/** The text at a URL, fetched by the server; a failure is an Error with its reason. */
+	async function fetchText(target: string): Promise<SourceText> {
+		try {
+			return (await fetchSource.call({ url: target, connection: credentials })).message;
+		} catch (error) {
+			throw new Error(getErrorMessage(error, `${target} couldn't be fetched.`), { cause: error });
+		}
+	}
+
 	async function submit() {
 		setFailure(undefined);
+		busy.current = true;
 		try {
 			let sourceText: string;
 			let origin: string | undefined;
 			if (source === 0) {
 				setStage("Fetching the spec");
-				const fetched = await fetchSource({ url: url.trim(), connection: credentials });
+				const fetched = await fetchText(url.trim());
 				sourceText = fetched.text;
+				// relative references are read against where the spec was found
 				origin = fetched.url;
 			} else if (source === 1 && file) {
 				if (file.size > MAX_SOURCE_BYTES) throw new Error(`The file is larger than ${MAX_SOURCE_MB} MB.`);
+				setStage("Reading the file");
 				sourceText = await file.text();
 			} else {
 				sourceText = text;
 			}
-			setStage("Bundling, upgrading and checking");
+			setStage("Bundling and upgrading");
 			const prepared = await prepareSpec(sourceText, {
 				...(origin === undefined ? {} : { origin }),
-				fetchText: async (ref) => (await fetchSource({ url: ref, connection: credentials })).text,
+				fetchText: async (ref) => (await fetchText(ref)).text,
 			});
 			const specTitle = spec?.title ?? (title.trim() || prepared.title);
 			if (!specTitle) throw new Error("Give the spec a title: it has none of its own.");
 			setStage("Saving");
-			const saved = await saveSpec({
+			const { message: saved } = await saveSpec.call({
 				spec_json: prepared.specJson,
 				title: specTitle,
 				connection: spec ? undefined : credentials,
-				source_url: origin,
+				// as typed: a re-import fetches it again, wherever it redirects to then
+				source_url: source === 0 ? url.trim() : undefined,
 				source_format: prepared.sourceFormat,
 				original_version: prepared.originalVersion,
 				name: spec?.name,
@@ -156,6 +161,7 @@ export function ImportSpec({ open, spec, launcherButtonRef, onClose, onImported 
 		} catch (error) {
 			setFailure(toFailure(error));
 		} finally {
+			busy.current = false;
 			setStage(undefined);
 		}
 	}
@@ -167,7 +173,7 @@ export function ImportSpec({ open, spec, launcherButtonRef, onClose, onImported 
 			modalHeading={spec ? `Re-import ${spec.title}` : "Import an API spec"}
 			primaryButtonText={spec ? "Re-import" : "Import"}
 			secondaryButtonText="Cancel"
-			primaryButtonDisabled={!ready || stage !== undefined}
+			primaryButtonDisabled={!ready}
 			loadingStatus={stage === undefined ? "inactive" : "active"}
 			loadingDescription={stage ?? ""}
 			launcherButtonRef={launcherButtonRef}
@@ -175,7 +181,10 @@ export function ImportSpec({ open, spec, launcherButtonRef, onClose, onImported 
 			hasScrollingContent
 			// the chosen source's tab, from which the keyboard goes on into its panel
 			selectorPrimaryFocus='[role="tab"][aria-selected="true"]'
-			onRequestClose={onClose}
+			// Carbon disables Cancel while the import runs, but not the close button or Escape
+			onRequestClose={() => {
+				if (!busy.current) onClose();
+			}}
 			onRequestSubmit={() => void submit()}
 		>
 			<Stack gap={6}>
@@ -184,17 +193,25 @@ export function ImportSpec({ open, spec, launcherButtonRef, onClose, onImported 
 					the files it refers to are fetched and bundled in.
 				</p>
 				{failure && (
-					<InlineNotification kind="error" lowContrast hideCloseButton title={failure.title}>
-						{failure.details.length > 0 && (
-							<ul>
-								{failure.details.map((detail) => (
-									<li key={detail}>{detail}</li>
-								))}
-							</ul>
-						)}
-					</InlineNotification>
+					<div ref={failureRef} tabIndex={-1}>
+						<InlineNotification kind="error" lowContrast hideCloseButton title={failure.title}>
+							{failure.details.length > 0 && (
+								<ul>
+									{failure.details.map((detail) => (
+										<li key={detail}>{detail}</li>
+									))}
+								</ul>
+							)}
+						</InlineNotification>
+					</div>
 				)}
-				<Tabs selectedIndex={source} onChange={({ selectedIndex }) => setSource(selectedIndex)}>
+				<Tabs
+					selectedIndex={source}
+					onChange={({ selectedIndex }) => {
+						setSource(selectedIndex);
+						setFailure(undefined);
+					}}
+				>
 					<TabList aria-label="Where the spec comes from">
 						{SOURCES.map((label) => (
 							<Tab key={label}>{label}</Tab>
