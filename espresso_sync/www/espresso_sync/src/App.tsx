@@ -3,13 +3,15 @@
 
 import { Content } from "@carbon/react";
 import { Overview } from "./pages/Overview";
-import { Placeholder } from "./pages/Placeholder";
+import { Spec } from "./pages/Spec";
+import { Specs } from "./pages/Specs";
+import { Transform } from "./pages/Transform";
 import { PortalHeader } from "./portal/PortalHeader";
 import { useRoute } from "./route";
 
 /**
- * Espresso Sync's page: the Connections now, and the API specs and transforms
- * built on them as they land. Everything it shows comes through Frappe's REST
+ * Espresso Sync's page: the Connections, the API specs, and the transforms
+ * built on them. Everything it shows comes through Frappe's REST
  * API and the app's whitelisted methods, which check permissions themselves.
  */
 export function App() {
@@ -19,18 +21,8 @@ export function App() {
 			<PortalHeader name="Espresso Sync" />
 			<Content>
 				{route.section === "connections" && <Overview />}
-				{route.section === "specs" && (
-					<Placeholder kind="API spec" name={route.name}>
-						Importing an API&apos;s OpenAPI document, to list the operations a transform can start from, is on
-						its way.
-					</Placeholder>
-				)}
-				{route.section === "transforms" && (
-					<Placeholder kind="Transform" name={route.name}>
-						The transform editor, which maps an operation&apos;s fields to a DocType&apos;s and back with a
-						JSONata expression for each, is on its way.
-					</Placeholder>
-				)}
+				{route.section === "specs" && (route.name ? <Spec name={route.name} /> : <Specs />)}
+				{route.section === "transforms" && <Transform name={route.name} />}
 			</Content>
 		</>
 	);

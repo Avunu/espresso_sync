@@ -6,7 +6,7 @@ import { Breadcrumb, BreadcrumbItem, Stack, Tile } from "@carbon/react";
 import { hrefFor } from "../route";
 
 interface PlaceholderProps {
-	/** What the page is: "API spec", "Transform". */
+	/** What the page is: "Transform". */
 	kind: string;
 	name: string | undefined;
 	children: ReactNode;
