@@ -32,7 +32,9 @@ export function App() {
 	return (
 		<>
 			<PortalHeader name="Espresso Sync" />
-			<Content id={MAIN} tabIndex={-1} style={{ outline: "none" }}>
+			{/* At least the window's height below the 3rem header: the light theme's background
+			    is only as tall as the page, so a short page would end above a white band. */}
+			<Content id={MAIN} tabIndex={-1} style={{ outline: "none", minBlockSize: "calc(100vh - 3rem)" }}>
 				{route.section === "connections" && <Overview />}
 				{route.section === "specs" && (route.name ? <Spec name={route.name} /> : <Specs />)}
 				{route.section === "transforms" &&
