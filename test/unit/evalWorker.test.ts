@@ -76,7 +76,7 @@ describe("evaluate", () => {
 		assert.equal(deep.error.code, "D1011");
 		// A tail call doesn't deepen the stack, so only the timeout stops it.
 		const forever = await evaluate(
-			request("($f := function($n){ $f($n + 1) }; $f(0))", { limits: { timeoutMs: 20 } }),
+			request("($f := function($n){ $f($n + 1) }; $f(0))", { limits: { timeoutMs: 40 } }),
 		);
 		assert.ok(!forever.ok);
 		assert.equal(forever.error.code, "D1012");
@@ -124,17 +124,23 @@ describe("serve", () => {
 	});
 });
 
-/** A Worker stand-in: evaluates in-process, or (with `hang`) never answers. */
+/** A Worker stand-in: evaluates in-process (after `delayMs`, like a slow expression), or with `hang` never answers. */
 class FakeWorker implements WorkerLike {
 	terminated = false;
 	readonly hang: boolean;
+	readonly delayMs: number;
+	/** How many requests it has been sent, and the most it held unanswered at once. */
+	received = 0;
+	maxBusy = 0;
+	private busy = 0;
 	private readonly listeners = {
 		message: [] as ((event: MessageEvent) => void)[],
 		error: [] as ((event: ErrorEvent) => void)[],
 	};
 
-	constructor(hang: boolean) {
+	constructor(hang: boolean, delayMs = 0) {
 		this.hang = hang;
+		this.delayMs = delayMs;
 	}
 
 	addEventListener(type: "message", listener: (event: MessageEvent) => void): void;
@@ -148,8 +154,16 @@ class FakeWorker implements WorkerLike {
 	}
 
 	postMessage(message: unknown): void {
+		this.received++;
+		this.busy++;
+		this.maxBusy = Math.max(this.maxBusy, this.busy);
 		if (this.hang) return;
-		void evaluate(message as EvalRequest).then((response) => this.answer(response));
+		setTimeout(() => {
+			void evaluate(message as EvalRequest).then((response) => {
+				this.busy--;
+				this.answer(response);
+			});
+		}, this.delayMs);
 	}
 
 	/** Deliver a response, as a worker would (even a terminated one, with something already queued). */
@@ -190,12 +204,12 @@ describe("EvalClient", () => {
 		assert.ok(workers[0]?.terminated);
 	});
 
-	it("gives up on a worker that misses the deadline, and starts a new one", async () => {
+	it("gives up on a worker that misses the deadline, and sends what waits to a new one", async () => {
 		const workers: FakeWorker[] = [];
-		let hang = true;
 		const client = new EvalClient(
 			() => {
-				const worker = new FakeWorker(hang);
+				// The first worker never answers; the next ones do.
+				const worker = new FakeWorker(workers.length === 0);
 				workers.push(worker);
 				return worker;
 			},
@@ -205,15 +219,64 @@ describe("EvalClient", () => {
 			client.evaluate({ expression: "1", input: null, limits: { timeoutMs: 5 } }),
 			client.evaluate({ expression: "2", input: null, limits: { timeoutMs: 1000 } }),
 		]);
-		assert.ok(!late.ok && !other.ok);
+		assert.ok(!late.ok);
 		assert.equal(late.error.code, "ES_DEADLINE");
-		assert.equal(other.error.code, "ES_ABORTED");
+		assert.ok(other.ok);
+		assert.equal(other.value, 2);
 		assert.ok(workers[0]?.terminated);
-		hang = false;
+		assert.equal(workers[0]?.received, 1);
 		const next = await client.evaluate({ expression: "3", input: null });
 		assert.ok(next.ok);
 		assert.equal(next.value, 3);
 		assert.equal(workers.length, 2);
+		client.dispose();
+	});
+
+	it("sends one request at a time, so waiting never counts against a deadline", async () => {
+		const workers: FakeWorker[] = [];
+		const client = new EvalClient(
+			() => {
+				const worker = new FakeWorker(false, 10);
+				workers.push(worker);
+				return worker;
+			},
+			{ graceMs: 10 },
+		);
+		// Each takes 10 ms of a 50 ms deadline; all eight together take longer than one deadline.
+		const responses = await Promise.all(
+			Array.from({ length: 8 }, (_, index) =>
+				client.evaluate({ expression: `${index} * 2`, input: null, limits: { timeoutMs: 40 } }),
+			),
+		);
+		assert.deepEqual(
+			responses.map((response) => (response.ok ? response.value : response.error.code)),
+			[0, 2, 4, 6, 8, 10, 12, 14],
+		);
+		assert.equal(workers.length, 1);
+		assert.equal(workers[0]?.maxBusy, 1);
+		assert.equal(client.inFlight, 0);
+		client.dispose();
+	});
+
+	it("replaces a waiting request with a newer one of the same key", async () => {
+		const workers: FakeWorker[] = [];
+		const client = new EvalClient(() => {
+			const worker = new FakeWorker(false, 5);
+			workers.push(worker);
+			return worker;
+		});
+		const running = client.evaluate({ expression: "1", input: null, key: "/a" });
+		const stale = client.evaluate({ expression: "2", input: null, key: "/a" });
+		const other = client.evaluate({ expression: "3", input: null, key: "/b" });
+		const fresh = client.evaluate({ expression: "4", input: null, key: "/a" });
+		assert.equal(client.inFlight, 3);
+		const responses = await Promise.all([running, stale, other, fresh]);
+		assert.deepEqual(
+			responses.map((response) => (response.ok ? response.value : response.error.code)),
+			[1, "ES_SUPERSEDED", 3, 4],
+		);
+		// The one already sent runs to the end; the superseded one never reaches the worker.
+		assert.equal(workers[0]?.received, 3);
 		client.dispose();
 	});
 
@@ -232,12 +295,16 @@ describe("EvalClient", () => {
 		assert.match(failed.error.message, /script error/);
 
 		const pending = client.evaluate({ expression: "1", input: null });
-		assert.equal(client.inFlight, 1);
+		const queued = client.evaluate({ expression: "2", input: null });
+		assert.equal(client.inFlight, 2);
 		client.dispose();
-		const aborted = await pending;
-		assert.ok(!aborted.ok);
-		assert.equal(aborted.error.code, "ES_ABORTED");
+		const aborted = await Promise.all([pending, queued]);
+		assert.deepEqual(
+			aborted.map((response) => (response.ok ? response.value : response.error.code)),
+			["ES_ABORTED", "ES_ABORTED"],
+		);
 		assert.equal(workers.length, 2);
+		assert.equal(workers[1]?.received, 1);
 	});
 
 	it("ignores an answer that comes after its deadline", async () => {

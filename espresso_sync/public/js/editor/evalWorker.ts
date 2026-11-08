@@ -11,10 +11,11 @@
  * 1. Inside the worker, jsonata's own guardrails stop a runaway evaluation
  *    between steps: `timeoutMs` (D1012), `maxDepth` (D1011) and `maxSequence`
  *    (D2015). These are the limits the server's jsonata-python `timebox` uses.
- * 2. Outside it, `EvalClient` gives each request a deadline a little past
- *    `timeoutMs`. Something the guardrails can't interrupt (a catastrophic
- *    regular expression, a giant result) runs past it, and the client then
- *    terminates the worker and starts a new one for the next request.
+ * 2. Outside it, `EvalClient` sends the worker one request at a time and gives
+ *    each a deadline a little past `timeoutMs`, counted from when it is sent.
+ *    Something the guardrails can't interrupt (a catastrophic regular
+ *    expression, a giant result) runs past it, and the client then terminates
+ *    the worker and starts a new one for the requests still waiting.
  *
  * `evaluate` and `serve` are the worker's side and `EvalClient` the page's; all
  * three are plain functions of their inputs, so the tests run them in Node with
@@ -44,7 +45,10 @@ export interface EvalRequest {
 }
 
 export interface EvalError {
-	/** jsonata's code (`S0201`, `T2001`, `D1012`), or `ES_DEADLINE` / `ES_ABORTED` / `ES_WORKER` from the client. */
+	/**
+	 * jsonata's code (`S0201`, `T2001`, `D1012`), or one of the client's:
+	 * `ES_DEADLINE`, `ES_SUPERSEDED`, `ES_ABORTED` or `ES_WORKER`.
+	 */
 	code: string;
 	message: string;
 	position?: number;
@@ -151,22 +155,44 @@ export interface EvalClientOptions {
 	graceMs?: number;
 }
 
-interface Pending {
+/** A request as the page makes it: the client numbers it, and `key` names what it is for. */
+export interface EvalCall extends Omit<EvalRequest, "id"> {
+	/**
+	 * What the request is for (a rule's pointer, say). A newer request with
+	 * the same key replaces one still waiting its turn, which then resolves
+	 * with `ES_SUPERSEDED`: a burst of keystrokes evaluates only the last.
+	 */
+	key?: string;
+}
+
+interface Job {
+	id: number;
+	key: string | undefined;
+	request: EvalRequest;
 	resolve: (response: EvalResponse) => void;
-	timer: ReturnType<typeof setTimeout>;
-	started: number;
+	/** When the request was made, then when it was sent: what `elapsedMs` counts from. */
+	since: number;
+	timer?: ReturnType<typeof setTimeout>;
 }
 
 /**
  * The page's side: sends requests to a worker and resolves each with its
- * response, or with an `ES_DEADLINE` error when the worker doesn't answer in
- * time (the worker is then replaced). Its promises never reject.
+ * response. Its promises never reject.
+ *
+ * The worker gets one request at a time; the rest wait here, in order. A
+ * request's deadline (its `timeoutMs` plus `graceMs`) starts when it is sent,
+ * so time spent waiting behind others never counts against it. A request that
+ * misses its deadline resolves with `ES_DEADLINE`, the worker is replaced, and
+ * the requests still waiting go to the new one.
  */
 export class EvalClient {
 	private readonly createWorker: () => WorkerLike;
 	private readonly graceMs: number;
 	private worker: WorkerLike | undefined;
-	private readonly pending = new Map<number, Pending>();
+	/** The request the worker is on. */
+	private current: Job | undefined;
+	/** The requests waiting their turn, oldest first. */
+	private readonly queue: Job[] = [];
 	private nextId = 1;
 
 	constructor(createWorker: () => WorkerLike, options: EvalClientOptions = {}) {
@@ -174,25 +200,45 @@ export class EvalClient {
 		this.graceMs = options.graceMs ?? 500;
 	}
 
-	evaluate(request: Omit<EvalRequest, "id">): Promise<EvalResponse> {
+	evaluate(call: EvalCall): Promise<EvalResponse> {
+		const { key, ...request } = call;
 		const id = this.nextId++;
-		const timeoutMs = request.limits?.timeoutMs ?? DEFAULT_LIMITS.timeoutMs;
-		const worker = this.ensureWorker();
 		return new Promise<EvalResponse>((resolve) => {
-			const timer = setTimeout(() => this.expire(id), timeoutMs + this.graceMs);
-			this.pending.set(id, { resolve, timer, started: Date.now() });
-			worker.postMessage({ ...request, id } satisfies EvalRequest);
+			if (key !== undefined) {
+				const index = this.queue.findIndex((job) => job.key === key);
+				const [older] = index === -1 ? [] : this.queue.splice(index, 1);
+				if (older) this.fail(older, "ES_SUPERSEDED", "Replaced by a newer evaluation of the same expression");
+			}
+			this.queue.push({ id, key, request: { ...request, id }, resolve, since: Date.now() });
+			this.pump();
 		});
 	}
 
-	/** How many requests are waiting for an answer. */
+	/** How many requests are waiting for an answer: the one being evaluated and those queued. */
 	get inFlight(): number {
-		return this.pending.size;
+		return this.queue.length + (this.current ? 1 : 0);
 	}
 
 	/** Stop the worker; anything still waiting resolves as aborted. */
 	dispose(): void {
-		this.restart("ES_ABORTED", "The expression engine was shut down");
+		this.stopWorker();
+		const message = "The expression engine was shut down";
+		if (this.current) this.fail(this.current, "ES_ABORTED", message);
+		this.current = undefined;
+		for (const job of this.queue.splice(0)) this.fail(job, "ES_ABORTED", message);
+	}
+
+	/** Send the next waiting request, if the worker is free. */
+	private pump(): void {
+		if (this.current) return;
+		const job = this.queue.shift();
+		if (!job) return;
+		const worker = this.ensureWorker();
+		const timeoutMs = job.request.limits?.timeoutMs ?? DEFAULT_LIMITS.timeoutMs;
+		this.current = job;
+		job.since = Date.now();
+		job.timer = setTimeout(() => this.expire(job), timeoutMs + this.graceMs);
+		worker.postMessage(job.request);
 	}
 
 	private ensureWorker(): WorkerLike {
@@ -204,38 +250,42 @@ export class EvalClient {
 		});
 		worker.addEventListener("error", (event) => {
 			event.preventDefault();
-			if (this.worker === worker) this.restart("ES_WORKER", `The expression engine failed: ${event.message}`);
+			if (this.worker === worker) this.abandon("ES_WORKER", `The expression engine failed: ${event.message}`);
 		});
 		this.worker = worker;
 		return worker;
 	}
 
 	private settle(response: EvalResponse): void {
-		const entry = this.pending.get(response.id);
-		if (!entry) return; // answered after its deadline: already settled
-		clearTimeout(entry.timer);
-		this.pending.delete(response.id);
-		entry.resolve(response);
+		const job = this.current;
+		if (job?.id !== response.id) return; // answered after its deadline: already settled
+		this.current = undefined;
+		clearTimeout(job.timer);
+		job.resolve(response);
+		this.pump();
 	}
 
-	private fail(id: number, entry: Pending, code: string, message: string): void {
-		clearTimeout(entry.timer);
-		this.pending.delete(id);
-		entry.resolve({ id, ok: false, error: { code, message }, elapsedMs: Date.now() - entry.started });
+	private fail(job: Job, code: string, message: string): void {
+		clearTimeout(job.timer);
+		job.resolve({ id: job.id, ok: false, error: { code, message }, elapsedMs: Date.now() - job.since });
 	}
 
-	private expire(id: number): void {
-		const entry = this.pending.get(id);
-		if (!entry) return;
-		this.fail(id, entry, "ES_DEADLINE", "The expression took too long and was stopped");
-		this.restart("ES_ABORTED", "Stopped with another expression that took too long");
+	private expire(job: Job): void {
+		if (this.current !== job) return;
+		this.abandon("ES_DEADLINE", "The expression took too long and was stopped");
 	}
 
-	/** Kill the worker; every request still waiting resolves with `code`. The next request starts a new one. */
-	private restart(code: string, message: string): void {
+	/** Fail the current request with `code` and replace the worker; those waiting go to the new one. */
+	private abandon(code: string, message: string): void {
+		this.stopWorker();
+		const job = this.current;
+		this.current = undefined;
+		if (job) this.fail(job, code, message);
+		this.pump();
+	}
+
+	private stopWorker(): void {
 		this.worker?.terminate();
 		this.worker = undefined;
-		// Deleting the entry being visited is safe while iterating a Map.
-		for (const [id, entry] of this.pending) this.fail(id, entry, code, message);
 	}
 }
