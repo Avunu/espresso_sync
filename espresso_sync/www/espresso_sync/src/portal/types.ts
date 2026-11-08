@@ -25,6 +25,8 @@ export type ShowToast = (toast: Omit<ToastState, "id">) => void;
 export interface PortalBoot {
 	user: string;
 	session_expiry?: string;
+	/** The transform editor's JSONata worker script (public/js/espresso-sync-eval.bundle.js). */
+	eval_worker: string;
 }
 
 declare global {
