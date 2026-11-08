@@ -222,7 +222,9 @@ export function Transform({ name }: { name: string }) {
 		</Breadcrumb>
 	);
 	const error = doc.error ?? operation.error ?? doctype.error;
-	if (error) {
+	// get_operation_schema always returns a schema: a body without one is a failed load, not a pending one.
+	const noSchema = operation.data !== undefined && operation.data.message === undefined;
+	if (error || noSchema) {
 		const missing = doc.error && (doc.error as { httpStatus?: number }).httpStatus === 404;
 		return (
 			<Stack gap={6}>
