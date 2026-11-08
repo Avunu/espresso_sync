@@ -9,6 +9,7 @@ external references before it saves a spec, so a stored spec refers only to itse
 """
 
 import json
+import math
 import re
 from collections.abc import Iterator
 from typing import Any, cast
@@ -92,7 +93,9 @@ def json_key(key: Any) -> str:
 
 def plain(value: Any, budget: list[int]) -> Any:
 	"""`value` with string keys only, refusing more than `budget` nodes: YAML aliases can
-	expand a short text into a huge tree, and no YAML loader bounds that."""
+	expand a short text into a huge tree, and no YAML loader bounds that. A value JSON
+	cannot hold (what the YAML tags !!binary, !!set and !!timestamp make, NaN, infinity)
+	is refused."""
 	budget[0] -= 1
 	if budget[0] < 0:
 		raise SpecError(_("The spec is too large"))
@@ -100,7 +103,9 @@ def plain(value: Any, budget: list[int]) -> Any:
 		return {json_key(key): plain(item, budget) for key, item in value.items()}
 	if isinstance(value, list | tuple):
 		return [plain(item, budget) for item in value]
-	return value
+	if isinstance(value, str | bool | int | None) or (isinstance(value, float) and math.isfinite(value)):
+		return value
+	raise SpecError(_("The spec holds a value JSON cannot: {0}").format(repr(value)[:100]))
 
 
 def load_spec_text(text: str | bytes) -> dict[str, Any]:

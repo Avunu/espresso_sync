@@ -71,6 +71,18 @@ class TestLoading(IntegrationTestCase):
 			with self.subTest(text=text), self.assertRaises(SpecError):
 				openapi.load_spec_text(text)
 
+	def test_a_value_json_cannot_hold_is_refused(self):
+		for text in (
+			"info: {x-b: !!binary aGk=}",
+			"info: {x-s: !!set {a: null}}",
+			"info: {x-d: !!timestamp 2026-01-01}",
+			"info: {x-n: .nan}",
+			"info: {x-i: -.inf}",
+			'{"info": {"x-n": NaN}}',
+		):
+			with self.subTest(text=text), self.assertRaises(SpecError):
+				openapi.load_spec_text(text)
+
 	def test_an_alias_bomb_is_refused(self):
 		lines = ['a0: &a0 ["x", "x", "x", "x", "x", "x", "x", "x", "x", "x"]']
 		lines += [f"a{i}: &a{i} [{', '.join([f'*a{i - 1}'] * 10)}]" for i in range(1, 8)]
