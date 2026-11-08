@@ -214,12 +214,71 @@ describe("prepareSpec", () => {
 		);
 	});
 
-	it("lists what makes the spec invalid", async () => {
-		const error = await rejection(
-			prepareSpec(JSON.stringify({ openapi: "3.1.0", info: { version: "1" }, paths: {} }), server()),
+	it("upgrades a Swagger 2.0 path item, parameter and response from other files", async () => {
+		const files: Record<string, string> = {
+			"https://specs.example.com/shop/paths/pets.yaml": `
+parameters: [{$ref: "../parameters.yaml#/shop"}]
+get:
+  produces: [application/json]
+  parameters: [{name: limit, in: query, type: integer}]
+  responses:
+    "200": {$ref: "../responses.yaml#/Pets"}
+post:
+  consumes: [application/json]
+  parameters: [{name: pet, in: body, required: true, schema: {$ref: "../schemas/pets.yaml#/Pet"}}]
+  responses:
+    "201": {description: Made}
+`,
+			"https://specs.example.com/shop/parameters.yaml": `shop: {name: shop, in: header, type: string}`,
+			"https://specs.example.com/shop/responses.yaml": `
+Pets:
+  description: The pets
+  schema: {type: array, items: {$ref: "schemas/pets.yaml#/Pet"}}
+`,
+			...FILES,
+		};
+		const prepared = await prepareSpec(
+			`
+swagger: "2.0"
+info: {title: Pet Shop, version: "1.0"}
+host: api.example.com
+paths:
+  /pets: {$ref: "paths/pets.yaml"}
+`,
+			{ origin: "https://specs.example.com/shop/openapi.yaml", ...server(files) },
 		);
-		assert.match(error.message, /not valid OpenAPI 3\.1/);
-		assert.ok(error.details.length > 0);
+		const pets = JSON.parse(prepared.specJson).paths["/pets"];
+		assert.deepEqual(pets.parameters, [{ name: "shop", in: "header", schema: { type: "string" } }]);
+		assert.deepEqual(pets.get.parameters, [{ name: "limit", in: "query", schema: { type: "integer" } }]);
+		assert.equal(pets.get.responses["200"].content["application/json"].schema.type, "array");
+		assert.match(pets.post.requestBody.content["application/json"].schema.$ref, /^#\/x-ext\//);
+		assert.equal(pets.post.parameters, undefined);
+	});
+
+	it("stops fetching once the files referred to pass the limit", async () => {
+		const large = `Big: {type: string, description: "${"x".repeat(MAX_SOURCE_BYTES / 2)}"}`;
+		const refs = Array.from(
+			{ length: 8 },
+			(_, n) => `  F${n}: {$ref: "https://specs.example.com/${n}.yaml#/Big"}`,
+		);
+		const files = Object.fromEntries(
+			Array.from({ length: 8 }, (_, n) => [`https://specs.example.com/${n}.yaml`, large]),
+		);
+		const { asked, fetchText } = server(files);
+		const text = `openapi: 3.1.0\ninfo: {title: Big, version: "1"}\npaths: {}\ncomponents:\n schemas:\n${refs.join("\n")}\n`;
+		const error = await rejection(prepareSpec(text, { fetchText }));
+		assert.match(error.message, /files the spec refers to are larger than 32 MB in all/);
+		assert.ok(asked.length < 8, `fetched ${asked.length}`);
+	});
+
+	it("refuses a spec that refers to itself through a YAML alias", async () => {
+		const error = await rejection(
+			prepareSpec(
+				"openapi: 3.1.0\ninfo: {title: Loop, version: '1'}\npaths: {}\nx-loop: &loop {self: *loop}\n",
+				server(),
+			),
+		);
+		assert.match(error.message, /refers to itself through a YAML alias/);
 	});
 
 	it("refuses a spec larger than the server stores", async () => {

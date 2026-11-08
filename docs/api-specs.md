@@ -32,11 +32,11 @@ Changes are tracked: the form's activity shows each version of the spec.
 The `/espresso_sync` page's **API specs** screen imports a spec from a URL, a JSON or YAML file, or pasted text, and re-imports one over its stored spec, saying whether it changed. In the browser, with [Scalar's OpenAPI parser](https://github.com/scalar/scalar/tree/main/packages/openapi-parser), it:
 
 1. reads the text, at most 32 MiB;
-2. fetches the files the spec's `$ref`s point to and embeds them under `x-ext`, keeping the internal references, so the spec refers only to itself;
+2. fetches the files the spec's `$ref`s point to, at most 32 MiB of them in all, and embeds them under `x-ext`, keeping the internal references, so the spec refers only to itself;
 3. upgrades Swagger 2.0 and OpenAPI 3.0 to OpenAPI 3.1;
-4. checks the result as OpenAPI 3.1, at most 10 MiB, and saves it with `save_spec`.
+4. saves the result, at most 10 MiB, with `save_spec`, which validates it as OpenAPI 3.1 and lists what is wrong with it.
 
-The browser fetches nothing from another site: the spec's URL and every file it refers to go through `fetch_spec_source`, under the checks in [Where requests go](#where-requests-go), with the chosen Connection's credentials when the URL is on its Allowed Host. A pasted or uploaded spec can only refer to absolute URLs: a relative reference (`schemas/pet.yaml`) needs the spec's own URL to be read against, so import such a spec from its URL. A referenced file is embedded as written, not upgraded.
+The browser fetches nothing from another site: the spec's URL and every file it refers to go through `fetch_spec_source`, under the checks in [Where requests go](#where-requests-go), with the chosen Connection's credentials when the URL is on its Allowed Host. A pasted or uploaded spec can only refer to absolute URLs: a relative reference (`schemas/pet.yaml`) needs the spec's own URL to be read against, so import such a spec from its URL. The files a spec refers to are upgraded with it. A Swagger 2.0 path item, parameter or response from another file is copied in where it is used, and the schemas it refers to stay under `x-ext`. Only `x-nullable` in a Swagger 2.0 schema from another file is left as written, so that schema does not take `null`.
 
 From a spec's operations, **New transform** makes a Draft transform on one: an import or an export, and the DocType on the other side, one of those you can read.
 
