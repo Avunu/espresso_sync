@@ -9,7 +9,7 @@ For license information, please see license.txt-->
 
 # Espresso Sync
 
-Two-way sync between Frappe documents and external REST APIs
+Two-way REST API sync: JSONata transforms checked against OpenAPI and DocTypes
 
 [![CI](https://github.com/Avunu/espresso_sync/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Avunu/espresso_sync/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/Avunu/espresso_sync)](https://github.com/Avunu/espresso_sync/releases)
@@ -33,7 +33,7 @@ A sync reads an import's pages, maps each item and inserts or updates its docume
 
 Syncs run on demand, with **Sync Now** on the Connection form, and on each enabled Connection's **Sync Frequency** (hourly, daily, a cron rule, …) as background jobs. Only a System Manager can configure or run any of it. See the [documentation](docs/README.md).
 
-The transform editor for the `/espresso_sync` page is in progress; until it ships the app is not listed in the Frappe marketplace.
+System Managers work on transforms in the `/espresso_sync` page, opened from the apps screen: it imports an API's OpenAPI description, lists its operations, starts a transform on one, and edits the transform's rules in the **transform editor**, with each rule previewed on sample items and checked against both schemas as it is typed.
 
 <!-- frappe-nix:begin compatibility -->
 

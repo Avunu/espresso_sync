@@ -1,7 +1,7 @@
 # The app's registry listing (docs/app-standards/marketplace.md); frappe-listing check validates it.
 schema = 1
 title = "Espresso Sync"
-tagline = "Two-way sync between Frappe documents and external REST APIs"
+tagline = "Two-way REST API sync: JSONata transforms checked against OpenAPI and DocTypes"
 type = "integration"
 category = "Integrations"
 categories = ["Integrations", "Data Management"]

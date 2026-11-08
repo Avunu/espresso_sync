@@ -1,7 +1,7 @@
 [project]
 name = "espresso_sync"
 authors = [{ name = "Avunu LLC", email = "mail@avu.nu" }]
-description = "Two-way sync between Frappe documents and external REST APIs"
+description = "Two-way REST API sync: JSONata transforms checked against OpenAPI and DocTypes"
 requires-python = ">=3.14"
 license = { text = "MIT" }
 classifiers = ["License :: OSI Approved :: MIT License"]
@@ -28,7 +28,8 @@ frappe-major = 16
 siblings = []
 
 [tool.frappe-nix.listing]
-# Off the marketplace until the portal's transform editor ships.
+# Registry pull requests stay manual for now: with publish on, every release would open one
+# (release.yml, when the MARKETPLACE_PUBLISH variable is "true") and nightly.yml would refresh it.
 publish = false
 
 # The /espresso_sync page's React sources, built by Frappe's esbuild through
