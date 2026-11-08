@@ -1,9 +1,15 @@
 # Copyright (c) 2026, Avunu LLC and contributors
 # For license information, please see license.txt
 
-"""Keeps this app off the apps screen."""
+"""The apps screen's Espresso Sync tile, which opens the /espresso_sync page."""
+
+from espresso_sync.portal import has_access
 
 
-def not_listed() -> bool:
-	"""Say no to add_to_apps_screen, whose entry is only there for the About dialog's logo."""
-	return False
+def check_app_permission() -> bool:
+	"""Show the tile to whoever may open the page.
+
+	Asks the page itself rather than repeating its role list here, so the tile and the
+	page never disagree.
+	"""
+	return has_access()

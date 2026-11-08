@@ -7,4 +7,8 @@ category = "Integrations"
 categories = ["Integrations", "Data Management"]
 website = "https://avunu.net/open-source/espresso_sync/"
 documentation = "https://docs.avunu.net/espresso-sync/"
-apps_screen = false
+apps_screen = true
+
+[apps_screen_entry]
+route = "/espresso_sync"
+has_permission = "espresso_sync.apps_screen.check_app_permission"

@@ -13,8 +13,8 @@ add_to_apps_screen = [
 		"name": "espresso_sync",
 		"logo": "/assets/espresso_sync/images/espresso_sync-logo.svg",
 		"title": "Espresso Sync",
-		"route": "/desk",
-		"has_permission": "espresso_sync.apps_screen.not_listed",
+		"route": "/espresso_sync",
+		"has_permission": "espresso_sync.apps_screen.check_app_permission",
 	}
 ]
 
