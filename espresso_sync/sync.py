@@ -5,15 +5,17 @@
 through its Active export transform.
 
 An import reads the import transform's operation from the Connection's Server URL, page by
-page (Next Request gives the next page's query parameters, up to Maximum Pages). For each
-page:
+page (Next Request gives the next page's query parameters, up to Maximum Pages: an import
+that stops there with pages left fails). For each page:
 
 1. the status, then the body as JSON; unless Runtime Validation is Off, the body is
    checked against the operation's response schema, as warnings;
 2. the items at the Items Pointer;
 3. for each item, its id (External ID) and when it last changed (Modified): an item no
-   newer than when it was last imported is skipped, and so is one whose Sync ID row is
-   Disabled;
+   newer than when it was last imported or exported is skipped, and so is one whose Sync
+   ID row is Disabled. When the shot exports, a document changed here since it was last
+   synced is not overwritten: the export sends it, and an item that changed in the API too
+   fails, as a conflict;
 4. the Active JSONata maps the item, and Runtime Validation checks the result against the
    DocType (Enforce: one with an error is not saved);
 5. the document imported as that id before is updated (its child tables as the
@@ -29,15 +31,20 @@ An export reads the documents changed since Last Export, the oldest first. For e
 3. it is sent with the operation's method: the Update Transform's when the document has an
    external id and the shot has one, the Export Transform's otherwise;
 4. a create's response gives the new external id (External ID), which is committed at
-   once: the object exists in the API now, whatever happens to the rest of the sync.
+   once: the object exists in the API now, whatever happens to the rest of the sync;
+5. when the shot imports, the import transform's Modified, read on the response of a
+   create or an update, records when the object changed in the API: the next import does
+   not read back what was exported.
 
-Every request, item and document gets a Pull Log entry, with the hash of the Active
-JSONata that ran; a failure is logged, and the sync goes on with the next one. Last Import
-and Last Export move only past what succeeded.
+A sync runs as Administrator, whoever queued it (scheduler.run_connection_sync): what it
+reads and exports does not depend on who clicked Sync Now.
+
+Every request, item and document gets a Pull Log entry, with the hash of what ran (the
+Active JSONata and the fields a sync reads); a failure is logged, and the sync goes on
+with the next one. Last Import and Last Export move only past what succeeded.
 """
 
 import datetime
-import hashlib
 from typing import Any
 
 import frappe
@@ -85,17 +92,22 @@ def succeeded(response: requests.Response) -> bool:
 class Step:
 	"""An Active transform as a sync runs it."""
 
-	def __init__(self, name: str, connection: str):
+	def __init__(self, name: str, connection: str, doctype: str, direction: str):
 		self.transform: Any = frappe.get_doc(TRANSFORM, name)
 		if self.transform.status != "Active" or not self.transform.active_compiled:
 			raise SyncFailure("transform-not-active", _("{0} is not Active").format(name))
+		if (self.transform.direction, self.transform.document_type) != (direction, doctype):
+			raise SyncFailure(
+				"transform-shot",
+				_("{0} is not an {1} transform of {2}").format(name, _(direction), doctype),
+			)
 		self.sides = validate.Sides(self.transform)
 		if self.sides.connection != connection:
 			raise SyncFailure(
 				"transform-connection", _("{0} is on an API Spec of another Connection").format(name)
 			)
 		self.connection = connection
-		self.hash = hashlib.sha256(self.transform.active_compiled.encode()).hexdigest()
+		self.hash = self.transform.active_hash()
 
 	@property
 	def context(self) -> dict[str, Any]:
@@ -161,9 +173,40 @@ def imported_row(connection: str, doctype: str, external_id: str):
 	rows = frappe.get_all(
 		SYNC_ID,
 		filters={"sync_connection": connection, "parenttype": doctype, "external_id": external_id},
-		fields=["name", "parent", "dont_sync", "external_modified"],
+		fields=["name", "parent", "dont_sync", "external_modified", "last_synced_modified"],
 	)
 	return next((row for row in rows if frappe.db.exists(doctype, row.parent)), None)
+
+
+def changed_here(doctype: str, row) -> bool:
+	"""Whether the document of a Sync ID row changed since this Connection last synced it,
+	in a way the export sends."""
+	doc = frappe.db.get_value(doctype, row.parent, ["modified", "exclude_from_sync"], as_dict=True)
+	if doc.exclude_from_sync:
+		return False
+	return not row.last_synced_modified or doc.modified > row.last_synced_modified
+
+
+def response_json(response: requests.Response) -> Any:
+	"""The body of a response, None when it is not JSON."""
+	try:
+		return response.json()
+	except ValueError:
+		return None
+
+
+def api_modified(imported: Step | None, body: Any):
+	"""When the object last changed in the API, read on what it answered an export by the
+	import transform's Modified, as an import reads it; None when that does not say."""
+	if imported is None or body is None:
+		return None
+	try:
+		modified = imported.evaluate("modified_expr", body)
+		return None if modified in (None, "") else engine.system_datetime(modified)
+	except Exception:
+		# the object is sent whatever this gives: without it, the next import reads the
+		# object again, and keeps a change made here meanwhile
+		return None
 
 
 def merge_rows(step: Step, doc, fieldname: str, rows: list[Any], key: str):
@@ -276,8 +319,8 @@ class Run:
 			# built...): it is logged, and the next shot runs
 			self.log(sync_doctype=shot.dt, sync_direction=direction, **failure(e))
 
-	def step(self, name: str) -> Step:
-		return Step(name, self.connection.name)
+	def step(self, name: str, shot, direction: str) -> Step:
+		return Step(name, self.connection.name, shot.dt, direction)
 
 	def log(self, **values):
 		"""Insert a Pull Log entry. One that cannot be inserted goes to the Error Log,
@@ -322,7 +365,7 @@ class Run:
 		moves to the start of the run only when nothing failed."""
 		started = now_datetime()
 		failures = self.failures
-		step = self.step(shot.import_transform)
+		step = self.step(shot.import_transform, shot, "Import")
 		transform = step.transform
 		# the parameters may read when the last complete import began
 		url, query = transform.request_url(
@@ -346,9 +389,24 @@ class Run:
 			except Exception as e:
 				self.log(**step.context, url=full_url(url, query), **failure(e))
 				break
-			if not next_query:
+			if not next_query or all(value is None for value in next_query.values()):
 				break
 			query = {**query, **next_query}
+		else:
+			# the pages left are read by the next import, from the same Last Import
+			self.log(
+				**step.context,
+				url=full_url(url, query),
+				**failure(
+					SyncFailure(
+						"max-pages",
+						_("Maximum Pages ({0}) read, and Next Request gives another page").format(
+							transform.max_pages
+						),
+					),
+					origin="request",
+				),
+			)
 		if self.failures == failures:
 			shot.last_import = started
 			frappe.db.set_value(SHOT, shot.name, "last_import", started, update_modified=False)
@@ -366,8 +424,7 @@ class Run:
 				body = response.json()
 			except ValueError:
 				raise SyncFailure("invalid-json", _("The response is not JSON")) from None
-			with validate.without_messages():
-				items = step.transform.read_items(body)
+			items = step.transform.read_items(body)
 		except Exception as e:
 			self.log(**entry, **failure(e, origin="request"))
 			return None
@@ -380,8 +437,7 @@ class Run:
 	def import_item(self, step: Step, shot, item: Any):
 		entry = {**step.context, "object": item}
 		try:
-			with validate.without_messages():
-				imported = self.import_object(step, shot, item)
+			imported = self.import_object(step, shot, item)
 		except Exception as e:
 			self.log(**entry, **failure(e))
 			return
@@ -409,6 +465,17 @@ class Run:
 			row.dont_sync or (modified and row.external_modified and modified <= row.external_modified)
 		):
 			return None
+		if row and shot.do_export and changed_here(doctype, row):
+			# not overwritten: the export sends the change made here. When the item changed in
+			# the API too, the export overwrites that change, and the conflict is logged
+			if modified is None:
+				return None
+			raise SyncFailure(
+				"conflict",
+				_(
+					"Changed here since the last sync, and newer in the API: the export sends the change made here"
+				),
+			)
 		output = {key: value for key, value in step.map(item).items() if key not in NOT_MAPPED}
 		if row:
 			doc = frappe.get_doc(doctype, row.parent)
@@ -454,8 +521,13 @@ class Run:
 
 	def export_shot(self, shot):
 		"""Export the documents changed since Last Export, the oldest first."""
-		create = self.step(shot.export_transform)
-		update = self.step(shot.update_transform) if shot.update_transform else create
+		create = self.step(shot.export_transform, shot, "Export")
+		update = self.step(shot.update_transform, shot, "Export") if shot.update_transform else create
+		try:
+			imported = self.step(shot.import_transform, shot, "Import") if shot.do_import else None
+		except SyncFailure:
+			# the import failed for it, and said why: the export goes on without its Modified
+			imported = None
 		doctype = shot.dt
 		last_export = get_datetime(shot.last_export) if shot.last_export else None
 		filters: list[list[Any]] = [[doctype, "exclude_from_sync", "=", 0]]
@@ -464,14 +536,16 @@ class Run:
 		shot_modified = get_datetime(shot.modified)
 		if last_export and last_pull and shot_modified and shot_modified < last_pull:
 			filters.append([doctype, "modified", ">", last_export])
-		rows = frappe.get_list(doctype, filters=filters, fields=["name", "modified"], order_by="modified asc")
-		results = [(row.modified, self.export_document(create, update, row.name)) for row in rows]
+		# every document, whatever the user that queued the sync may read: Last Export moves past
+		# them all
+		rows = frappe.get_all(doctype, filters=filters, fields=["name", "modified"], order_by="modified asc")
+		results = [(row.modified, self.export_document(create, update, imported, row.name)) for row in rows]
 		watermark = export_watermark(results, last_export)
 		if watermark != last_export:
 			shot.last_export = watermark
 			frappe.db.set_value(SHOT, shot.name, "last_export", watermark, update_modified=False)
 
-	def export_document(self, create: Step, update: Step, name: str) -> bool:
+	def export_document(self, create: Step, update: Step, imported: Step | None, name: str) -> bool:
 		"""Export one document; False when it failed (and was logged). One that is Disabled,
 		or whose last change was synced, counts as done."""
 		doctype = create.transform.document_type
@@ -490,43 +564,40 @@ class Run:
 		item = engine.document_item(doc)
 		entry: dict[str, Any] = {**step.context, "sync_doc": name, "document": item}
 		try:
-			with validate.without_messages():
-				body = step.map(item)
-				entry["object"] = body
-				pointer = step.sides.pointer
-				diagnostics = step.check(
-					lambda: (
-						openapi.validate_payload(step.sides.spec, pointer, body, write=True)
-						if pointer
-						else []
-					)
+			body = step.map(item)
+			entry["object"] = body
+			pointer = step.sides.pointer
+			diagnostics = step.check(
+				lambda: (
+					openapi.validate_payload(step.sides.spec, pointer, body, write=True) if pointer else []
 				)
-				url, query = step.transform.request_url(
-					self.connection.server_url, item, self.connection.name
-				)
+			)
+			url, query = step.transform.request_url(self.connection.server_url, item, self.connection.name)
 			entry.update(url=full_url(url, query), request_type=step.transform.method)
 			response = self.send(step, url, query, body if pointer else None)
 			entry["response"] = response.text
 			if not succeeded(response):
 				raise SyncFailure("http-status", f"HTTP {response.status_code}")
+			answered = response_json(response)
+			synced = {"last_synced_modified": doc.modified}
+			if (external_modified := api_modified(imported, answered)) is not None:
+				synced["external_modified"] = external_modified
 			if row and row.external_id:
-				frappe.db.set_value(
-					SYNC_ID, row.name, "last_synced_modified", doc.modified, update_modified=False
-				)
+				frappe.db.set_value(SYNC_ID, row.name, synced, update_modified=False)
 			else:
-				diagnostics.extend(self.record_created(step, doc, row, response))
+				diagnostics.extend(self.record_created(step, doc, row, answered, synced))
 		except Exception as e:
 			self.log(**entry, **failure(e))
 			return False
 		self.log(**entry, sync_status="Success", diagnostics=diagnostics)
 		return True
 
-	def record_created(self, step: Step, doc, row, response: requests.Response) -> list[dict[str, Any]]:
-		"""Store the id of the object a create made, from its response, and commit it."""
-		try:
-			external_id = step.evaluate("external_id_expr", response.json())
-		except ValueError:
-			external_id = None
+	def record_created(
+		self, step: Step, doc, row, answered: Any, synced: dict[str, Any]
+	) -> list[dict[str, Any]]:
+		"""Store the id of the object a create made, from its response (`answered`), with
+		`synced`, and commit it."""
+		external_id = step.evaluate("external_id_expr", answered) if answered is not None else None
 		if external_id in (None, ""):
 			return [
 				{
@@ -538,7 +609,7 @@ class Run:
 					"origin": "request",
 				}
 			]
-		values = {"external_id": engine.as_text(external_id), "last_synced_modified": doc.modified}
+		values = {"external_id": engine.as_text(external_id), **synced}
 		if row:
 			frappe.db.set_value(SYNC_ID, row.name, values, update_modified=False)
 		else:

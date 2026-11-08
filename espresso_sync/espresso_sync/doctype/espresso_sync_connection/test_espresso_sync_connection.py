@@ -13,6 +13,7 @@ import responses
 from frappe.share import add as share_doc
 from frappe.tests import IntegrationTestCase
 
+from espresso_sync import scheduler
 from espresso_sync.espresso_sync.doctype.espresso_sync_connection import espresso_sync_connection as esc
 from espresso_sync.sync import Run
 from espresso_sync.tests.egress import make_response, public_dns
@@ -101,21 +102,24 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 
 	def test_sync_now_is_for_system_managers(self):
 		doc = json.dumps({"name": self.connection.name})
-		with patch.object(esc.EspressoSyncConnection, "sync", return_value=0) as sync:
+		with patch.object(esc, "enqueue_connection_sync") as enqueue:
 			for user in (WEBSITE_USER, DESK_USER):
 				frappe.set_user(user)
 				with self.subTest(user=user), self.assertRaises(frappe.PermissionError):
 					esc.sync_action(doc)
-			sync.assert_not_called()
+			enqueue.assert_not_called()
 			frappe.set_user(MANAGER_USER)
 			self.assertEqual(esc.sync_action(doc).name, self.connection.name)
-			sync.assert_called_once()
+			enqueue.assert_called_once_with(self.connection.name)
 
-	def test_sync_now_reports_failures(self):
+	def test_sync_now_queues_the_scheduled_job(self):
 		frappe.clear_messages()
-		with patch.object(esc.EspressoSyncConnection, "sync", return_value=2):
+		with patch.object(frappe, "enqueue") as enqueue:
 			esc.sync_now(self.connection.name)
-		self.assertIn("2 failed", json.dumps(frappe.local.message_log))
+			scheduler.enqueue_connection_sync(self.connection.name)
+		[sync_now, scheduled] = enqueue.call_args_list
+		self.assertEqual(sync_now, scheduled)
+		self.assertIn("queued", json.dumps(frappe.local.message_log))
 
 	def test_a_share_cannot_move_the_credentials(self):
 		doc = frappe.get_doc("Espresso Sync Connection", self.connection.name).as_dict()

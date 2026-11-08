@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import datetime
-import json
 from unittest.mock import patch
 
 import frappe
@@ -137,29 +136,16 @@ class TestScheduler(IntegrationTestCase):
 			self.assertFalse(scheduler.run_connection_sync(self.disabled))
 		sync.assert_not_called()
 
-	def test_sync_now_is_refused_while_a_sync_runs(self):
+	def test_a_sync_runs_as_administrator(self):
 		name = self.names["Hourly"]
-		doc = json.dumps({"name": name})
-		lock = scheduler.sync_lock(name)
-		with patch.object(esc.EspressoSyncConnection, "sync") as sync:
-			self.assertTrue(lock.acquire(blocking=False))
-			try:
-				with self.assertRaises(frappe.ValidationError):
-					esc.sync_action(doc)
-			finally:
-				lock.release()
-			sync.assert_not_called()
-			# free again: it runs, and releases the lock for the scheduled job
-			self.assertEqual(esc.sync_action(doc).name, name)
-			self.assertEqual(sync.call_count, 1)
-			self.assertTrue(scheduler.run_connection_sync(name))
-		# and the other way round: the scheduled job does not run while Sync Now syncs
+		users = []
+		frappe.set_user("Guest")
+		self.addCleanup(frappe.set_user, "Administrator")
 		with patch.object(
-			esc.EspressoSyncConnection,
-			"sync",
-			side_effect=lambda: self.assertFalse(scheduler.run_connection_sync(name)),
+			esc.EspressoSyncConnection, "sync", side_effect=lambda: users.append(frappe.session.user)
 		):
-			esc.sync_action(doc)
+			self.assertTrue(scheduler.run_connection_sync(name))
+		self.assertEqual(users, ["Administrator"])
 
 	def test_a_failed_cron_sync_waits_for_its_next_time(self):
 		name = make_scheduled_connection(

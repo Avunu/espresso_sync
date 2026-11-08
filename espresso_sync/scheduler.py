@@ -5,10 +5,11 @@
 
 Each scheduler event (hooks.scheduler_events) calls process_sync_connections
 with its frequency, which enqueues one background job per enabled Connection
-whose Sync Frequency matches. A Connection never has two syncs at once: its
-job has a fixed job_id and is enqueued with deduplicate=True, so a second one
-is not queued while the first is queued or running, and every sync, scheduled
-or Sync Now, holds a cache lock while it runs.
+whose Sync Frequency matches; Sync Now enqueues the same job. A Connection never
+has two syncs at once: its job has a fixed job_id and is enqueued with
+deduplicate=True, so a second one is not queued while the first is queued or
+running, and the job holds a cache lock while it runs. The job syncs as
+Administrator, whoever queued it.
 """
 
 from collections.abc import Generator
@@ -145,6 +146,10 @@ def run_connection_sync(connection: str) -> bool:
 		get_connection,
 	)
 
+	# what a sync reads and exports must not depend on who clicked Sync Now: a job runs as the
+	# user that queued it (the scheduler's run as Administrator). Only the scheduler and a
+	# System Manager's Sync Now queue this job.
+	frappe.set_user("Administrator")  # nosemgrep: frappe-setuser -- see above
 	with holding_sync_lock(connection) as acquired:
 		if not acquired:
 			frappe.logger("espresso_sync").info(f"{connection}: a sync is already running")

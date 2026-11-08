@@ -3,7 +3,6 @@
 
 """Syncs through Active transforms, against the tasks.yaml API mocked with responses."""
 
-import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -216,10 +215,9 @@ class TestImport(SyncTestCase):
 		self.assertEqual([json.loads(log.object or "{}").get("id") for log in logs][1:3], ["p1", "p2"])
 		self.assertEqual({log.sync_status for log in logs}, {"Success"})
 		self.assertTrue(logs[0].url.endswith("/tasks?page=1"))
-		active = frappe.db.get_value(TRANSFORM, self.import_transform, "active_compiled")
+		ran = cast(Any, frappe.get_doc(TRANSFORM, self.import_transform)).active_hash()
 		self.assertEqual(
-			{(log.transform, log.transform_hash) for log in logs},
-			{(self.import_transform, hashlib.sha256(active.encode()).hexdigest())},
+			{(log.transform, log.transform_hash) for log in logs}, {(self.import_transform, ran)}
 		)
 		shot = esc.get_connection(self.connection).shots[0]
 		self.assertIsNotNone(shot.last_import)
@@ -315,6 +313,25 @@ class TestImport(SyncTestCase):
 			[("Failure", ["no-external-id"]), ("Failure", ["ValidationError"]), ("Success", [])],
 		)
 
+	def test_an_import_that_stops_at_maximum_pages_fails(self):
+		frappe.db.set_value(TRANSFORM, self.import_transform, "max_pages", 2)
+		calls = self.sync(page(1, task("m1", "es first page")), page(2, task("m2", "es second page")))
+		self.assertEqual(len(calls), 2)
+		self.assertEqual(self.todo("m2").description, "es second page")
+		last = pull_logs(self.connection)[-1]
+		self.assertEqual((last.sync_status, codes(last)), ("Failure", ["max-pages"]))
+		self.assertTrue(last.url.endswith("/tasks?page=3"))
+		# the next import reads the pages left from the same Last Import
+		self.assertIsNone(esc.get_connection(self.connection).shots[0].last_import)
+
+	def test_a_next_request_of_nulls_ends_the_pages(self):
+		frappe.db.set_value(TRANSFORM, self.import_transform, "next_request_expr", '{"cursor": body.next}')
+		calls = self.sync(
+			(responses.GET, f"{SERVER}/tasks", {"json": {"data": [task("c1", "es c")], "next": None}})
+		)
+		self.assertEqual(len(calls), 1)
+		self.assertIsNotNone(esc.get_connection(self.connection).shots[0].last_import)
+
 	def test_a_bad_next_request_stops_the_pages(self):
 		frappe.db.set_value(TRANSFORM, self.import_transform, "next_request_expr", '"page=2"')
 		self.sync(page(1, task("n1", "es first page")))
@@ -355,6 +372,11 @@ class TestImport(SyncTestCase):
 		self.assertEqual(self.sync(), [])
 		self.assertEqual(codes(pull_logs(self.connection)[-1]), ["transform-connection"])
 		frappe.db.set_value(schema_api.SPEC, self.spec, "connection", self.connection)
+		# nor one of another DocType than the shot's
+		frappe.db.set_value(TRANSFORM, self.import_transform, "document_type", "Note")
+		self.assertEqual(self.sync(), [])
+		self.assertEqual(codes(pull_logs(self.connection)[-1]), ["transform-shot"])
+		frappe.db.set_value(TRANSFORM, self.import_transform, "document_type", "ToDo")
 		# nor can a shot be saved with one
 		connection = esc.get_connection(self.connection)
 		connection.shots[0].import_transform = self.transform("draft", IMPORT_TASKS, activate=False)
@@ -550,6 +572,57 @@ class TestTwoWay(SyncTestCase):
 		self.assertEqual([call.request.method for call in calls], ["GET"])
 		self.assertEqual(self.todo("e1").description, "es two-way, changed there")
 		self.assertEqual({log.sync_status for log in pull_logs(self.connection)}, {"Success"})
+
+	def test_a_change_made_here_is_not_overwritten(self):
+		import_transform = self.transform("import", IMPORT_TASKS, next_request_expr=None)
+		add_shot(
+			self.connection,
+			dt="ToDo",
+			do_import=1,
+			import_transform=import_transform,
+			do_export=1,
+			export_transform=self.transform("export", EXPORT_TASKS),
+			update_transform=self.transform("update", UPDATE_TASKS),
+		)
+		self.start_exports_now()
+		self.sync(page(1, task("h1", "es here")))
+
+		def change(description: str):
+			todo = self.todo("h1")
+			todo.description = description
+			todo.save()
+
+		def put(description: str, updated: str):
+			# the API answers with the object as it now is: newer than what was imported
+			reply = {"json": task("h1", description, updated)}
+			return (responses.PUT, f"{SERVER}/tasks/h1", reply)
+
+		change("es here, first")
+		calls = self.sync(page(1, task("h1", "es here")), put("es here, first", "2026-03-01T00:00:00Z"))
+		self.assertEqual([call.request.method for call in calls], ["GET", "PUT"])
+		# the API's copy is what was exported: the next import does not read it back over a
+		# change made since
+		change("es here, second")
+		calls = self.sync(
+			page(1, task("h1", "es here, first", "2026-03-01T00:00:00Z")),
+			put("es here, second", "2026-03-02T00:00:00Z"),
+		)
+		self.assertEqual([call.request.method for call in calls], ["GET", "PUT"])
+		self.assertEqual(json.loads(calls[1].request.body)["title"], "es here, second")
+		self.assertEqual(self.todo("h1").description, "es here, second")
+		self.assertEqual({log.sync_status for log in pull_logs(self.connection)}, {"Success"})
+
+		# changed in both: the change made here is kept and sent, and the conflict logged
+		change("es here, third")
+		calls = self.sync(
+			page(1, task("h1", "es there", "2026-03-03T00:00:00Z")),
+			put("es here, third", "2026-03-04T00:00:00Z"),
+		)
+		self.assertEqual([call.request.method for call in calls], ["GET", "PUT"])
+		self.assertEqual(self.todo("h1").description, "es here, third")
+		conflict = next(log for log in pull_logs(self.connection) if log.sync_status == "Failure")
+		self.assertEqual(codes(conflict), ["conflict"])
+		self.assertEqual(self.sync(page(1, task("h1", "es here, third", "2026-03-04T00:00:00Z")))[1:], [])
 
 
 class TestExportWatermark(IntegrationTestCase):

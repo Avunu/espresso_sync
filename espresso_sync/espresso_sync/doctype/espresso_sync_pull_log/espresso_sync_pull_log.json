@@ -134,10 +134,10 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "SHA-256 of the transform's Active JSONata that ran: what ran, even after the transform is activated again.",
+   "description": "SHA-256 of what ran: the transform's Active JSONata and the fields a sync reads, even after the transform is activated again.",
    "fieldname": "transform_hash",
    "fieldtype": "Data",
-   "label": "Active JSONata Hash",
+   "label": "Transform Hash",
    "read_only": 1
   },
   {
@@ -195,7 +195,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-08 12:00:00.000000",
+ "modified": "2026-11-08 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Pull Log",

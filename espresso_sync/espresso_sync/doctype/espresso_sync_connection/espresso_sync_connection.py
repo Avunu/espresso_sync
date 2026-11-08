@@ -11,7 +11,7 @@ from croniter import croniter
 from frappe import _
 from frappe.model.document import Document
 
-from espresso_sync.scheduler import holding_sync_lock
+from espresso_sync.scheduler import enqueue_connection_sync
 from espresso_sync.sync import Run, ensure_sync_fields
 from espresso_sync.utils.safe_fetch import credentials_apply, host_of, normalize_allowed_host
 
@@ -157,21 +157,14 @@ def sync_action(doc: str):
 
 
 def sync_now(name: str) -> EspressoSyncConnection:
-	"""Sync Now: sync the Connection in this request, unless a sync of it is running."""
+	"""Sync Now: queue the job a scheduled sync runs, unless one is queued or running. It
+	syncs as Administrator, as a scheduled one does."""
 	frappe.only_for("System Manager")
 	connection = get_connection(name)
 	connection.check_permission("write")
-	# the lock the scheduled job holds: two syncs would both create the same new objects
-	with holding_sync_lock(name) as acquired:
-		if not acquired:
-			frappe.throw(
-				_("A sync of {0} is already running").format(frappe.bold(name)), title=_("Sync Running")
-			)
-		failures = connection.sync()
-	if failures:
-		frappe.msgprint(
-			_("{0} failed: see the Espresso Sync Pull Log").format(failures),
-			indicator="orange",
-			alert=True,
-		)
+	enqueue_connection_sync(name)
+	frappe.msgprint(
+		_("The sync of {0} is queued: see the Espresso Sync Pull Log").format(frappe.bold(name)),
+		alert=True,
+	)
 	return connection
