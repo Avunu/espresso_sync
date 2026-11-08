@@ -92,8 +92,10 @@ function Connections() {
 	}, [data, recordActivity]);
 
 	useEffect(() => {
-		// A 403 here means the session ended: the page itself is only served to System Managers.
-		if (error && readFailure(error).httpStatus === 403) reportForbidden();
+		// A 403 here usually means the session ended; reportForbidden checks before it reloads.
+		// If the session is alive (the site took System Manager's read off the DocType), the
+		// error notification below stays.
+		if (error && readFailure(error).httpStatus === 403) void reportForbidden();
 	}, [error, reportForbidden]);
 
 	const description =

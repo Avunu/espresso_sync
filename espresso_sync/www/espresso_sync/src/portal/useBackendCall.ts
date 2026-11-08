@@ -76,8 +76,8 @@ export function getErrorMessage(error: unknown, fallback: string): string {
 /**
  * useFrappePostCall plus the plumbing every call site needs: unwraps
  * Frappe's `{message}` envelope, restarts the session timer on success,
- * reloads the page on a 403 (see SessionProvider), and shows any other
- * failure as an error toast. Callers get a result instead of an exception,
+ * reloads the page on a 403 from an ended session (see SessionProvider), and
+ * shows any other failure as an error toast. Callers get a result instead of an exception,
  * so a fire-and-forget call can't leak an unhandled rejection.
  */
 export function useBackendCall<T>(method: string, errorTitle: string) {
@@ -92,11 +92,9 @@ export function useBackendCall<T>(method: string, errorTitle: string) {
 				recordActivity();
 				return { ok: true, data: envelope.message };
 			} catch (error) {
-				if (readFailure(error).httpStatus === 403) {
-					reportForbidden();
-				} else {
-					showToast({ kind: "error", title: getErrorMessage(error, errorTitle) });
-				}
+				// A 403 from an ended session reloads the page (see SessionProvider); any other is shown.
+				const ended = readFailure(error).httpStatus === 403 && (await reportForbidden());
+				if (!ended) showToast({ kind: "error", title: getErrorMessage(error, errorTitle) });
 				return { ok: false };
 			}
 		},
