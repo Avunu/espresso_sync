@@ -243,7 +243,11 @@ export function RuleInspector(props: RuleInspectorProps) {
 							size="sm"
 							renderIcon={TrashCan}
 							disabled={!rule}
-							onClick={() => props.onChange("")}
+							onClick={() => {
+								props.onChange("");
+								// the button is then disabled: the keyboard goes back to the expression
+								expressionRef.current?.focus();
+							}}
 						>
 							Clear the rule
 						</Button>

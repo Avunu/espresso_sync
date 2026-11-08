@@ -9,10 +9,10 @@ import type { FrappeEnvelope } from "./types";
 
 export type BackendResult<T> = { ok: true; data: T } | { ok: false };
 
-/** The text of `html`, a `<br>` (between frappe.throw()'s reasons) as a line break. */
+/** The text of `html`, a `<br>` (between frappe.throw()'s reasons) and each item of a list as a line break. */
 function stripHtml(html: string): string {
 	return new DOMParser()
-		.parseFromString(html.replace(/<br\s*\/?>/gi, "\n"), "text/html")
+		.parseFromString(html.replace(/<br\s*\/?>|<li>/gi, "\n"), "text/html")
 		.body.textContent.trim();
 }
 

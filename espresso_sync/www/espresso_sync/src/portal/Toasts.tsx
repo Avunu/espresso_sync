@@ -48,6 +48,8 @@ export function ToastProvider({ children }: PropsWithChildren) {
 						key={toast.id}
 						kind={toast.kind}
 						title={toast.title}
+						// a server message's line breaks (see getErrorMessage) show as such
+						style={{ whiteSpace: "pre-line" }}
 						// a confirmation goes by itself, as in the desk; a warning or an error stays
 						timeout={toast.kind === "success" || toast.kind === "info" ? CONFIRMATION_MS : 0}
 						onClose={() => dismissToast(toast.id)}

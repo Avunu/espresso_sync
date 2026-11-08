@@ -8,6 +8,7 @@ import {
 	Button,
 	Checkbox,
 	CodeSnippet,
+	InlineLoading,
 	InlineNotification,
 	Select,
 	SelectItem,
@@ -21,7 +22,15 @@ import {
 	Tag,
 	Toggle,
 } from "@carbon/react";
-import { DataCheck, FunctionMath, Launch, Play, Rocket, Save } from "@carbon/react/icons";
+import {
+	type CarbonIconType,
+	DataCheck,
+	FunctionMath,
+	Launch,
+	Play,
+	Rocket,
+	Save,
+} from "@carbon/react/icons";
 import { useFrappeGetCall, useFrappeGetDoc, useFrappeUpdateDoc } from "frappe-react-sdk";
 import { compileRules, type Rule } from "../../../../public/js/editor/compile.ts";
 import {
@@ -174,6 +183,23 @@ function isGroup(field: Field): boolean {
 function topGroups(root: Field): Set<string> {
 	const top = root.kind === "collection" ? [root, ...root.children] : root.children;
 	return new Set(top.filter(isGroup).map((field) => field.pointer));
+}
+
+/**
+ * A button's icon and label, and while its call runs, Carbon's InlineLoading
+ * in their place, as a Modal's primary button shows it. The button stays
+ * enabled, so the keyboard stays on it; its handler ignores a press while the
+ * call runs.
+ */
+function busyButton(
+	label: string,
+	icon: CarbonIconType,
+	loading: boolean,
+	doing: string,
+): { renderIcon?: CarbonIconType; children: ReactNode } {
+	return loading
+		? { children: <InlineLoading description={doing} className="cds--inline-loading--btn" /> }
+		: { renderIcon: icon, children: label };
 }
 
 /** `#/transforms/<name>`: the transform editor; `#/transforms`: the transforms. */
@@ -383,8 +409,19 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 	useEffect(() => {
 		if (!dirty) return undefined;
 		const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+		// a link to another of the page's views changes only the hash, which beforeunload doesn't see
+		const leave = (event: MouseEvent) => {
+			const link = event.target instanceof Element ? event.target.closest('a[href^="#/"]') : null;
+			if (link && !window.confirm("Leave the transform? Its unsaved changes will be lost.")) {
+				event.preventDefault();
+			}
+		};
 		window.addEventListener("beforeunload", warn);
-		return () => window.removeEventListener("beforeunload", warn);
+		document.addEventListener("click", leave, true);
+		return () => {
+			window.removeEventListener("beforeunload", warn);
+			document.removeEventListener("click", leave, true);
+		};
 	}, [dirty]);
 
 	useEffect(() => {
@@ -485,6 +522,7 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 	}
 
 	async function save() {
+		if (update.loading) return;
 		// with the version it was read at, a save over someone else's is refused, as in the desk
 		const values: Record<string, unknown> = {
 			rules,
@@ -514,6 +552,7 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 	}
 
 	async function runValidate() {
+		if (validate.loading) return;
 		const found = await check();
 		if (!found) return;
 		const count = found.filter((d) => d.severity === "error").length;
@@ -525,6 +564,7 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 	}
 
 	async function runDryRun() {
+		if (dryRunCall.loading) return;
 		const result = await dryRunCall.call({ name: saved.name });
 		if (!result.ok) return;
 		setDryRun(result.data);
@@ -541,6 +581,7 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 	}
 
 	async function runActivate() {
+		if (activate.loading) return;
 		// refused, as a save is, when the transform was saved since this version
 		const result = await activate.call({ name: saved.name, modified: saved.modified });
 		if (!result.ok) {
@@ -726,36 +767,29 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 					</Button>
 					<Button
 						kind="tertiary"
-						renderIcon={DataCheck}
-						disabled={dirty || validate.loading}
+						disabled={dirty}
 						onClick={() => void runValidate()}
-					>
-						Validate
-					</Button>
+						{...busyButton("Validate", DataCheck, validate.loading, "Validating")}
+					/>
 					<Button
 						kind="tertiary"
-						renderIcon={Play}
-						disabled={dirty || dryRunCall.loading}
+						disabled={dirty}
 						onClick={() => void runDryRun()}
-					>
-						Dry run
-					</Button>
+						{...busyButton("Dry run", Play, dryRunCall.loading, "Running")}
+					/>
 					<Button
 						kind="secondary"
-						renderIcon={Rocket}
-						disabled={dirty || activate.loading}
+						disabled={dirty}
 						onClick={() => void runActivate()}
-					>
-						Activate
-					</Button>
+						{...busyButton("Activate", Rocket, activate.loading, "Activating")}
+					/>
+					{/* as in the desk, Save saves as it is too: that checks it against the schemas again */}
 					<Button
 						kind="primary"
-						renderIcon={Save}
-						disabled={!dirty || update.loading || Boolean(blocked)}
+						disabled={Boolean(blocked)}
 						onClick={() => void save()}
-					>
-						Save
-					</Button>
+						{...busyButton("Save", Save, update.loading, "Saving")}
+					/>
 				</div>
 			</div>
 
