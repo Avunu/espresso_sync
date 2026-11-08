@@ -7,7 +7,7 @@
  * Two uses in the editor: a pasted or fetched sample with no schema of its
  * own still gets a source tree (infer from the sample, then `toJsonSchema` and
  * schemaTree.ts), and a rule's preview shows what type its expression actually
- * produced across the sample's items (`inferResult`), next to the type the
+ * produced across the sample's items (`inferType`), next to the type the
  * target field wants (`compatibility`).
  */
 
@@ -125,15 +125,6 @@ export function inferFromSamples(values: Iterable<unknown>): InferredType | unde
 		merged = merged ? mergeTypes(merged, type) : type;
 	}
 	return merged;
-}
-
-/**
- * The type of what a JSONata expression returned. Nothing (`undefined`) counts
- * as the type `undefined`, so a rule that yields nothing for some items shows as
- * `string | undefined`. A sequence is an array, as it is once serialised.
- */
-export function inferResult(result: unknown): InferredType {
-	return inferType(result);
 }
 
 /** A JSON Schema (draft 2020-12 keywords) for an inferred type, for schemaTree.ts. */

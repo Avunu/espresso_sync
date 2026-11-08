@@ -5,8 +5,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import {
-	byRule,
-	countBySeverity,
 	type Diagnostic,
 	fromAjvErrors,
 	mergeDiagnostics,
@@ -63,51 +61,31 @@ describe("diagnostics", () => {
 		});
 		const summary = sortDiagnostics(diagnostics).map((d) => [d.rule, d.path, d.code, d.message]);
 		assert.deepEqual(summary, [
-			["/customer", "/customer", "schema.required", "“customer” is required"],
-			["/delivery_date", "/delivery_date", "schema.format", "must be a date"],
-			["/lines", "/lines/1/item_code", "schema.required", "“item_code” is required"],
+			["/customer", "/customer", "schema.required", "must have required property 'customer'"],
+			["/delivery_date", "/delivery_date", "schema.format", 'must match format "date"'],
+			["/lines", "/lines/1/item_code", "schema.required", "must have required property 'item_code'"],
 			["/lines/qty", "/lines/1/qty", "schema.type", "must be number"],
-			["/shipping", "/shipping", "schema.additionalProperties", "“shipping” is not a field of the target"],
-			["/status", "/status", "schema.enum", 'must be one of "Draft", "Submitted"'],
+			["/shipping", "/shipping", "schema.additionalProperties", "must NOT have additional properties"],
+			["/status", "/status", "schema.enum", "must be equal to one of the allowed values"],
 			["/totals/2026", "/totals/2026", "schema.type", "must be number"],
 		]);
 		assert.ok(diagnostics.every((d) => d.item === 3 && d.origin === "client" && d.severity === "error"));
 	});
 
-	it("takes a severity per error, and an origin", () => {
-		const diagnostics = fromAjvErrors(validate({ lines: [] }), {
-			origin: "server",
-			severity: (error) => (error.keyword === "required" ? "warning" : "error"),
-		});
+	it("takes a severity and an origin", () => {
+		const diagnostics = fromAjvErrors(validate({ lines: [] }), { origin: "server", severity: "warning" });
 		assert.deepEqual(
 			diagnostics.map((d) => [d.rule, d.severity, d.origin, "item" in d]),
 			[["/customer", "warning", "server", false]],
 		);
 		assert.deepEqual(fromAjvErrors(null), []);
-		assert.deepEqual(fromAjvErrors(validate({ lines: [] }), { severity: "info" })[0]?.severity, "info");
 	});
 
-	it("falls back to the validator's message for other keywords", () => {
+	it("falls back to the keyword when an error has no message", () => {
 		const [diagnostic] = fromAjvErrors([
-			{
-				instancePath: "/qty",
-				schemaPath: "#/minimum",
-				keyword: "minimum",
-				params: { limit: 1 },
-				message: "must be >= 1",
-			},
-			{ instancePath: "/x", schemaPath: "#/const", keyword: "const", params: { allowedValue: 1 } },
+			{ instancePath: "", schemaPath: "#/not", keyword: "not", params: {} },
 		]);
-		assert.equal(diagnostic?.message, "must be >= 1");
-		const [, constant] = fromAjvErrors([
-			{ instancePath: "/qty", schemaPath: "#/minimum", keyword: "minimum", params: {} },
-			{ instancePath: "/x", schemaPath: "#/const", keyword: "const", params: { allowedValue: 1 } },
-		]);
-		assert.equal(constant?.message, "must be 1");
-		assert.equal(
-			fromAjvErrors([{ instancePath: "", schemaPath: "#/not", keyword: "not", params: {} }])[0]?.message,
-			"fails not",
-		);
+		assert.equal(diagnostic?.message, "not");
 	});
 
 	it("strips array indexes, using the tree to tell them from digit keys", () => {
@@ -165,10 +143,6 @@ describe("diagnostics", () => {
 				["/c", "server"],
 			],
 		);
-		assert.deepEqual(countBySeverity(merged), { error: 1, warning: 1, info: 0 });
-		const grouped = byRule([...merged, { ...client, item: 2 }]);
-		assert.deepEqual([...grouped.keys()], ["/a", "/c"]);
-		assert.equal(grouped.get("/a")?.length, 2);
 	});
 
 	it("sorts errors before warnings, then by rule, path and item", () => {

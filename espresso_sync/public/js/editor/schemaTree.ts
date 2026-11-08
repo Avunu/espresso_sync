@@ -26,7 +26,7 @@
  * pointer is exactly the `ptr` a rule for it is keyed by.
  */
 
-import { toPointer } from "./pointer.ts";
+import { fromPointer, toPointer } from "./pointer.ts";
 import { jsonType } from "./typeInfer.ts";
 
 export type NodeKind = "object" | "collection" | "scalar_collection" | "field" | "map" | "variants" | "cycle";
@@ -114,10 +114,9 @@ function stringList(value: unknown): string[] {
 
 /** Resolve a local `$ref` (`#/components/schemas/Order`) against the root document. */
 function resolveRef(root: unknown, ref: string): Schema | undefined {
-	if (!ref.startsWith("#")) return undefined;
+	if (ref !== "#" && !ref.startsWith("#/")) return undefined;
 	let node: unknown = root;
-	for (const raw of ref.slice(1).split("/").slice(1)) {
-		const segment = decodeURIComponent(raw).replaceAll("~1", "/").replaceAll("~0", "~");
+	for (const segment of fromPointer(decodeURIComponent(ref.slice(1)))) {
 		if (!isSchema(node) && !Array.isArray(node)) return undefined;
 		node = (node as Record<string, unknown>)[segment];
 	}

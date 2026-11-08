@@ -26,6 +26,7 @@
  */
 
 import jsonata from "jsonata";
+import { type EvalError, toEvalError } from "./evalWorker.ts";
 import { toPointer } from "./pointer.ts";
 
 /** One input field (or pattern of fields) the expression reads. */
@@ -52,14 +53,7 @@ export interface Reads {
 	dynamic: DynamicRead[];
 }
 
-export interface ReadsError {
-	code: string;
-	message: string;
-	position: number | undefined;
-	token: string | undefined;
-}
-
-export type ReadsResult = ({ ok: true } & Reads) | { ok: false; error: ReadsError };
+export type ReadsResult = ({ ok: true } & Reads) | { ok: false; error: EvalError };
 
 export interface ReadsOptions {
 	/**
@@ -380,24 +374,13 @@ export function readsOfAst(ast: unknown, options: ReadsOptions = {}): Reads {
 	return walker.result();
 }
 
-function parseError(error: unknown): ReadsError {
-	const fields = typeof error === "object" && error !== null ? (error as Record<string, unknown>) : {};
-	const { code, message, position, token } = fields;
-	return {
-		code: typeof code === "string" ? code : "S0000",
-		message: typeof message === "string" ? message : String(error),
-		position: typeof position === "number" ? position : undefined,
-		token: typeof token === "string" ? token : undefined,
-	};
-}
-
 /** The reads of an expression's source text, or the parse error that stopped it. */
 export function readsOf(expression: string, options: ReadsOptions = {}): ReadsResult {
 	let ast: unknown;
 	try {
 		ast = jsonata(expression).ast();
 	} catch (error) {
-		return { ok: false, error: parseError(error) };
+		return { ok: false, error: toEvalError(error) };
 	}
 	return { ok: true, ...readsOfAst(ast, options) };
 }

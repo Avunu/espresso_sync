@@ -8,7 +8,6 @@ import {
 	compatibility,
 	describeType,
 	inferFromSamples,
-	inferResult,
 	inferType,
 	jsonType,
 	mergeTypes,
@@ -86,10 +85,10 @@ describe("typeInfer", () => {
 	});
 
 	it("types what an expression returned, nothing included", () => {
-		assert.deepEqual(inferResult(undefined).types, ["undefined"]);
-		assert.equal(describeType(mergeTypes(inferResult("a"), inferResult(undefined))), "string | undefined");
-		assert.equal(describeType(inferResult([{ a: 1 }])), "array<object>");
-		assert.equal(describeType(inferResult([])), "array");
+		assert.deepEqual(inferType(undefined).types, ["undefined"]);
+		assert.equal(describeType(mergeTypes(inferType("a"), inferType(undefined))), "string | undefined");
+		assert.equal(describeType(inferType([{ a: 1 }])), "array<object>");
+		assert.equal(describeType(inferType([])), "array");
 	});
 
 	it("writes a JSON Schema the schema tree can read", () => {
@@ -107,7 +106,7 @@ describe("typeInfer", () => {
 			],
 		);
 		assert.deepEqual(toJsonSchema(mergeTypes(inferType(1), inferType("x"))), { type: ["integer", "string"] });
-		assert.deepEqual(toJsonSchema(inferResult(undefined)), {});
+		assert.deepEqual(toJsonSchema(inferType(undefined)), {});
 	});
 
 	it("says whether values fit a field: ok, coerced (a warning) or a mismatch", () => {
@@ -121,7 +120,7 @@ describe("typeInfer", () => {
 		assert.equal(compatibility(inferType(true), { types: ["integer"], nullable: false }).status, "coerced");
 		assert.equal(compatibility(inferType(null), text).status, "coerced");
 		assert.deepEqual(compatibility(inferType(null), number), { status: "ok" });
-		assert.deepEqual(compatibility(inferResult(undefined), text), { status: "ok" });
+		assert.deepEqual(compatibility(inferType(undefined), text), { status: "ok" });
 		const mismatch = compatibility(inferType({ a: 1 }), text);
 		assert.equal(mismatch.status, "mismatch");
 		assert.ok(mismatch.status === "mismatch" && mismatch.message.includes("object"));
