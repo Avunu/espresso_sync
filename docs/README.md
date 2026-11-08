@@ -1,47 +1,41 @@
 ---
 title: Espresso Sync
-description: Two-way sync between Frappe documents and external REST APIs.
+description: Two-way sync between Frappe documents and external REST APIs, mapped with JSONata transforms built on the APIs' OpenAPI descriptions.
 nav_title: Overview
 order: 0
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 Espresso Sync moves documents between a Frappe site and external REST APIs, in either direction. It runs on Frappe v16 and needs no other Frappe app.
 
 ## How it fits together
 
-- An **Espresso Sync Connection** holds an API's Server URL, domain, base path, credentials (Basic or a header), an optional rate limit, and the **Allowed Host**, the one host its credentials are sent to. Only a System Manager can create, change or run one.
-- An **Espresso Sync API Spec** holds an API's OpenAPI 3.1 description, which the transform editor reads operations and schemas from. See [API Specs and schemas](api-specs.md).
-- An **Espresso Sync Transform** maps an operation of an API Spec to a DocType, or a DocType to an operation, with JSONata rules. See [Transforms](transforms.md).
-- Each of a Connection's **shots** ties one DocType to one endpoint. A shot imports, exports, or both, and has a map for each direction.
+- An **Espresso Sync Connection** holds an API's **Server URL**, its credentials (Basic, or a header such as `X-Api-Key` or `Authorization: Bearer …`), an optional rate limit, and the **Allowed Host**, the one host its credentials are sent to. Its **shots** say what it syncs. See [Connections and syncs](syncs.md).
+- An **Espresso Sync API Spec** holds the API's OpenAPI 3.1 description: its operations, and the JSON Schema of each request and response body. See [API Specs and schemas](api-specs.md).
+- An **Espresso Sync Transform** maps one operation of an API Spec to a DocType (an import), or a DocType to one operation (an export), with [JSONata](https://docs.jsonata.org/) rules keyed by the target field's JSON Pointer. It is checked against both schemas, dry-run on a sample, and activated before it runs. See [Transforms](transforms.md).
+- A **shot** of a Connection syncs one DocType: it imports with an Active import transform, exports with an Active export transform, or both.
 - Imported objects are matched to documents through the **Espresso Sync IDs** table the app adds, on a **Sync** tab, to each DocType a shot names. A document's **Exclude from Sync** box keeps it out of exports.
-- Every request is recorded in an **Espresso Sync Pull Log**, with its response, and so is every object imported or document exported, with its **Diagnostics**. Credentials are redacted before the log is saved. Log Settings deletes entries older than 30 days; change the period there.
+- Every request, object and document a sync handles is recorded in an **Espresso Sync Pull Log**, with its diagnostics and the hash of the JSONata that ran. Credentials are redacted before the log is saved. Log Settings deletes entries older than 30 days; change the period there.
 
-## When syncs run
+The ERP is always one side: a transform maps between a DocType and an API operation, never between two APIs.
 
-**Sync Now** on the Connection form runs one at once. An **Enabled** Connection also runs on its **Sync Frequency**:
+## Validation, from the cheapest
 
-| Sync Frequency                 | Runs                                                                                   |
-| ------------------------------ | -------------------------------------------------------------------------------------- |
-| Manual                         | only with Sync Now                                                                     |
-| Every Minute                   | on every tick of the scheduler (`scheduler_interval`, every 4 minutes unless changed)  |
-| Hourly, Daily, Weekly, Monthly | on the scheduler's hourly, daily, weekly and monthly events                            |
-| Cron                           | when its **Cron Rule** (for example `*/15 * * * *`) has come round since the last sync |
+1. **On every save of a transform**: its rules compile, each expression parses, and every required field of the target has a rule.
+2. **On the sample** (`validate_transform`): each sample item is mapped, the result checked against the target's schema (the DocType's, with Frappe's own coercions as warnings, or the request body's), and an import's Links checked to exist, as the user may read them.
+3. **The dry run**: an import's sample documents are inserted with every hook Frappe runs, then rolled back.
+4. **Activation** is refused while any of these finds an error, or when the API Spec's operation or the DocType changed since the transform was saved.
+5. **When a sync runs**, each mapped object is checked again, as the transform's **Runtime Validation** says: Enforce (the default) does not save or send one with an error, Warn logs what it found, Off checks nothing.
 
-Each scheduled sync is a background job on the `long` queue. A Connection never syncs twice at once: a sync is not queued while another of the same Connection is queued or running, and Sync Now is refused while one is running. A scheduled sync that fails waits for its next time like one that succeeded.
+## Security
 
-## What a sync does
-
-- Every request goes to public addresses only, follows at most 5 redirects and reads at most 20 MiB; credentials go only to the Allowed Host. See [Where requests go](api-specs.md#where-requests-go).
-- An API that answers 429 Too Many Requests is waited for, as its `Retry-After` says (up to a minute), and asked again, at most three more times.
-- A request that fails, an object that cannot be imported, or a document that cannot be exported is logged as a failure in the Pull Log, and the sync goes on with the next one.
-- An imported object that matches a document this Connection imported before (by its external ID, within the shot's DocType) updates and saves that document.
-- **Last Export** moves only as far as the last document exported before the first failure, and back to just below a failed document older than it (a shot that changed exports every document), so a failed document is sent again by the next sync. **Last Import** moves only when every object imported.
-
-## Maps
-
-A map is a JSON object whose keys are the target's fields and whose values are [JSONata](https://docs.jsonata.org/) expressions over the source object, with a few tags for lookups in the site. See [Object maps](object-mapping.md).
+- **System Managers only.** Connections, API Specs, Transforms and the Pull Log are for System Managers, and so are every endpoint and the `/espresso_sync` page. A share can let someone else read one, but nothing more: saving a Connection, an API Spec or a Transform, and Sync Now, check the role, not just the document's permission.
+- **Credentials stay in the desk.** The API Secret is a Password field, read only to send a request. It is never put in a page, an endpoint's answer or the Pull Log.
+- **Credentials go to one host.** The Server URL's host must be the Allowed Host, and a request carries the credentials only to that host and port, redirects included; an https request redirected to http drops them.
+- **Requests go to public addresses only**, through Frappe's guarded session, with caps on redirects, size and time. See [Where requests go](api-specs.md#where-requests-go).
+- **Expressions are sandboxed.** JSONata cannot reach the server. The functions the app adds read the site as the user the transform runs as, through Frappe's permission checks, and every evaluation stops after 5 seconds.
+- **The Pull Log is redacted**: header values and JSON keys that look like credentials, URL user-info and secret query parameters, and every literal occurrence of the Connection's secret, before an entry is saved.
 
 ## Status
 
-This map format is being replaced by a schema-aware transform editor driven by the APIs' OpenAPI descriptions. Until then the app is not published to the Frappe marketplace.
+The portal page at `/espresso_sync` lists the Connections; the transform editor that will build transforms there is in progress, and until it ships the app is not published to the Frappe marketplace. Transforms can be made in the desk meanwhile.

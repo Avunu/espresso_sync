@@ -23,13 +23,17 @@ Two-way sync between Frappe documents and external REST APIs
 
 ## Overview
 
-Espresso Sync moves documents between a Frappe site and external REST APIs, in either direction. An **Espresso Sync Connection** holds an API's address and credentials; each of its **shots** maps one DocType to one endpoint, imports from it, exports to it, or both. Imported objects are matched to documents through the **Espresso Sync ID** table the app adds to each synced DocType, and every request is recorded in an **Espresso Sync Pull Log** with its credentials redacted.
+Espresso Sync moves documents between a Frappe site and external REST APIs, in either direction, using the APIs' own OpenAPI descriptions.
 
-Field maps are JSON objects whose values are [JSONata](https://docs.jsonata.org/) expressions, with a few Frappe tags (`{link:…}`, `{id:…}`, `{doc:…}`, `{get_value:…}`) for lookups in the site. The syntax is described in [docs/object-mapping.md](docs/object-mapping.md).
+- An **Espresso Sync Connection** holds an API's Server URL and credentials. Its **shots** each sync one DocType.
+- An **Espresso Sync API Spec** holds the API's OpenAPI 3.1 description: its operations and their request and response schemas.
+- An **Espresso Sync Transform** maps one operation's response to a DocType's documents (an import), or documents to one operation's request body (an export), with [JSONata](https://docs.jsonata.org/) rules keyed by the target field. It is checked against both schemas, dry-run on a sample with nothing kept, and activated before a shot can run it.
 
-Syncs run on demand, with **Sync Now** on the Connection form, and on each enabled Connection's **Sync Frequency** (hourly, daily, a cron rule, …) as background jobs. Only a System Manager can configure a Connection or run it.
+A sync reads an import's pages, maps each item and inserts or updates its document; an export maps each changed document and sends it. Imported objects are matched to documents through the **Espresso Sync IDs** the app adds to each synced DocType, which also keep a two-way sync from sending a change back where it came from. Every request, object and document is recorded in an **Espresso Sync Pull Log**, with its diagnostics and its credentials redacted.
 
-This map format is being replaced by a schema-aware transform editor driven by the APIs' OpenAPI descriptions; until then the app is not listed in the Frappe marketplace.
+Syncs run on demand, with **Sync Now** on the Connection form, and on each enabled Connection's **Sync Frequency** (hourly, daily, a cron rule, …) as background jobs. Only a System Manager can configure or run any of it. See the [documentation](docs/README.md).
+
+The transform editor for the `/espresso_sync` page is in progress; until it ships the app is not listed in the Frappe marketplace.
 
 <!-- frappe-nix:begin compatibility -->
 
