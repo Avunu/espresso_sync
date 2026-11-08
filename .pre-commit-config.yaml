@@ -67,6 +67,12 @@ repos:
         entry: yarn -s oxlint
         pass_filenames: false
         types_or: [javascript, jsx, ts, tsx, vue]
+      - id: stylelint
+        name: stylelint
+        language: system
+        entry: yarn -s stylelint "espresso_sync/public/**/*.scss"
+        pass_filenames: false
+        types: [scss]
       - id: zizmor
         name: zizmor
         language: system

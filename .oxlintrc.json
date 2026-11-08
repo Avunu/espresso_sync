@@ -65,6 +65,12 @@
 				"jQuery": "readonly",
 				"moment": "readonly"
 			}
+		},
+		{
+			"files": ["espresso_sync/public/js/editor/evalWorker.ts"],
+			"rules": {
+				"unicorn/require-post-message-target-origin": "off"
+			}
 		}
 	]
 }

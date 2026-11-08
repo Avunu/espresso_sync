@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="robots" content="noindex" />
+		<title>{{ title }}</title>
+		<link rel="icon" type="image/svg+xml" href="/assets/espresso_sync/images/espresso_sync-symbolic.svg" />
+		{{ include_style('espresso-sync.bundle.css') }}
+	</head>
+
+	<body>
+		{% if forbidden %}
+		<main class="cds--content">
+			<div class="cds--stack-vertical cds--stack-scale-6">
+				<h1>{{ title }}</h1>
+				<p>{{ message }}</p>
+				<p>{{ _("You are signed in as {0}.").format(user | e) }}</p>
+				<div><a class="cds--btn cds--btn--primary" href="/logout">{{ _("Sign out") }}</a></div>
+			</div>
+		</main>
+		{% else %}
+		<div id="app"></div>
+
+		<script>
+			window.csrf_token = {{ csrf_token | tojson }};
+			window.sitename = {{ sitename | tojson }};
+			window.portal_boot = {{ boot | tojson }};
+		</script>
+		{{ include_script('espresso-sync.bundle.js') }} {% endif %}
+	</body>
+</html>

@@ -26,6 +26,20 @@ siblings = []
 # Off the marketplace until the transform editor replaces the legacy maps.
 publish = false
 
+# The /espresso_sync page's React sources, built by Frappe's esbuild through
+# public/js/espresso-sync.bundle.js and checked with the app's own tsconfig.json (JSX).
+# The pure modules they import (public/js/editor) stay in the managed projects, with their tests.
+[[tool.frappe-nix.typescript.spa]]
+root = "."
+include = ["espresso_sync/www/espresso_sync/src/**"]
+tsconfig = "tsconfig.json"
+check = "tsc -p tsconfig.json"
+
+[[tool.frappe-nix.js.oxlint.overrides]]
+# A Worker's postMessage has no target origin: the rule is for window.postMessage.
+files = ["espresso_sync/public/js/editor/evalWorker.ts"]
+rules = { "unicorn/require-post-message-target-origin" = "off" }
+
 [[tool.frappe-nix.unchecked-js]]
 path = "espresso_sync/espresso_sync/doctype/espresso_sync_connection/espresso_sync_connection.js"
 reason = "Legacy map editor, replaced by the transform editor and deleted with the legacy executor"
