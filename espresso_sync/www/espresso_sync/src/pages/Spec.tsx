@@ -26,8 +26,8 @@ import {
 } from "@carbon/react";
 import { Add, Launch, Renew } from "@carbon/react/icons";
 import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
+import type { FrappeResponse } from "frappe-types";
 import { useToasts } from "../portal/Toasts";
-import type { FrappeEnvelope } from "../portal/types";
 import { getErrorMessage } from "../portal/useBackendCall";
 import { deskFormUrl, hrefFor } from "../route";
 import { useSessionRead } from "../useSessionRead";
@@ -95,7 +95,7 @@ export function Spec({ name }: { name: string }) {
 		filters: [["name", "=", name]],
 		limit: 1,
 	});
-	const operations = useFrappeGetCall<FrappeEnvelope<Operation[]>>(
+	const operations = useFrappeGetCall<FrappeResponse<Operation[]>>(
 		"espresso_sync.api.schema.list_operations",
 		{
 			spec: name,

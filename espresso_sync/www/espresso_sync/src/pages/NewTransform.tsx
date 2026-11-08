@@ -12,8 +12,8 @@ import {
 	TextInput,
 } from "@carbon/react";
 import { useFrappeCreateDoc, useFrappeGetCall } from "frappe-react-sdk";
+import type { FrappeResponse } from "frappe-types";
 import { useToasts } from "../portal/Toasts";
-import type { FrappeEnvelope } from "../portal/types";
 import { getErrorMessage } from "../portal/useBackendCall";
 import { hrefFor } from "../route";
 import { useSessionRead } from "../useSessionRead";
@@ -58,7 +58,7 @@ export function NewTransform({ open, spec, operation, launcherButtonRef, onClose
 	);
 	const [direction, setDirection] = useState<Direction>(operation?.method === "GET" ? "Import" : "Export");
 	const [doctype, setDoctype] = useState<string | null>(null);
-	const doctypes = useFrappeGetCall<FrappeEnvelope<string[]>>(
+	const doctypes = useFrappeGetCall<FrappeResponse<string[]>>(
 		"espresso_sync.api.schema.list_doctypes",
 		undefined,
 		open ? undefined : null,
