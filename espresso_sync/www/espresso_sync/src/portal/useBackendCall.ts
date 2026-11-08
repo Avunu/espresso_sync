@@ -20,8 +20,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-/** JSON.parse that answers undefined for text that isn't JSON. */
-function parseJson(text: string): unknown {
+/** JSON.parse that answers undefined for no text, or text that isn't JSON. */
+export function parseJson(text: string | null | undefined): unknown {
+	if (!text) return undefined;
 	try {
 		return JSON.parse(text);
 	} catch {

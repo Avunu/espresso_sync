@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Avunu LLC and contributors
 // For license information, please see license.txt
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { FeatureFlags, Search, Stack, TreeNode, TreeView } from "@carbon/react";
 import {
 	Boolean as BooleanIcon,
@@ -67,7 +67,6 @@ interface FieldTreeProps {
 	/** The checkboxes that narrow the tree further. */
 	toggles: ReactNode;
 	root: Field;
-	size: "xs" | "sm";
 	/** The fields shown: undefined for all. */
 	shown: ReadonlySet<string> | undefined;
 	/** The groups shown open. */
@@ -83,10 +82,11 @@ interface FieldTreeProps {
  * One side of a transform: its fields as a Carbon tree, under a filter.
  * Arrow keys move between fields and open groups, Enter or Space selects one.
  * The root's own row shows only when the root is itself a list (a request
- * body that is an array).
+ * body that is an array). Memoized: a large tree draws again only when its
+ * props change, not with every keystroke elsewhere on the page.
  */
-export function FieldTree(props: FieldTreeProps) {
-	const { side, heading, root, size, shown, expanded, selected, onSelect, details } = props;
+export const FieldTree = memo(function FieldTree(props: FieldTreeProps) {
+	const { side, heading, root, shown, expanded, selected, onSelect, details } = props;
 	const onToggle = (pointer: string, open: boolean) => {
 		const next = new Set(expanded);
 		if (open) next.add(pointer);
@@ -160,7 +160,6 @@ export function FieldTree(props: FieldTreeProps) {
 					<TreeView
 						label={`${heading} fields`}
 						hideLabel
-						size={size}
 						selected={selectedId === undefined ? [] : [selectedId]}
 						// no row has the id "": nothing is marked
 						active={selectedId ?? ""}
@@ -171,4 +170,4 @@ export function FieldTree(props: FieldTreeProps) {
 			</Stack>
 		</section>
 	);
-}
+});

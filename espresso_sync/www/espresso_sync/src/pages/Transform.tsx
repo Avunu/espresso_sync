@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Avunu LLC and contributors
 // For license information, please see license.txt
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -20,7 +20,6 @@ import {
 	TabPanels,
 	Tabs,
 	Tag,
-	Toggle,
 } from "@carbon/react";
 import {
 	type CarbonIconType,
@@ -71,7 +70,7 @@ import {
 import { inferFromSamples, inferType, toJsonSchema } from "../../../../public/js/editor/typeInfer.ts";
 import { useToasts } from "../portal/Toasts";
 import type { FrappeEnvelope } from "../portal/types";
-import { getErrorMessage, useBackendCall } from "../portal/useBackendCall";
+import { getErrorMessage, parseJson, useBackendCall } from "../portal/useBackendCall";
 import { deskFormUrl, hrefFor } from "../route";
 import { useSessionRead } from "../useSessionRead";
 import { DiagnosticsTable } from "./DiagnosticsTable";
@@ -82,7 +81,6 @@ import { RuleInspector } from "./RuleInspector";
 import { SampleEditor } from "./SampleEditor";
 import { SeverityIcon } from "./SeverityIcon";
 import { type Setting, settingError, SETTINGS, type Settings, TransformSettings } from "./TransformSettings";
-import { Transforms } from "./Transforms";
 import { useTransformPreview } from "./useTransformPreview";
 
 /** The fields of a transform the editor reads (JSON fields come as JSON text). */
@@ -118,17 +116,7 @@ interface DryRunItem {
 
 /** The most sample items previewed: as many as the server checks. */
 const MAX_ITEMS = 50;
-const DENSITY = "espresso_sync.editor.density";
 const TABS = ["sample", "output", "jsonata", "diagnostics", "settings"] as const;
-
-function parseJson(text: string | null | undefined): unknown {
-	if (!text) return null;
-	try {
-		return JSON.parse(text) as unknown;
-	} catch {
-		return null;
-	}
-}
 
 function rulesOf(doc: TransformDoc): Rule[] {
 	const rules = parseJson(doc.rules);
@@ -138,7 +126,7 @@ function rulesOf(doc: TransformDoc): Rule[] {
 /** The saved sample's text: laid out for reading, unless that would round a number in it. */
 function sampleTextOf(doc: TransformDoc): string {
 	const sample = parseJson(doc.sample);
-	if (sample === null) return "";
+	if (sample === undefined || sample === null) return "";
 	return inferType(sample).unsafeInteger ? (doc.sample ?? "") : JSON.stringify(sample, null, 2);
 }
 
@@ -202,12 +190,8 @@ function busyButton(
 		: { renderIcon: icon, children: label };
 }
 
-/** `#/transforms/<name>`: the transform editor; `#/transforms`: the transforms. */
-export function Transform({ name }: { name: string | undefined }) {
-	return name ? <TransformPage key={name} name={name} /> : <Transforms />;
-}
-
-function TransformPage({ name }: { name: string }) {
+/** `#/transforms/<name>`: the transform editor. */
+export function Transform({ name }: { name: string }) {
 	const doc = useFrappeGetDoc<TransformDoc>(TRANSFORM, name);
 	useSessionRead(doc.data, doc.error);
 	const transform = doc.data;
@@ -299,7 +283,6 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 		return Array.isArray(stored) ? (stored as Diagnostic[]) : [];
 	});
 	const [dryRun, setDryRun] = useState<DryRunItem[] | undefined>();
-	const [compact, setCompact] = useState(() => window.localStorage.getItem(DENSITY) === "compact");
 	const [tab, setTab] = useState(0);
 	const [shownItem, setShownItem] = useState(0);
 	const [sourceFilter, setSourceFilter] = useState("");
@@ -656,74 +639,114 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 		byRule,
 	]);
 
-	function targetDetails(field: Field): ReactNode {
-		const rule = ruleMap.get(field.pointer);
-		const found = byRule.get(field.pointer) ?? [];
-		const worst: Severity | "ok" | undefined = found.some((d) => d.severity === "error")
-			? "error"
-			: found.some((d) => d.severity === "warning")
-				? "warning"
-				: rule
-					? "ok"
-					: undefined;
-		const values = preview.results.get(field.pointer)?.values.filter((value) => value.defined) ?? [];
-		const [first] = values;
-		return (
-			<>
-				{field.required === "hard" && (
-					<span title="Required" style={{ color: "var(--cds-text-error)" }}>
-						{" *"}
-						<span className="cds--visually-hidden">required</span>
-					</span>
-				)}
-				{rule && !simplePath(rule.expr) && rule.kind === "field" && (
-					<FunctionMath
-						aria-label="formula"
-						style={{ marginInlineStart: "0.5rem", verticalAlign: "middle" }}
-					/>
-				)}
-				{worst && (
-					<span style={{ marginInlineStart: "0.5rem", verticalAlign: "middle" }}>
-						<SeverityIcon severity={worst} />
-						<span className="cds--visually-hidden">{worst === "ok" ? "mapped" : worst}</span>
-					</span>
-				)}
-				{first && (
-					<span
-						style={{
-							marginInlineStart: "0.75rem",
-							color: "var(--cds-text-secondary)",
-							fontFamily: "var(--cds-code-01-font-family)",
-						}}
-					>
-						{field.kind === "collection" ? plural(values.length, "item", "items") : brief(first.value)}
-						{field.kind !== "collection" && values.length > 1 ? ` +${values.length - 1}` : ""}
-					</span>
-				)}
-			</>
-		);
-	}
+	const targetDetails = useCallback(
+		(field: Field): ReactNode => {
+			const rule = ruleMap.get(field.pointer);
+			const found = byRule.get(field.pointer) ?? [];
+			const worst: Severity | "ok" | undefined = found.some((d) => d.severity === "error")
+				? "error"
+				: found.some((d) => d.severity === "warning")
+					? "warning"
+					: rule
+						? "ok"
+						: undefined;
+			const values = preview.results.get(field.pointer)?.values.filter((value) => value.defined) ?? [];
+			const [first] = values;
+			return (
+				<>
+					{field.required === "hard" && (
+						<span title="Required" style={{ color: "var(--cds-text-error)" }}>
+							{" *"}
+							<span className="cds--visually-hidden">required</span>
+						</span>
+					)}
+					{rule && !simplePath(rule.expr) && rule.kind === "field" && (
+						<FunctionMath
+							aria-label="formula"
+							style={{ marginInlineStart: "0.5rem", verticalAlign: "middle" }}
+						/>
+					)}
+					{worst && (
+						<span style={{ marginInlineStart: "0.5rem", verticalAlign: "middle" }}>
+							<SeverityIcon severity={worst} />
+							<span className="cds--visually-hidden">{worst === "ok" ? "mapped" : worst}</span>
+						</span>
+					)}
+					{first && (
+						<span
+							style={{
+								marginInlineStart: "0.75rem",
+								color: "var(--cds-text-secondary)",
+								fontFamily: "var(--cds-code-01-font-family)",
+							}}
+						>
+							{field.kind === "collection" ? plural(values.length, "item", "items") : brief(first.value)}
+							{field.kind !== "collection" && values.length > 1 ? ` +${values.length - 1}` : ""}
+						</span>
+					)}
+				</>
+			);
+		},
+		[ruleMap, byRule, preview],
+	);
 
-	function sourceDetails(field: Field): ReactNode {
-		const first = items[0];
-		if (first === undefined || isGroup(field)) return null;
-		const values = valuesAt(first, field.pointer);
-		if (values.length === 0) return null;
-		return (
-			<span
-				style={{
-					marginInlineStart: "0.75rem",
-					color: "var(--cds-text-secondary)",
-					fontFamily: "var(--cds-code-01-font-family)",
-				}}
-			>
-				{brief(values[0])}
-				{values.length > 1 ? ` +${values.length - 1}` : ""}
-			</span>
-		);
-	}
+	const sourceDetails = useCallback(
+		(field: Field): ReactNode => {
+			const first = items[0];
+			if (first === undefined || isGroup(field)) return null;
+			const values = valuesAt(first, field.pointer);
+			if (values.length === 0) return null;
+			return (
+				<span
+					style={{
+						marginInlineStart: "0.75rem",
+						color: "var(--cds-text-secondary)",
+						fontFamily: "var(--cds-code-01-font-family)",
+					}}
+				>
+					{brief(values[0])}
+					{values.length > 1 ? ` +${values.length - 1}` : ""}
+				</span>
+			);
+		},
+		[items],
+	);
+	// the source tree draws again only when what it shows changes, not with each keystroke in a rule
+	const chooseSource = useCallback(
+		(field: Field) => setPending((current) => (current === field.pointer ? undefined : field.pointer)),
+		[],
+	);
+	const sourceToggles = useMemo(
+		() => (
+			<Checkbox
+				id="source-read"
+				labelText="Read by a rule only"
+				checked={readOnly}
+				onChange={(_event, { checked }) => setReadOnly(checked)}
+			/>
+		),
+		[readOnly],
+	);
+	const targetToggles = useMemo(
+		() => (
+			<div style={{ display: "flex", flexWrap: "wrap", gap: "0 1rem" }}>
+				<Checkbox
+					id="target-required"
+					labelText="Required only"
+					checked={requiredOnly}
+					onChange={(_event, { checked }) => setRequiredOnly(checked)}
+				/>
+				<Checkbox
+					id="target-mapped"
+					labelText="Mapped only"
+					checked={mappedOnly}
+					onChange={(_event, { checked }) => setMappedOnly(checked)}
+				/>
+			</div>
+		),
+		[requiredOnly, mappedOnly],
+	);
 
-	const size = compact ? "xs" : "sm";
 	const selectedField = selected === undefined ? undefined : targetFields.get(selected);
 	const selectedRule = selected === undefined ? undefined : ruleMap.get(selected);
 	const sourceList = useMemo(
@@ -821,20 +844,6 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 						transform.
 					</span>
 				)}
-				<div style={{ marginInlineStart: "auto" }}>
-					<Toggle
-						id="transform-density"
-						size="sm"
-						labelText="Row height"
-						labelA="Comfortable"
-						labelB="Compact"
-						toggled={compact}
-						onToggle={(on: boolean) => {
-							setCompact(on);
-							window.localStorage.setItem(DENSITY, on ? "compact" : "comfortable");
-						}}
-					/>
-				</div>
 			</div>
 
 			{saved.status === "Active" && (
@@ -898,23 +907,13 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 					}
 					filter={sourceFilter}
 					onFilter={setSourceFilter}
-					toggles={
-						<Checkbox
-							id="source-read"
-							labelText="Read by a rule only"
-							checked={readOnly}
-							onChange={(_event, { checked }) => setReadOnly(checked)}
-						/>
-					}
+					toggles={sourceToggles}
 					root={sourceTree}
-					size={size}
 					shown={sourceShown}
 					expanded={sourceOpen}
 					onExpand={setSourceOpen}
 					selected={pending}
-					onSelect={(field) =>
-						setPending((current) => (current === field.pointer ? undefined : field.pointer))
-					}
+					onSelect={chooseSource}
 					details={sourceDetails}
 				/>
 				<div style={{ alignSelf: "stretch" }}>
@@ -928,24 +927,8 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 					}
 					filter={targetFilter}
 					onFilter={setTargetFilter}
-					toggles={
-						<div style={{ display: "flex", flexWrap: "wrap", gap: "0 1rem" }}>
-							<Checkbox
-								id="target-required"
-								labelText="Required only"
-								checked={requiredOnly}
-								onChange={(_event, { checked }) => setRequiredOnly(checked)}
-							/>
-							<Checkbox
-								id="target-mapped"
-								labelText="Mapped only"
-								checked={mappedOnly}
-								onChange={(_event, { checked }) => setMappedOnly(checked)}
-							/>
-						</div>
-					}
+					toggles={targetToggles}
 					root={targetTree}
-					size={size}
 					shown={targetShown}
 					expanded={targetOpen}
 					onExpand={setTargetOpen}
