@@ -7,6 +7,9 @@ import type { ShowToast, ToastState } from "./types";
 
 let nextToastId = 1;
 
+/** How long a confirmation shows: as long as the desk's frappe.show_alert() shows one. */
+const CONFIRMATION_MS = 7000;
+
 const ToastContext = createContext<ShowToast>(() => {});
 
 export function useToasts(): ShowToast {
@@ -17,8 +20,8 @@ export function ToastProvider({ children }: PropsWithChildren) {
 	const [toasts, setToasts] = useState<ToastState[]>([]);
 
 	const showToast = useCallback<ShowToast>((next) => {
-		// Newest nearest the corner; older toasts stay until they are closed,
-		// so a burst of them can't silently replace each other.
+		// Newest nearest the corner; an older toast stays until it is closed or times
+		// out, so a burst of them can't silently replace each other.
 		setToasts((current) => [...current, { ...next, id: nextToastId++ }]);
 	}, []);
 
@@ -45,6 +48,8 @@ export function ToastProvider({ children }: PropsWithChildren) {
 						key={toast.id}
 						kind={toast.kind}
 						title={toast.title}
+						// a confirmation goes by itself, as in the desk; a warning or an error stays
+						timeout={toast.kind === "success" || toast.kind === "info" ? CONFIRMATION_MS : 0}
 						onClose={() => dismissToast(toast.id)}
 					/>
 				))}

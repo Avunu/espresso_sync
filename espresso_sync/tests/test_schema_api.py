@@ -93,6 +93,7 @@ class TestSchemaEndpoints(IntegrationTestCase):
 			"save_spec": lambda: api.save_spec(as_json("oas31.yaml"), "Other"),
 			"list_operations": lambda: api.list_operations(self.spec),
 			"get_operation_schema": lambda: api.get_operation_schema(self.spec, "post", "/payments"),
+			"list_doctypes": api.list_doctypes,
 			"get_doctype_schema": lambda: api.get_doctype_schema("Contact"),
 			"validate_payload": lambda: api.validate_payload("{}", doctype="Contact"),
 		}
@@ -124,6 +125,11 @@ class TestSchemaEndpoints(IntegrationTestCase):
 		self.assertEqual(len(doc.spec_hash or ""), 64)
 		self.assertEqual(doc.original_version, "3.1.0")
 		self.assertTrue(frappe.get_meta(api.SPEC).track_changes)
+		# stored as compact as the import screen measures it against MAX_SPEC_BYTES
+		spec_json = str(doc.spec_json)
+		self.assertEqual(
+			spec_json, json.dumps(json.loads(spec_json), ensure_ascii=False, separators=(",", ":"))
+		)
 		# saving it again changes nothing; a changed spec gets a new hash
 		again = api.save_spec(as_json("composition.yaml"), "Payments", name=self.spec)
 		self.assertFalse(again["changed"])
@@ -198,6 +204,17 @@ class TestSchemaEndpoints(IntegrationTestCase):
 		self.assertRaises(frappe.ValidationError, api.get_doctype_schema, "Contact Email")
 		self.assertRaises(frappe.DoesNotExistError, api.get_doctype_schema, "No Such DocType")
 		self.assertRaises(frappe.ValidationError, api.get_doctype_schema, "Contact", "delete")
+
+	def test_list_doctypes(self):
+		frappe.set_user(MANAGER_USER)
+		doctypes = api.list_doctypes()
+		self.assertIn("Contact", doctypes)
+		self.assertEqual(doctypes, sorted(doctypes, key=str.casefold))
+		# a child table, a Single, and a DocType the user can't read are not offered
+		self.assertNotIn("Contact Email", doctypes)
+		self.assertNotIn("System Settings", doctypes)
+		with patch.object(frappe.get_user(), "get_can_read", return_value=["ToDo", "Contact Email"]):
+			self.assertEqual(api.list_doctypes(), ["ToDo"])
 
 	def test_fetch_spec_source(self):
 		with responses.RequestsMock() as rsps:

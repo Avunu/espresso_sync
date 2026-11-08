@@ -1,7 +1,6 @@
 // Copyright (c) 2026, Avunu LLC and contributors
 // For license information, please see license.txt
 
-import { useEffect } from "react";
 import {
 	Button,
 	DataTable,
@@ -21,9 +20,9 @@ import {
 } from "@carbon/react";
 import { Add, Launch } from "@carbon/react/icons";
 import { useFrappeGetDocList } from "frappe-react-sdk";
-import { useSession } from "../portal/session";
-import { getErrorMessage, readFailure } from "../portal/useBackendCall";
-import { deskFormUrl } from "../route";
+import { getErrorMessage } from "../portal/useBackendCall";
+import { deskFormUrl, hrefFor } from "../route";
+import { useSessionRead } from "../useSessionRead";
 
 const CONNECTION = "Espresso Sync Connection";
 
@@ -88,16 +87,7 @@ export function Overview() {
 		orderBy: { field: "modified", order: "desc" },
 		limit: 500,
 	});
-	const { recordActivity, reportForbidden } = useSession();
-
-	useEffect(() => {
-		if (data) recordActivity();
-	}, [data, recordActivity]);
-
-	useEffect(() => {
-		// portal.py lets no one in who can't read the Connections, so a 403 means the session ended.
-		if (error && readFailure(error).httpStatus === 403) reportForbidden();
-	}, [error, reportForbidden]);
+	useSessionRead(data, error);
 
 	if (isLoading) {
 		return <DataTableSkeleton headers={HEADERS} columnCount={HEADERS.length} rowCount={3} />;
@@ -130,6 +120,9 @@ export function Overview() {
 				<TableContainer title="Connections" description={DESCRIPTION} {...getTableContainerProps()}>
 					<TableToolbar aria-label="Connections">
 						<TableToolbarContent>
+							<Button kind="ghost" href={hrefFor("specs")}>
+								API specs
+							</Button>
 							<Button kind="primary" href={deskFormUrl(CONNECTION)} renderIcon={Add}>
 								New connection
 							</Button>

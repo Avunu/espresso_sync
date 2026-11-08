@@ -104,7 +104,7 @@ def save_spec(
 	doc.update(
 		{
 			"title": title,
-			"spec_json": json.dumps(spec, ensure_ascii=False),
+			"spec_json": json.dumps(spec, ensure_ascii=False, separators=(",", ":")),
 			"source_url": source_url,
 			"source_format": source_format or "OpenAPI 3.1",
 			"original_version": original_version or openapi.spec_version(spec),
@@ -161,6 +161,18 @@ def check_doctype(doctype: str, mode: str):
 		frappe.throw(_("{0} is a child table: use the DocType it belongs to").format(doctype))
 	if not frappe.has_permission(doctype, "read"):
 		frappe.throw(_("Not permitted to read {0}").format(doctype), frappe.PermissionError)
+
+
+@frappe.whitelist()
+def list_doctypes() -> list[str]:
+	"""The DocTypes a transform can map: those the user can read, but child tables and Singles."""
+	frappe.only_for("System Manager")
+	return frappe.get_all(
+		"DocType",
+		filters={"name": ("in", frappe.get_user().get_can_read()), "istable": 0, "issingle": 0},
+		pluck="name",
+		order_by="name",
+	)
 
 
 @frappe.whitelist()
