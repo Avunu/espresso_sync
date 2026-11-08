@@ -10,7 +10,8 @@ import frappe
 import responses
 from frappe.desk.doctype.todo.todo import ToDo
 from frappe.tests import IntegrationTestCase
-from frappe.utils import background_jobs
+from frappe.utils import background_jobs, safe_exec
+from rq import Queue
 
 from espresso_sync.api import schema as schema_api
 from espresso_sync.api import transform as api
@@ -195,6 +196,32 @@ class TestTransform(IntegrationTestCase):
 		self.assertEqual(doc.status, "Active")
 		self.assertEqual(doc.active_compiled, result["active_compiled"])
 		self.assertNotEqual(doc.compiled_jsonata, doc.active_compiled)
+		doc.rules = json.dumps(TODO_RULES)
+		doc.save()
+		ran = doc.active_hash()
+
+		# anything else a sync reads makes it a Draft again, to be activated with the change
+		for fieldname, value, before in (
+			("path", "/tasks/{id}", "/tasks"),
+			("runtime_validation", "Off", "Enforce"),
+			("max_pages", 3, 10),
+		):
+			with self.subTest(fieldname):
+				doc.set(fieldname, value)
+				doc.save()
+				self.assertEqual((doc.status, doc.active_compiled), ("Draft", None))
+				doc.set(fieldname, before)
+				doc.save()
+				api.activate_transform(doc.name)
+				doc.reload()
+				self.assertEqual((doc.status, doc.active_hash()), ("Active", ran))
+
+		# nor is a transform Active but through activation
+		doc.reload()
+		doc.status = "Active"
+		doc.active_compiled = "{}"
+		doc.save()
+		self.assertEqual((doc.status, doc.active_compiled), ("Draft", None))
 
 	def test_collections_and_dynamic_links(self):
 		doc = make_transform(
@@ -269,8 +296,19 @@ class TestDryRun(IntegrationTestCase):
 		doc = make_transform("ES Import Tasks")
 		before = frappe.db.count("ToDo")
 		callbacks = len(frappe.db.after_commit._functions)
-		with patch.object(background_jobs, "enqueue") as enqueue:
-			results = api.dry_run(doc.name)
+
+		def enqueue_jobs(todo=None):
+			# every way a hook enqueues a job, the Server Script namespace's included
+			frappe.enqueue("frappe.ping")
+			background_jobs.enqueue("frappe.ping")
+			safe_exec.safe_enqueue("frappe.ping")
+
+		with patch.object(Queue, "enqueue_call") as enqueue:
+			enqueue_jobs()
+			self.assertEqual(enqueue.call_count, 3)
+			enqueue.reset_mock()
+			with patch.object(ToDo, "after_insert", enqueue_jobs, create=True):
+				results = api.dry_run(doc.name)
 		self.assertEqual([r["diagnostics"] for r in results], [[], []])
 		self.assertTrue(all(r["name"] for r in results))
 		self.assertEqual(results[0]["output"]["date"], "2026-01-15")

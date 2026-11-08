@@ -62,13 +62,14 @@ def diagnostic(
 
 @contextmanager
 def without_messages():
-	"""Drop the messages the block queues for the response (frappe.throw's): the
-	diagnostics carry them."""
-	count = len(frappe.local.message_log)
+	"""Mute the messages the block would queue for the response (frappe.throw still
+	raises): the diagnostics carry them."""
+	muted = frappe.flags.mute_messages
+	frappe.flags.mute_messages = True
 	try:
 		yield
 	finally:
-		del frappe.local.message_log[count:]
+		frappe.flags.mute_messages = muted
 
 
 def error_message(e: Exception) -> str:
@@ -98,10 +99,9 @@ class Sides:
 		spec_doc.check_permission("read")
 		self.connection: str | None = spec_doc.get("connection")
 		part = "response" if self.importing else "requestBody"
-		status = transform.response_status if self.importing else None
 		try:
 			self.spec = openapi.load_spec_text(spec_doc.get("spec_json") or "")
-			where = openapi.operation_part(self.spec, transform.method, transform.path, part, status)
+			where = openapi.operation_part(self.spec, transform.method, transform.path, part)
 			self.operation = openapi.operation_schema(
 				self.spec, transform.method, transform.path, part, where["status"]
 			)

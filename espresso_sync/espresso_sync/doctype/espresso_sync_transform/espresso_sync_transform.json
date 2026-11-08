@@ -15,7 +15,6 @@
   "section_break_operation",
   "method",
   "path",
-  "response_status",
   "items_pointer",
   "column_break_operation",
   "path_params",
@@ -62,7 +61,7 @@
   },
   {
    "default": "Draft",
-   "description": "Only an Active transform runs, and it runs the rules as they were when it was activated.",
+   "description": "Only an Active transform runs, and it runs the rules as they were when it was activated. Changing anything else a sync reads (the operation, the parameters, the expressions, Runtime Validation, the child tables) makes it a Draft again.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -113,12 +112,6 @@
    "reqd": 1
   },
   {
-   "description": "The response read. Empty: the operation's success response.",
-   "fieldname": "response_status",
-   "fieldtype": "Data",
-   "label": "Response Status"
-  },
-  {
    "depends_on": "eval:doc.direction==\"Import\"",
    "description": "Where the items are in the response, as a JSON Pointer (/data/items). Empty: the response is the item, or the list of items.",
    "fieldname": "items_pointer",
@@ -149,7 +142,7 @@
    "label": "Pages"
   },
   {
-   "description": "JSONata evaluated on the last page ({body, headers, query}): the next page's query parameters, merged into the last ones ({\"page\": query.page + 1}), or undefined after the last page.",
+   "description": "JSONata evaluated on the last page ({body, headers, query}): the next page's query parameters, merged into the last ones ({\"page\": query.page + 1}), or undefined (or an object of nulls only) after the last page.",
    "fieldname": "next_request_expr",
    "fieldtype": "Code",
    "label": "Next Request"
@@ -160,7 +153,7 @@
    "fieldtype": "Int",
    "label": "Maximum Pages",
    "non_negative": 1,
-   "description": "The most pages an import reads in one sync."
+   "description": "The most pages an import reads in one sync. One that stops here with pages left fails, and the next import reads them."
   },
   {
    "fieldname": "section_break_sync",
@@ -274,7 +267,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-08 12:00:00.000000",
+ "modified": "2026-11-08 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Transform",

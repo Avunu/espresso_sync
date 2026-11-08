@@ -6,9 +6,10 @@
 An import maps each sample item and inserts the document, with every hook Frappe runs on
 an insert, then rolls it back to a savepoint: the rows it wrote go, and so do the
 callbacks it queued for the commit and the rollback. While it runs, a commit raises (it
-would keep what the savepoint is there to undo), and jobs, realtime events and emails
-are not sent. A hook that changes the database schema still commits (MariaDB commits
-DDL), so that is not undone.
+would keep what the savepoint is there to undo), and jobs (however a hook enqueues one,
+it reaches RQ through Queue.enqueue_call), realtime events and emails are not sent. What
+a hook does outside the database is not undone: one that changes the database schema
+still commits (MariaDB commits DDL), and one that makes an HTTP request makes it.
 
 An export maps each sample document and checks it against the request body: nothing is
 sent.
@@ -23,6 +24,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe import _
+from rq import Queue
 
 from espresso_sync.transform import validate
 from espresso_sync.transform.compile import compile_rules
@@ -56,8 +58,7 @@ def nothing_kept() -> Generator[None]:
 	try:
 		with (
 			patch.object(db, "commit", refuse_commit),
-			patch.object(frappe, "enqueue", skip),
-			patch.object(frappe, "enqueue_doc", skip),
+			patch.object(Queue, "enqueue_call", skip),
 			patch.object(frappe, "publish_realtime", skip),
 		):
 			yield

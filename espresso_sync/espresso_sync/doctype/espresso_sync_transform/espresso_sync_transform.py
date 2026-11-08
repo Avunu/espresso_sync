@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Avunu LLC and contributors
 # For license information, please see license.txt
 
+import hashlib
 import json
 import re
 from typing import Any
@@ -16,6 +17,24 @@ from espresso_sync.transform import engine, validate
 from espresso_sync.transform.compile import compile_rules
 
 PATH_PARAMETER = re.compile(r"\{([^{}]+)\}")
+# what a sync reads besides the Active JSONata: changing one makes an Active transform a
+# Draft again, to be checked and activated with it
+RUN_FIELDS = (
+	"document_type",
+	"api_spec",
+	"method",
+	"path",
+	"items_pointer",
+	"path_params",
+	"query_params",
+	"next_request_expr",
+	"max_pages",
+	"external_id_expr",
+	"modified_expr",
+	"runtime_validation",
+	"child_table_policy",
+	"child_table_keys",
+)
 # the errors an activation refusal lists
 SHOWN_ERRORS = 10
 
@@ -50,7 +69,6 @@ class EspressoSyncTransform(Document):
 		path: DF.Data
 		path_params: DF.Code | None
 		query_params: DF.Code | None
-		response_status: DF.Data | None
 		rules: DF.JSON | None
 		runtime_validation: DF.Literal["Enforce", "Warn", "Off"]
 		sample: DF.JSON | None
@@ -68,6 +86,15 @@ class EspressoSyncTransform(Document):
 		for fieldname in ("rules", "sample"):
 			if isinstance(self.get(fieldname), list):
 				self.set(fieldname, json.dumps(self.get(fieldname), ensure_ascii=False))
+		# only activate() makes a transform Active, and what it activated stays as it was
+		if (
+			self.status == "Active"
+			and not self.flags.activating
+			and any(self.has_value_changed(f) for f in (*RUN_FIELDS, "status", "active_compiled"))
+		):
+			self.status = "Draft"
+			self.active_compiled = None
+			frappe.msgprint(_("{0} is a Draft again: activate it to run it").format(self.name), alert=True)
 		if not (self.document_type and self.api_spec and self.path):
 			# the mandatory check says what is missing
 			return
@@ -123,7 +150,16 @@ class EspressoSyncTransform(Document):
 			)
 		self.status = "Active"
 		self.active_compiled = self.compiled_jsonata
-		self.save()
+		self.flags.activating = True
+		try:
+			self.save()
+		finally:
+			self.flags.activating = False
+
+	def active_hash(self) -> str:
+		"""SHA-256 of what a sync runs: the Active JSONata and the fields it reads."""
+		ran = [self.active_compiled, *(self.get(fieldname) for fieldname in RUN_FIELDS)]
+		return hashlib.sha256(frappe.as_json(ran, indent=None).encode()).hexdigest()
 
 	def evaluate_object(self, fieldname: str, data: Any, connection: str | None) -> dict[str, Any]:
 		"""The object an expression field gives on `data` ({} when it is empty or undefined)."""
