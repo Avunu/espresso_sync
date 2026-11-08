@@ -1,6 +1,7 @@
 # Copyright (c) 2023, Avunu LLC and Contributors
 # See license.txt
 
+import base64
 import datetime
 import inspect
 import json
@@ -173,7 +174,7 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 	def test_credential_headers(self):
 		self.assertEqual(
 			self.connection.get_credential_headers(),
-			{"Authorization": "Basic c3luYy11c2VyOmh1bnRlcjItc2VjcmV0LXZhbHVl"},
+			{"Authorization": "Basic " + base64.b64encode(b"sync-user:hunter2-secret-value").decode()},
 		)
 		connection = make_connection("ES Header Auth", auth_type="Header-based", api_key="X-Key", secret="k")
 		self.assertEqual(connection.get_credential_headers(), {"X-Key": "k"})
