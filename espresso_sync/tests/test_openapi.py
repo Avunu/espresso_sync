@@ -53,20 +53,13 @@ class TestLoading(IntegrationTestCase):
 		responses = spec["paths"]["/switches"]["get"]["responses"]
 		self.assertEqual(list(responses), ["200"])
 		schema = responses["200"]["content"]["application/json"]["schema"]
-		# YAML 1.2: on, off, yes and no are strings, as keys and as values
+		# only true and false are booleans: on, off, yes and no are strings, as keys and as values
 		self.assertEqual(list(schema["properties"]), ["on", "off", "state", "since", "count"])
 		self.assertEqual(schema["properties"]["state"]["enum"], ["on", "off", "yes", "no"])
 		self.assertEqual(schema["properties"]["since"]["example"], "2026-01-01")
 		self.assertEqual(openapi.spec_errors(spec), [])
-		# YAML 1.2 numbers: no sexagesimal, no leading-zero octal, no underscores
-		numbers = openapi.load_spec_text(
-			"a: [12:30, 0755, 1_000, 1e3, 0o17, 0x1F, +5, -3, .5, 1.5e-3, -.inf, 0b11, 1.2.3]\n"
-		)["a"]
-		self.assertEqual(numbers[:10], ["12:30", 755, "1_000", 1000.0, 15, 31, 5, -3, 0.5, 0.0015])
-		self.assertIsInstance(numbers[3], float)
-		self.assertEqual(numbers[10:], [float("-inf"), "0b11", "1.2.3"])
-		with self.assertRaises(SpecError):
-			openapi.load_spec_text("a: !!int 0b11\n")
+		# JSON's numbers, 1e3 among them, are numbers
+		self.assertEqual(openapi.load_spec_text("a: [1e3, 1.5e-3, -3]\n")["a"], [1000.0, 0.0015, -3])
 
 	def test_other_keys_and_values(self):
 		spec = openapi.load_spec_text("a: {true: 1, null: 2, 1.5: 3, 7: yes}\nb: [true, false, ~]\n")

@@ -4,7 +4,6 @@
 import json
 
 import frappe
-from frappe import _
 from frappe.model.document import Document
 
 from espresso_sync.schema.openapi import (
@@ -14,6 +13,7 @@ from espresso_sync.schema.openapi import (
 	load_spec_text,
 	spec_hash,
 	spec_version,
+	throw,
 	validate_canonical,
 )
 
@@ -60,13 +60,5 @@ class EspressoSyncAPISpec(Document):
 			spec = value if isinstance(value, dict) else load_spec_text(value or "")
 			return validate_canonical(spec)
 		except SpecError as e:
-			frappe.throw(
-				"<br>".join(
-					[
-						frappe.utils.escape_html(str(e)),
-						*(frappe.utils.escape_html(error) for error in e.errors),
-					]
-				),
-				title=_("Invalid API Spec"),
-			)
+			throw(e)
 			raise

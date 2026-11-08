@@ -23,6 +23,8 @@ from frappe.model import default_fields, display_fieldtypes, table_fields
 from frappe.utils import strip_html, validate_email_address
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
+from espresso_sync.schema.openapi import pointer_of
+
 MODES = ("read", "insert", "update")
 JSON_SCHEMA = "https://json-schema.org/draft/2020-12/schema"
 # never synced: the app's own sync fields
@@ -214,7 +216,7 @@ format_checker = FormatChecker(formats=())
 
 def parses(value) -> bool:
 	"""Whether Frappe can read `value` as a date, a datetime or a time (it parses them with
-	dateutil when they are not ISO)."""
+	dateutil when they are not ISO; frappe.utils.getdate would also show the error)."""
 	if not isinstance(value, str):
 		return True
 	try:
@@ -247,7 +249,7 @@ def is_numeric_string(value) -> bool:
 def entry(path, severity: str, code: str, message: str) -> dict[str, Any]:
 	return {
 		"rule": None,
-		"path": "".join(f"/{str(token).replace('~', '~0').replace('/', '~1')}" for token in path),
+		"path": pointer_of(path),
 		"severity": severity,
 		"code": code,
 		"message": message,
@@ -295,7 +297,8 @@ def classify(error: ValidationError, mode: str) -> dict[str, Any] | None:
 
 def is_blank(value: Any, fieldtype: str | None, options: str | None) -> bool:
 	"""Whether Frappe takes `value` of a mandatory field as missing: None, [], or text with
-	nothing in it but spaces and HTML tags (an image counts in a Text Editor)."""
+	nothing in it but spaces and HTML tags (an image counts in a Text Editor). As
+	Document._get_missing_mandatory_fields has it, which needs a Document and is private."""
 	if value is None or value == []:
 		return True
 	if fieldtype == "Check" or not isinstance(value, str):

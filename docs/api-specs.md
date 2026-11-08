@@ -27,7 +27,7 @@ Changes are tracked: the form's activity shows each version of the spec.
 
 **Only OpenAPI 3.1 is stored.** The import screen upgrades Swagger 2.0 and OpenAPI 3.0 to 3.1 in the browser and bundles external references before it saves. The server refuses anything else: another version, a spec that does not validate as OpenAPI 3.1, or one with a `$ref` that leaves the document (`other.yaml#/...`, `https://...`, `file:///...`), wherever it is, in an example or a default included. It never opens a file or a URL to resolve a reference.
 
-YAML is read the way OpenAPI means it, by the YAML 1.2 core schema: dates such as `2026-01-01` stay strings, only `true` and `false` are booleans (`on`, `off`, `yes` and `no` are strings), numbers are decimal, `0o` octal or `0x` hexadecimal (`0755` is 755, `1e3` is 1000.0, and `12:30` and `1_000` are strings), and keys such as `200:` become the string `"200"`.
+YAML is read as openapi-spec-validator reads it, dates such as `2026-01-01` staying strings, except that only `true` and `false` are booleans, as in JSON and YAML 1.2: `on`, `off`, `yes` and `no` stay strings. Keys such as `200:` become the string `"200"`.
 
 ### Authentication hints
 
@@ -42,20 +42,14 @@ A hint is never applied by itself: credentials stay in the Connection form.
 
 ## Where requests go
 
-Every request the app sends (a sync, a sample, a spec fetched for import) is checked first:
+Every request the app sends (a sync, a sample, a spec fetched for import) goes through Frappe's guarded request session, the one Frappe's own safe requests use:
 
-- Only `http` and `https` URLs, without `user:password@` in them.
-- The host must resolve to public addresses only. Loopback, private, link-local (the cloud metadata address `169.254.169.254` among them), shared and reserved ranges are refused, and so is a host with any such address. The connection is then made to the address that was checked.
+- Only `http` and `https` URLs, and no proxy.
+- The host must resolve to public addresses only. Loopback, private, link-local (the cloud metadata address `169.254.169.254` among them), shared and reserved ranges are refused, and so is a host with any such address. The address connected to is checked again, so a DNS answer that changes in between is refused too.
 - At most 5 redirects, each checked the same way.
-- A response body of at most 20 MiB (32 MiB for a spec fetched for the import screen, which saves it minified: a stored spec is at most 10 MiB), with the whole exchange done within 2 minutes, however slowly it trickles in.
+- A response body of at most 20 MiB (32 MiB for a spec fetched for the import screen, which saves it minified: a stored spec is at most 10 MiB), all of it arrived within 2 minutes of the request, however slowly it trickles in.
 
-An API on a private network can be opened in the site config, by range:
-
-```json
-{ "espresso_sync_private_networks": ["10.1.2.0/24"] }
-```
-
-The cloud metadata addresses stay refused whatever it says.
+An API on a private network cannot be reached.
 
 **Credentials go to one host only**, the Connection's **Allowed Host** (`host`, or `host:port`), on that port: `host` alone means the scheme's default port (443 for https, 80 for http). It is filled from the API Domain when left empty. A request to any other host or port, a shot that overrides the API Domain or a redirect included, is sent without the credentials, and its Pull Log entry carries a `credentials-withheld` warning. A redirect from https to http never carries them.
 

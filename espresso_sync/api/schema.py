@@ -24,10 +24,6 @@ SPEC_FETCH_TIMEOUT = (10, 30)
 MAX_SOURCE_BYTES = 32 * 1024 * 1024
 
 
-def require_manager():
-	frappe.only_for("System Manager")
-
-
 def get_spec_doc(name: str, ptype: str = "read"):
 	doc = frappe.get_doc(SPEC, name)
 	doc.check_permission(ptype)
@@ -39,17 +35,8 @@ def load_spec(name: str) -> dict[str, Any]:
 	try:
 		return openapi.load_spec_text(doc.spec_json or "")
 	except openapi.SpecError as e:
-		frappe.throw(str(e), title=_("Invalid API Spec"))
+		openapi.throw(e)
 		raise
-
-
-def spec_failure(e: openapi.SpecError):
-	frappe.throw(
-		"<br>".join(
-			[frappe.utils.escape_html(str(e)), *(frappe.utils.escape_html(error) for error in e.errors)]
-		),
-		title=_("Invalid API Spec"),
-	)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -57,7 +44,7 @@ def fetch_spec_source(url: str, connection: str | None = None) -> dict[str, Any]
 	"""The text at `url` (a spec, or a file a spec refers to), fetched by the server for the
 	import screen: http(s) to public addresses only, at most MAX_SOURCE_BYTES. With a
 	`connection`, its credentials go along when the URL's host is its Allowed Host."""
-	require_manager()
+	frappe.only_for("System Manager")
 	credentials, allowed_host = None, None
 	if connection:
 		doc = frappe.get_doc(CONNECTION, connection)
@@ -102,11 +89,11 @@ def save_spec(
 	"""Store an OpenAPI 3.1 spec, bundled (the import screen upgrades Swagger 2.0 and
 	OpenAPI 3.0 and bundles external references first). Anything else is refused. With
 	`name`, that API Spec is updated."""
-	require_manager()
+	frappe.only_for("System Manager")
 	try:
 		spec = openapi.validate_canonical(openapi.load_spec_text(spec_json))
 	except openapi.SpecError as e:
-		spec_failure(e)
+		openapi.throw(e)
 		raise
 	if name:
 		doc = get_spec_doc(name, "write")
@@ -136,7 +123,7 @@ def save_spec(
 @frappe.whitelist()
 def list_operations(spec: str) -> list[dict[str, Any]]:
 	"""The operations of an API Spec: method, path, id, summary, tags, parts, parameters."""
-	require_manager()
+	frappe.only_for("System Manager")
 	return openapi.list_operations(load_spec(spec))
 
 
@@ -147,7 +134,7 @@ def get_operation_schema(
 	"""The JSON Schema of an operation's request body or response (references expanded,
 	recursive ones as {"x-cycle": ref}), its media type and status, and the operation's
 	parameters."""
-	require_manager()
+	frappe.only_for("System Manager")
 	document = load_spec(spec)
 	try:
 		where = openapi.operation_part(document, method, path, part, status)
@@ -155,7 +142,7 @@ def get_operation_schema(
 		path_item, op, _pointer = openapi.find_operation(document, method, path)
 		parameters = openapi.dereference(document, openapi.operation_parameters(document, path_item, op))
 	except openapi.SpecError as e:
-		spec_failure(e)
+		openapi.throw(e)
 		raise
 	return {
 		"schema": schema,
@@ -179,7 +166,7 @@ def check_doctype(doctype: str, mode: str):
 @frappe.whitelist()
 def get_doctype_schema(doctype: str, mode: str = "insert") -> dict[str, Any]:
 	"""The JSON Schema of `doctype`'s documents as read, inserted or updated."""
-	require_manager()
+	frappe.only_for("System Manager")
 	check_doctype(doctype, mode)
 	return doctype_json_schema(doctype, mode)
 
@@ -198,7 +185,7 @@ def validate_payload(
 	"""Diagnostics for a payload: against an API Spec operation's request body or response
 	(`spec`, `method`, `path`, `part`, `status`), or against a DocType's documents
 	(`doctype`, `mode`)."""
-	require_manager()
+	frappe.only_for("System Manager")
 	if isinstance(payload, str):
 		try:
 			payload = json.loads(payload)
@@ -213,7 +200,7 @@ def validate_payload(
 	try:
 		where = openapi.operation_part(document, cast(str, method), cast(str, path), part, status)
 	except openapi.SpecError as e:
-		spec_failure(e)
+		openapi.throw(e)
 		raise
 	if where["pointer"] is None:
 		return []

@@ -8,17 +8,19 @@ external references before it saves a spec, so a stored spec refers only to itse
 ("#/..."): nothing here ever reads a file or the network to resolve a reference.
 """
 
-import hashlib
 import json
 import re
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote, unquote
 
+import frappe
 import yaml
 from frappe import _
+from frappe.utils import sha256_hash
 from jsonschema import ValidationError
 from jsonschema.validators import extend
+from jsonschema_path.loaders import JsonschemaSafeLoader, SafeLoader
 from openapi_schema_validator import OAS31Validator
 from openapi_spec_validator import OpenAPIV31SpecValidator
 from referencing import Registry
@@ -55,12 +57,7 @@ ANNOTATIONS = frozenset(
 DATA_KEYWORDS = frozenset({"example", "examples", "default", "const", "enum"})
 # a schema's keywords whose values map names to schemas: their keys are names, never keywords
 SCHEMA_MAPS = frozenset({"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"})
-YAML_12_BOOL = re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$")
-# the YAML 1.2 core schema's integers and floats ("0755" is 755, "12:30" and "1_000" are strings)
-YAML_12_INT = re.compile(r"^(?:[-+]?[0-9]+|0o[0-7]+|0x[0-9a-fA-F]+)$")
-YAML_12_FLOAT = re.compile(
-	r"^(?:[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$"
-)
+BOOL_TAG = "tag:yaml.org,2002:bool"
 
 
 class SpecError(Exception):
@@ -71,52 +68,19 @@ class SpecError(Exception):
 		self.errors = errors or []
 
 
-class SpecLoader(yaml.SafeLoader):
-	"""YAML as OpenAPI expects it, the YAML 1.2 core schema: timestamps stay strings
-	("2026-01-01" is not a date), only true and false are booleans ("on", "off", "yes" and
-	"no" are strings), and numbers are decimal, 0o octal or 0x hexadecimal ("0755" is 755;
-	"12:30" and "1_000" are strings)."""
-
-
-def yaml_12_number(loader: SpecLoader, node: yaml.ScalarNode) -> int | float:
-	"""An int or a float of the YAML 1.2 core schema (the value of an !!int or !!float)."""
-	value = str(loader.construct_scalar(node))
-	try:
-		if node.tag == "tag:yaml.org,2002:float":
-			special = value.lower().lstrip("+")
-			if special in (".inf", "-.inf", ".nan"):
-				return float(special.replace(".", ""))
-			return float(value)
-		if value.startswith("0o"):
-			return int(value[2:], 8)
-		if value.startswith("0x"):
-			return int(value[2:], 16)
-		return int(value, 10)
-	except ValueError as e:
-		raise yaml.constructor.ConstructorError(
-			None, None, f"{value!r} is not a {node.tag.rsplit(':', 1)[-1]}", node.start_mark
-		) from e
+class SpecLoader(SafeLoader):
+	"""openapi-spec-validator's YAML loader (JsonschemaSafeLoader: dates stay strings), but
+	with YAML 1.2's booleans, only true and false, as JSON has them: a property or an enum
+	value named on, off, yes or no stays one."""
 
 
 SpecLoader.yaml_implicit_resolvers = {
-	first: [
-		(tag, regexp)
-		for tag, regexp in resolvers
-		if tag
-		not in (
-			"tag:yaml.org,2002:timestamp",
-			"tag:yaml.org,2002:bool",
-			"tag:yaml.org,2002:int",
-			"tag:yaml.org,2002:float",
-		)
-	]
-	for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+	first: [(tag, regexp) for tag, regexp in resolvers if tag != BOOL_TAG]
+	for first, resolvers in cast(type[SafeLoader], JsonschemaSafeLoader).yaml_implicit_resolvers.items()
 }
-SpecLoader.add_implicit_resolver("tag:yaml.org,2002:bool", YAML_12_BOOL, list("tTfF"))
-SpecLoader.add_implicit_resolver("tag:yaml.org,2002:int", YAML_12_INT, list("-+0123456789"))
-SpecLoader.add_implicit_resolver("tag:yaml.org,2002:float", YAML_12_FLOAT, list("-+.0123456789"))
-SpecLoader.add_constructor("tag:yaml.org,2002:int", yaml_12_number)
-SpecLoader.add_constructor("tag:yaml.org,2002:float", yaml_12_number)
+SpecLoader.add_implicit_resolver(
+	BOOL_TAG, re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"), list("tTfF")
+)
 
 
 def json_key(key: Any) -> str:
@@ -127,8 +91,8 @@ def json_key(key: Any) -> str:
 
 
 def plain(value: Any, budget: list[int]) -> Any:
-	"""`value` with string keys only, refusing more than `budget` nodes (YAML aliases can
-	expand a short text into a huge tree)."""
+	"""`value` with string keys only, refusing more than `budget` nodes: YAML aliases can
+	expand a short text into a huge tree, and no YAML loader bounds that."""
 	budget[0] -= 1
 	if budget[0] < 0:
 		raise SpecError(_("The spec is too large"))
@@ -163,13 +127,9 @@ def spec_version(spec: dict[str, Any]) -> str:
 	return str(spec.get("openapi") or spec.get("swagger") or "")
 
 
-def canonical_json(spec: Any) -> str:
-	return json.dumps(spec, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
 def spec_hash(spec: dict[str, Any]) -> str:
-	"""sha256 of the spec's canonical JSON: the same for the same spec, however written."""
-	return hashlib.sha256(canonical_json(spec).encode()).hexdigest()
+	"""sha256 of the spec's JSON, keys sorted: the same for the same spec, however written."""
+	return sha256_hash(frappe.as_json(spec, indent=None))
 
 
 # JSON Pointers and references
@@ -194,7 +154,8 @@ def iter_refs(value: Any, pointer: str = "") -> Iterator[tuple[str, str]]:
 
 
 def external_refs(spec: dict[str, Any]) -> list[str]:
-	"""The references that leave the document: a stored spec is bundled and has none."""
+	"""The references that leave the document: a stored spec is bundled and has none.
+	(Checked here, as openapi-spec-validator would follow them.)"""
 	return [f"{pointer}: {ref}" for pointer, ref in iter_refs(spec) if not ref.startswith("#")]
 
 
@@ -252,6 +213,14 @@ def spec_errors(spec: Any) -> list[str]:
 	return errors
 
 
+def throw(e: SpecError):
+	"""frappe.throw a SpecError, with its reasons."""
+	messages = [str(e), *e.errors]
+	frappe.throw(
+		"<br>".join(frappe.utils.escape_html(message) for message in messages), title=_("Invalid API Spec")
+	)
+
+
 def validate_canonical(spec: Any) -> dict[str, Any]:
 	"""Return `spec` when it is a valid, self-contained OpenAPI 3.1 description; raise
 	SpecError with the reasons otherwise."""
@@ -277,16 +246,9 @@ def tokens_of(pointer: str) -> list[str]:
 	return [unescape(token) for token in pointer[1:].split("/")]
 
 
-def resolve_pointer(document: Any, pointer: str) -> Any:
-	node = document
-	for token in tokens_of(pointer):
-		if isinstance(node, dict) and token in node:
-			node = node[token]
-		elif isinstance(node, list) and token.isdigit() and int(token) < len(node):
-			node = node[int(token)]
-		else:
-			raise SpecError(_("{0} is not in the spec").format(pointer))
-	return node
+def spec_registry(spec: dict[str, Any]) -> Registry:
+	"""A registry holding only the spec (at SPEC_URI): nothing else is ever retrieved."""
+	return Registry().with_resource(SPEC_URI, DRAFT202012.create_resource(spec))
 
 
 def ref_to(pointer: str, base: str = "") -> str:
@@ -298,7 +260,10 @@ def resolve_ref(spec: dict[str, Any], ref: str) -> Any:
 	"""What an internal reference ("#/components/schemas/Order") points at."""
 	if not ref.startswith("#"):
 		raise SpecError(_("{0} refers outside the spec").format(ref))
-	return resolve_pointer(spec, unquote(ref[1:]))
+	try:
+		return spec_registry(spec).resolver(SPEC_URI).lookup(ref).contents
+	except Unresolvable as e:
+		raise SpecError(_("{0} is not in the spec").format(ref)) from e
 
 
 def follow(spec: dict[str, Any], node: Any, pointer: str) -> tuple[Any, str]:
@@ -441,7 +406,8 @@ def dereference(
 	names: bool = False,
 ) -> Any:
 	"""`node` with each internal reference replaced by what it refers to. A reference met
-	again inside its own expansion becomes {"x-cycle": "<reference>"}. `names` is true for
+	again inside its own expansion becomes {"x-cycle": "<reference>"}: our own, as the
+	dereferencing libraries (jsonref, prance) give a circular tree that is not JSON. `names` is true for
 	a map of names to schemas (properties, $defs...), whose keys are names, not keywords: a
 	property named "default" is a schema like any other."""
 	budget = budget if budget is not None else [MAX_SCHEMA_NODES]
@@ -524,7 +490,7 @@ def child_schema(schema: dict[str, Any], path: str, token: str) -> tuple[dict[st
 
 def data_ptr_to_schema_path(schema: dict[str, Any], data_ptr: str) -> str | None:
 	"""The JSON Pointer, in an expanded schema, of the subschema that describes the value at
-	`data_ptr`. Array indexes may be left out ("/lines/qty" is "/lines/0/qty"), as a rule's
+	`data_ptr` (no library maps a data location to a schema location). Array indexes may be left out ("/lines/qty" is "/lines/0/qty"), as a rule's
 	pointer does. None when the schema does not describe it."""
 	node, path = schema, ""
 	for token in tokens_of(data_ptr):
@@ -545,6 +511,7 @@ def data_ptr_to_schema_path(schema: dict[str, Any], data_ptr: str) -> str | None
 # payloads
 
 
+# openapi-schema-validator checks readOnly and writeOnly for OpenAPI 3.0 only
 def _read_only(validator, value, instance, schema):
 	if value:
 		yield ValidationError("is read-only: a request does not send it")
@@ -561,7 +528,7 @@ ReadValidator = extend(OAS31Validator, {"writeOnly": _write_only})
 WARNING_KEYWORDS = frozenset({"format", "readOnly", "writeOnly"})
 
 
-def diagnostic(error: ValidationError, origin: str, severity: str | None = None) -> dict[str, Any]:
+def diagnostic(error: ValidationError, origin: str) -> dict[str, Any]:
 	keyword = str(error.validator)
 	path = list(error.absolute_path)
 	if keyword == "required" and isinstance(error.instance, dict):
@@ -571,7 +538,7 @@ def diagnostic(error: ValidationError, origin: str, severity: str | None = None)
 	return {
 		"rule": None,
 		"path": pointer_of(path),
-		"severity": severity or ("warning" if keyword in WARNING_KEYWORDS else "error"),
+		"severity": "warning" if keyword in WARNING_KEYWORDS else "error",
 		"code": f"schema-{keyword}",
 		"message": error.message[:500],
 		"origin": origin,
@@ -584,7 +551,7 @@ def validate_payload(
 	"""Diagnostics for `payload` against the schema at `schema_pointer` in `spec` (in a
 	request when `write`, where readOnly properties are flagged; in a response otherwise,
 	where writeOnly ones are). References resolve inside the spec only."""
-	registry = Registry().with_resource(SPEC_URI, DRAFT202012.create_resource(spec))
+	registry = spec_registry(spec)
 	validator_class = WriteValidator if write else ReadValidator
 	validator = validator_class(
 		{"$ref": ref_to(schema_pointer, SPEC_URI)},

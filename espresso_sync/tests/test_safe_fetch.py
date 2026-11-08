@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Avunu LLC and contributors
 # For license information, please see license.txt
 
-import ipaddress
 import json
 import socket
 import threading
@@ -13,23 +12,23 @@ import frappe
 import requests
 import responses
 from frappe.tests import IntegrationTestCase
-from urllib3.exceptions import NewConnectionError
+from requests.adapters import HTTPAdapter
 
 from espresso_sync.espresso_sync.doctype.espresso_sync_connection import espresso_sync_connection as esc
 from espresso_sync.patches import set_connection_allowed_host
 from espresso_sync.requests_machine import RateLimitedSession
 from espresso_sync.tests.egress import PUBLIC_ADDRESS, public_dns
 from espresso_sync.utils import safe_fetch
-from espresso_sync.utils.safe_fetch import EgressRefused, EgressTimeout, ResponseTooLarge, safe_request
+from espresso_sync.utils.safe_fetch import EgressError, safe_request
 
 API = "https://api.example.invalid/v1"
 OTHER = "https://other.example.invalid/v1"
 SECRET = {"Authorization": "Basic c3luYzpodW50ZXIy"}
 
 
-def trickling_server(test, head: bytes) -> str:
-	"""The URL of a server on the loopback address that answers with `head`, then a byte
-	every 0.2 seconds; the loopback range is opened for the test."""
+def loopback_server(test, head: bytes, trickle: bool = True) -> int:
+	"""The port of a server on the loopback address that answers with `head`, then (when
+	`trickle`) a byte every 0.2 seconds."""
 	listener = socket.create_server(("127.0.0.1", 0))
 	listener.settimeout(10)
 	stop = threading.Event()
@@ -42,7 +41,7 @@ def trickling_server(test, head: bytes) -> str:
 		with connection:
 			connection.recv(65536)
 			connection.sendall(head)
-			while not stop.wait(0.2):
+			while trickle and not stop.wait(0.2):
 				try:
 					connection.sendall(b"x")
 				except OSError:
@@ -57,15 +56,10 @@ def trickling_server(test, head: bytes) -> str:
 		thread.join(5)
 
 	test.addCleanup(cleanup)
-	test.enterContext(
-		patch.object(
-			safe_fetch, "private_networks_allowed", return_value=[ipaddress.ip_network("127.0.0.0/8")]
-		)
-	)
-	return f"http://127.0.0.1:{listener.getsockname()[1]}/spec.json"
+	return listener.getsockname()[1]
 
 
-class TestUrlChecks(IntegrationTestCase):
+class TestAddresses(IntegrationTestCase):
 	def test_only_http_and_https(self):
 		for url in (
 			"file:///etc/passwd",
@@ -73,117 +67,71 @@ class TestUrlChecks(IntegrationTestCase):
 			"gopher://api.example.invalid/",
 			"//api.example.invalid/x",
 			"https:///x",
-			"https://user:pw@api.example.invalid/x",
 			"https://api.example.invalid:99999/x",
 		):
-			with self.subTest(url=url), self.assertRaises(EgressRefused):
+			with self.subTest(url=url), self.assertRaises(requests.RequestException):
 				safe_request("GET", url)
 
-	def test_private_and_metadata_addresses_are_refused(self):
+	def test_private_and_metadata_addresses_are_refused_before_sending(self):
 		for address in (
 			"169.254.169.254",
+			"169.254.170.2",
 			"127.0.0.1",
 			"10.1.2.3",
 			"172.16.0.1",
 			"192.168.1.1",
 			"100.64.0.1",
 			"0.0.0.0",
-			"224.0.0.1",
 			"::1",
 			"fe80::1",
-			"fd00::1",
+			"fd00:ec2::254",
 			"::ffff:127.0.0.1",
-			"64:ff9b::a9fe:a9fe",
 		):
-			with self.subTest(address=address):
-				self.assertFalse(safe_fetch.address_allowed(safe_fetch.ipaddress.ip_address(address)))
-		self.assertTrue(safe_fetch.address_allowed(safe_fetch.ipaddress.ip_address(PUBLIC_ADDRESS)))
-
-	def test_a_literal_metadata_address_is_refused_before_sending(self):
+			with (
+				self.subTest(address=address),
+				public_dns(address),
+				responses.RequestsMock(assert_all_requests_are_fired=False) as rsps,
+			):
+				rsps.add(responses.GET, f"{API}/x", body="secret")
+				with self.assertRaises(EgressError):
+					safe_request("GET", f"{API}/x")
+				self.assertEqual(len(rsps.calls), 0)
 		with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
 			rsps.add(responses.GET, "http://169.254.169.254/latest/meta-data/", body="secret")
-			with self.assertRaises(EgressRefused):
+			with self.assertRaises(EgressError):
 				safe_request("GET", "http://169.254.169.254/latest/meta-data/")
 			self.assertEqual(len(rsps.calls), 0)
 
-	def test_a_host_resolving_to_a_private_address_is_refused(self):
-		with public_dns("10.0.0.5"), self.assertRaises(EgressRefused):
-			safe_request("GET", f"{API}/x")
-		# one private address among public ones is enough
-		with (
-			patch.object(safe_fetch, "resolve", return_value=[PUBLIC_ADDRESS, "127.0.0.1"]),
-			self.assertRaises(EgressRefused),
-		):
+	def test_one_private_address_among_public_ones_is_enough(self):
+		with public_dns(PUBLIC_ADDRESS, "127.0.0.1"), self.assertRaises(EgressError):
 			safe_request("GET", f"{API}/x")
 
 	def test_a_host_that_does_not_resolve_is_refused(self):
 		with (
-			patch.object(safe_fetch.socket, "getaddrinfo", side_effect=OSError("no such host")),
-			self.assertRaises(EgressRefused),
+			patch.object(socket, "getaddrinfo", side_effect=socket.gaierror("no such host")),
+			self.assertRaises(EgressError),
 		):
 			safe_request("GET", f"{API}/x")
 
-	def test_the_site_config_can_open_a_private_network(self):
-		with (
-			public_dns("10.1.2.3"),
-			patch.dict(
-				frappe.local.conf, {"espresso_sync_private_networks": ["10.1.2.0/24", "not a network"]}
-			),
-			responses.RequestsMock() as rsps,
-		):
-			rsps.add(responses.GET, f"{API}/x", json={"ok": 1})
-			self.assertEqual(safe_request("GET", f"{API}/x").json(), {"ok": 1})
-		# never the metadata address
-		with patch.dict(frappe.local.conf, {"espresso_sync_private_networks": "169.254.0.0/16"}):
-			self.assertFalse(safe_fetch.address_allowed(safe_fetch.ipaddress.ip_address("169.254.169.254")))
-			self.assertTrue(safe_fetch.address_allowed(safe_fetch.ipaddress.ip_address("169.254.1.1")))
+	def test_a_dns_answer_that_changes_cannot_reach_a_private_address(self):
+		# the host is public when checked, and loopback when connected to
+		port = loopback_server(self, b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nsecret", trickle=False)
+		real_getaddrinfo = socket.getaddrinfo
+		answers = iter([PUBLIC_ADDRESS])
 
+		def rebinding(host, port, *args, **kwargs):
+			if host != "api.example.invalid":
+				return real_getaddrinfo(host, port, *args, **kwargs)
+			address = next(answers, "127.0.0.1")
+			return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))]
 
-class TestConnections(IntegrationTestCase):
-	"""The connection is made to the address that was checked, whatever DNS says later."""
+		with patch.object(socket, "getaddrinfo", rebinding), self.assertRaises(EgressError):
+			safe_request("GET", f"http://api.example.invalid:{port}/x")
 
-	def test_a_connection_to_a_private_address_is_refused(self):
-		conn = safe_fetch.GuardedHTTPSConnection("api.example.invalid", 443)
-		with public_dns("127.0.0.1"), self.assertRaises(NewConnectionError):
-			conn._new_conn()
-
-	def test_the_connection_goes_to_the_checked_address(self):
-		conn = safe_fetch.GuardedHTTPConnection("api.example.invalid", 80)
-		with (
-			public_dns(),
-			patch.object(
-				safe_fetch.urllib3_connection, "create_connection", return_value="socket"
-			) as connect,
-		):
-			self.assertEqual(conn._new_conn(), "socket")
-		self.assertEqual(connect.call_args.args[0], (PUBLIC_ADDRESS, 80))
-		# the TLS server name and the Host header stay the host
-		self.assertEqual(conn.host, "api.example.invalid")
-
-	def test_connection_errors_are_urllib3_errors(self):
-		conn = safe_fetch.GuardedHTTPConnection("api.example.invalid", 80)
-		for error, expected in (
-			(safe_fetch.socket.gaierror("x"), safe_fetch.NameResolutionError),
-			(TimeoutError("x"), safe_fetch.ConnectTimeoutError),
-			(ConnectionRefusedError("x"), NewConnectionError),
-		):
-			with (
-				self.subTest(error=error),
-				public_dns(),
-				patch.object(safe_fetch.urllib3_connection, "create_connection", side_effect=error),
-				self.assertRaises(expected),
-			):
-				conn._new_conn()
-
-	def test_the_session_uses_the_guarded_pools_and_no_proxy(self):
+	def test_the_session_takes_no_proxy_from_the_environment_and_does_not_retry(self):
 		session = safe_fetch.make_session()
 		self.assertFalse(session.trust_env)
-		adapter = cast(safe_fetch.GuardedAdapter, session.get_adapter("https://api.example.invalid/"))
-		self.assertIsInstance(adapter, safe_fetch.GuardedAdapter)
-		pool = adapter.poolmanager.connection_from_url("https://api.example.invalid/")
-		self.assertIs(pool.ConnectionCls, safe_fetch.GuardedHTTPSConnection)
-		with self.assertRaises(EgressRefused):
-			adapter.proxy_manager_for("http://proxy.example.invalid:3128")
+		self.assertEqual(cast(HTTPAdapter, session.get_adapter(API)).max_retries.total, 0)
 
 
 class TestRequests(IntegrationTestCase):
@@ -216,6 +164,7 @@ class TestRequests(IntegrationTestCase):
 		self.assertFalse(safe_fetch.credentials_apply("http://api.example.invalid:8080/x", allowed))
 		self.assertTrue(safe_fetch.credentials_apply("http://api.example.invalid:8080/x", f"{allowed}:8080"))
 		self.assertFalse(safe_fetch.credentials_apply("http://api.example.invalid/x", f"{allowed}:8080"))
+		self.assertFalse(safe_fetch.credentials_apply("ftp://api.example.invalid/x", allowed))
 
 	def test_a_redirect_to_http_or_another_port_drops_the_credentials(self):
 		plain = "http://api.example.invalid/v1"
@@ -264,7 +213,7 @@ class TestRequests(IntegrationTestCase):
 				headers={"Location": "http://169.254.169.254/latest/meta-data/"},
 			)
 			rsps.add(responses.GET, "http://169.254.169.254/latest/meta-data/", body="secret")
-			with self.assertRaises(EgressRefused):
+			with self.assertRaises(EgressError):
 				safe_request("GET", f"{API}/x")
 			self.assertEqual(len(rsps.calls), 1)
 
@@ -272,53 +221,58 @@ class TestRequests(IntegrationTestCase):
 		with responses.RequestsMock() as rsps:
 			for hop in range(safe_fetch.MAX_REDIRECTS + 1):
 				rsps.add(responses.GET, f"{API}/{hop}", status=307, headers={"Location": f"{API}/{hop + 1}"})
-			with self.assertRaises(EgressRefused):
+			with self.assertRaises(EgressError):
 				safe_request("GET", f"{API}/0")
 
-	def test_a_redirect_method(self):
-		body = {"json": {"a": 1}, "params": {"q": 1}}
-		self.assertEqual(safe_fetch.redirected(303, "POST", body), ("GET", {"params": {"q": 1}}))
-		self.assertEqual(safe_fetch.redirected(302, "POST", body), ("GET", {"params": {"q": 1}}))
-		self.assertEqual(safe_fetch.redirected(307, "POST", body), ("POST", body))
-		self.assertEqual(safe_fetch.redirected(301, "GET", body), ("GET", body))
-		self.assertEqual(safe_fetch.redirected(303, "HEAD", body), ("HEAD", body))
+	def test_a_redirected_post(self):
 		with responses.RequestsMock() as rsps:
 			rsps.add(responses.POST, f"{API}/x", status=303, headers={"Location": "/v1/y"})
 			rsps.add(responses.GET, f"{API}/y", json={})
+			rsps.add(responses.POST, f"{API}/a", status=307, headers={"Location": "/v1/b"})
+			rsps.add(responses.POST, f"{API}/b", json={})
 			safe_request("POST", f"{API}/x", json={"a": 1})
+			safe_request("POST", f"{API}/a", json={"a": 1})
+			# 303 asks for a GET without the body, 307 for the same request again
 			self.assertEqual(rsps.calls[1].request.method, "GET")
 			self.assertIsNone(rsps.calls[1].request.body)
+			self.assertEqual(rsps.calls[3].request.method, "POST")
+			self.assertEqual(json.loads(rsps.calls[3].request.body), {"a": 1})
 
 	def test_the_size_cap(self):
 		with responses.RequestsMock() as rsps:
 			rsps.add(responses.GET, f"{API}/big", body=b"x" * 2048)
 			rsps.add(responses.GET, f"{API}/declared", body=b"x", headers={"Content-Length": "999999"})
-			with self.assertRaises(ResponseTooLarge):
+			with self.assertRaises(EgressError):
 				safe_request("GET", f"{API}/big", max_bytes=1024)
-			with self.assertRaises(ResponseTooLarge):
+			with self.assertRaises(EgressError):
 				safe_request("GET", f"{API}/declared", max_bytes=1024)
 
 	def test_the_deadline(self):
-		with responses.RequestsMock() as rsps:
+		with (
+			responses.RequestsMock() as rsps,
+			patch.object(safe_fetch, "DEADLINE", -1),
+			self.assertRaises(EgressError),
+		):
 			rsps.add(responses.GET, f"{API}/slow", body=b"x" * 10)
-			with self.assertRaises(EgressTimeout):
-				safe_fetch.read_capped(requests.get(f"{API}/slow", stream=True), 1024, time.monotonic() - 1)
-			with self.assertRaises(EgressTimeout):
-				safe_request("GET", f"{API}/slow", deadline=-1)
+			safe_request("GET", f"{API}/slow")
 
-	def test_the_deadline_holds_for_a_response_that_trickles_in(self):
-		# each byte comes well within the read timeout; the whole never arrives in time
+	def test_the_deadline_holds_for_a_body_that_trickles_in(self):
+		# each byte comes well within the read timeout; the whole never arrives in time. A
+		# plain session: Frappe's guard would refuse the loopback server
 		for name, head in (
 			("a body with a length", b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n"),
 			("a chunked body", b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1000\r\n"),
 			("a body read to the end", b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n"),
-			("the headers", b"HTTP/1.1 200 OK\r\n"),
 		):
-			url = trickling_server(self, head)
-			with self.subTest(name), self.assertRaises(EgressTimeout):
+			url = f"http://127.0.0.1:{loopback_server(self, head)}/spec.json"
+			with (
+				self.subTest(name),
+				patch.object(safe_fetch, "DEADLINE", 1),
+				self.assertRaises(EgressError),
+			):
 				started = time.monotonic()
 				try:
-					safe_request("GET", url, deadline=1, timeout=(2, 3))
+					safe_request("GET", url, session=requests.Session(), timeout=(2, 3))
 				finally:
 					self.assertLess(time.monotonic() - started, 4)
 
@@ -439,7 +393,7 @@ class TestAllowedHost(IntegrationTestCase):
 			limit=1,
 		)[0]
 		self.assertEqual(log.sync_status, "Failure")
-		self.assertIn("EgressRefused", log.traceback)
+		self.assertIn("EgressError", log.traceback)
 
 	def test_the_patch_derives_it_from_the_urls(self):
 		plain = self.make_connection("patch plain")
