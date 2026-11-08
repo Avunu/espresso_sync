@@ -21,8 +21,15 @@ export default {
 			alt: "The transform editor: the shop API's task fields mapped to a ToDo's with JSONata rules, each previewed on the sample tasks",
 			// the rules have been evaluated on the sample in the browser
 			waitForFn: `${NO_SKELETON} && !!document.querySelector('#transform-editor[aria-busy="false"]') && document.querySelectorAll('[role=treeitem]').length > 5`,
-			// open the ToDo status rule: its expression, what it reads and its value on each sample item
-			actions: [{ click: '[id="target:/status"]' }, { waitFor: '#transform-editor[aria-busy="false"]' }],
+			// open the ToDo status rule: its expression, what it reads and its value on each sample item;
+			// the click scrolls the field into view, so scroll back up to the title and actions
+			actions: [
+				{ click: '[id="target:/status"]' },
+				{ waitFor: '#transform-editor[aria-busy="false"]' },
+				{ scroll: { y: 0 } },
+			],
+			// tall enough for the title, the actions and the rule's values on the sample
+			viewport: { width: 1440, height: 1080, deviceScaleFactor: 2 },
 			themes: ["light"],
 			readme: "hero",
 			featured: true,
