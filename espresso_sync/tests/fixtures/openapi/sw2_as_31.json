@@ -1,0 +1,88 @@
+{
+ "info": {
+  "title": "Shop",
+  "version": "1"
+ },
+ "paths": {
+  "/orders": {
+   "post": {
+    "operationId": "createOrder",
+    "responses": {
+     "201": {
+      "description": "ok",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Order"
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Order"
+       }
+      }
+     },
+     "required": true
+    }
+   }
+  }
+ },
+ "openapi": "3.1.1",
+ "servers": [
+  {
+   "url": "https://api.example.com/v1"
+  }
+ ],
+ "components": {
+  "schemas": {
+   "Order": {
+    "type": "object",
+    "required": [
+     "id",
+     "lines"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "note": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "placed": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Line"
+      }
+     }
+    }
+   },
+   "Line": {
+    "type": "object",
+    "required": [
+     "sku"
+    ],
+    "properties": {
+     "sku": {
+      "type": "string"
+     },
+     "qty": {
+      "type": "number",
+      "minimum": 0
+     }
+    }
+   }
+  }
+ }
+}

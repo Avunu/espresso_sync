@@ -1,0 +1,28 @@
+openapi: 3.0.3
+info: { title: Shop, version: "1" }
+paths:
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200":
+          description: ok
+          content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } }
+components:
+  schemas:
+    Order:
+      type: object
+      required: [id]
+      properties:
+        id: { type: integer, readOnly: true }
+        note: { type: string, nullable: true }
+        status: { type: string, enum: [open, closed] }
+        lines: { type: array, items: { $ref: "#/components/schemas/Line" } }
+    Line:
+      allOf:
+        - { $ref: "#/components/schemas/Base" }
+        - type: object
+          required: [sku]
+          properties: { sku: { type: string }, qty: { type: number, exclusiveMinimum: true, minimum: 0 } }
+    Base: { type: object, properties: { line_id: { type: string, format: uuid } } }

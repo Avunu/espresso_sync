@@ -3,7 +3,7 @@
 
 import datetime
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import frappe
 import frappe.client
@@ -16,6 +16,7 @@ from frappe.tests import IntegrationTestCase
 from espresso_sync import requests_machine, sync_machine
 from espresso_sync.espresso_sync.doctype.espresso_sync_connection import espresso_sync_connection as esc
 from espresso_sync.requests_machine import REQUEST_TIMEOUT, RateLimitedSession
+from espresso_sync.tests.egress import make_response, public_dns
 
 WEBSITE_USER = "es-website-user@example.com"
 DESK_USER = "es-desk-user@example.com"
@@ -75,11 +76,7 @@ def make_connection(
 
 
 def fake_response(payload, status_code=200):
-	response = MagicMock()
-	response.status_code = status_code
-	response.json.return_value = payload
-	response.text = json.dumps(payload)
-	return response
+	return make_response(payload, status_code)
 
 
 def pull_logs(connection_name):
@@ -106,6 +103,7 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		]
 
 	def setUp(self):
+		self.enterContext(public_dns())
 		frappe.set_user("Administrator")
 		self.connection = make_connection()
 		self.shot_name = self.connection.shots[0].name
@@ -297,6 +295,10 @@ class TestRetry(IntegrationTestCase):
 
 	URL = f"{API}/limited"
 
+	def setUp(self):
+		super().setUp()
+		self.enterContext(public_dns())
+
 	def send(self, *statuses_and_headers):
 		session = RateLimitedSession()
 		with (
@@ -352,9 +354,14 @@ class SyncTestCase(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		esc.ensure_sync_fields("ToDo")
 
+	def setUp(self):
+		super().setUp()
+		self.enterContext(public_dns())
+
 
 class TestImport(SyncTestCase):
 	def setUp(self):
+		super().setUp()
 		frappe.set_user("Administrator")
 		# commits (custom fields, external IDs) outlive a test: each has its own Connection
 		self.connection = make_connection(
@@ -477,6 +484,7 @@ class TestImport(SyncTestCase):
 
 class TestExport(SyncTestCase):
 	def setUp(self):
+		super().setUp()
 		frappe.set_user("Administrator")
 		# a POST commits the external ID it gets: each test has its own Connection and documents
 		self.prefix = f"es-{self._testMethodName}"

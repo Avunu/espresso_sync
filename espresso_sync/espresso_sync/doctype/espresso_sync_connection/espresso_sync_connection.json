@@ -23,6 +23,7 @@
   "column_break_bgoy",
   "api_domain",
   "api_base",
+  "allowed_host",
   "auth_type",
   "api_key",
   "api_secret",
@@ -113,11 +114,17 @@
    "fieldname": "api_rate_limit",
    "fieldtype": "Int",
    "label": "API Rate Limit"
+  },
+  {
+   "description": "Credentials are sent only to this host (host, or host:port), and to no other, redirects included. Filled from the API Domain when left empty.",
+   "fieldname": "allowed_host",
+   "fieldtype": "Data",
+   "label": "Allowed Host"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-07 19:00:00.000000",
+ "modified": "2026-11-07 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection",

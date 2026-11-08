@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info: { title: Tree, version: "1" }
+paths:
+  /categories/{id}:
+    get:
+      operationId: getCategory
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: ok
+          content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } }
+components:
+  schemas:
+    Category:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        parent: { $ref: "#/components/schemas/Category" }
+        children: { type: array, items: { $ref: "#/components/schemas/Category" } }
+        owner: { $ref: "#/components/schemas/Person" }
+    Person:
+      type: object
+      properties:
+        name: { type: string }
+        manager: { $ref: "#/components/schemas/Person" }
