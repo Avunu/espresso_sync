@@ -30,6 +30,11 @@ class TestCompile(IntegrationTestCase):
 				self.assertEqual([[e.rule, e.code] for e in compiled.errors], case["errors"])
 				self.assertEqual(engine.evaluate(compiled.jsonata, case["input"]), case["output"])
 
+	def test_a_lone_surrogate_is_not_a_pointer(self):
+		# a golden file cannot hold one (check-json refuses it): compile.test.ts has this case too
+		compiled = compile_rules([{"ptr": "/\ud800", "kind": "field", "expr": "x"}])
+		self.assertEqual((compiled.jsonata, [[e.rule, e.code] for e in compiled.errors]), ("{}", [["", "compile.pointer"]]))
+
 	def test_an_error_position_names_its_rule(self):
 		compiled = compile_rules(
 			[

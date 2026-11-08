@@ -29,21 +29,12 @@
    "ptr": "/nbsp",
    "kind": "field",
    "expr": "\u00a0"
-  },
-  {
-   "ptr": "/\ud800",
-   "kind": "field",
-   "expr": "x"
   }
  ],
  "errors": [
   [
    "/ascii",
    "compile.empty"
-  ],
-  [
-   "",
-   "compile.pointer"
   ]
  ],
  "input": {

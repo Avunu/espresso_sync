@@ -42,6 +42,16 @@ describe("compileRules", () => {
 		});
 	}
 
+	it("refuses a pointer with a lone surrogate, as compile.py does", () => {
+		// a golden file cannot hold one (check-json refuses it): test_compile.py has this case too
+		const compiled = compileRules([{ ptr: "/\ud800", kind: "field", expr: "x" }]);
+		assert.equal(compiled.jsonata, "{}");
+		assert.deepEqual(
+			compiled.errors.map((error) => [error.rule, error.code]),
+			[["", "compile.pointer"]],
+		);
+	});
+
 	it("compiles no rules to an empty object", () => {
 		assert.deepEqual(compileRules([]), { jsonata: "{}", errors: [] });
 	});
