@@ -182,6 +182,7 @@ class EspressoSyncConnection(Document):
 		last_pull: DF.Datetime | None
 		last_sync_attempt: DF.Datetime | None
 		pull_shot: DF.Check
+		server_url: DF.Data | None
 		shots: DF.Table[EspressoSyncConnectionShot]
 		sync_frequency: DF.Literal["Manual", "Every Minute", "Hourly", "Daily", "Weekly", "Monthly", "Cron"]
 	# end: auto-generated types
@@ -212,9 +213,12 @@ class EspressoSyncConnection(Document):
 			frappe.throw(_("{0} is not a valid cron rule").format(frappe.bold(cron_rule)))
 
 	def validate_allowed_host(self):
-		"""The host the credentials may go to: the API Domain's unless set otherwise."""
+		"""The host the credentials may go to: the Server URL's (else the API Domain's) unless
+		set otherwise."""
 		try:
-			self.allowed_host = normalize_allowed_host(self.allowed_host) or host_of(self.api_domain)
+			self.allowed_host = normalize_allowed_host(self.allowed_host) or host_of(
+				self.server_url or self.api_domain
+			)
 		except ValueError:
 			frappe.throw(
 				_("{0} is not a host: give a host name, or host:port, without a scheme or a path").format(
@@ -222,7 +226,7 @@ class EspressoSyncConnection(Document):
 				),
 				title=_("Invalid Allowed Host"),
 			)
-		domain_host = host_of(self.api_domain)
+		domain_host = host_of(self.server_url or self.api_domain)
 		if (
 			self.allowed_host
 			and domain_host

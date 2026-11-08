@@ -10,9 +10,10 @@ Espresso Sync moves documents between a Frappe site and external REST APIs, in e
 
 ## How it fits together
 
-- An **Espresso Sync Connection** holds an API's domain, base path, credentials (Basic or a header), an optional rate limit, and the **Allowed Host**, the one host its credentials are sent to. Only a System Manager can create, change or run one.
+- An **Espresso Sync Connection** holds an API's Server URL, domain, base path, credentials (Basic or a header), an optional rate limit, and the **Allowed Host**, the one host its credentials are sent to. Only a System Manager can create, change or run one.
 - An **Espresso Sync API Spec** holds an API's OpenAPI 3.1 description, which the transform editor reads operations and schemas from. See [API Specs and schemas](api-specs.md).
-- Each of its **shots** ties one DocType to one endpoint. A shot imports, exports, or both, and has a map for each direction.
+- An **Espresso Sync Transform** maps an operation of an API Spec to a DocType, or a DocType to an operation, with JSONata rules. See [Transforms](transforms.md).
+- Each of a Connection's **shots** ties one DocType to one endpoint. A shot imports, exports, or both, and has a map for each direction.
 - Imported objects are matched to documents through the **Espresso Sync IDs** table the app adds, on a **Sync** tab, to each DocType a shot names. A document's **Exclude from Sync** box keeps it out of exports.
 - Every request is recorded in an **Espresso Sync Pull Log**, with its response, and so is every object imported or document exported, with its **Diagnostics**. Credentials are redacted before the log is saved. Log Settings deletes entries older than 30 days; change the period there.
 

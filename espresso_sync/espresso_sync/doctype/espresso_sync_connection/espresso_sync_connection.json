@@ -21,6 +21,7 @@
   "cron_rule",
   "api_rate_limit",
   "column_break_bgoy",
+  "server_url",
   "api_domain",
   "api_base",
   "allowed_host",
@@ -92,6 +93,13 @@
    "label": "API Base"
   },
   {
+   "description": "The base URL of the API (as a spec's servers give it, e.g. https://api.example.com/v1): a transform's operation path is appended to it.",
+   "fieldname": "server_url",
+   "fieldtype": "Data",
+   "label": "Server URL",
+   "options": "URL"
+  },
+  {
    "fieldname": "api_domain",
    "fieldtype": "Data",
    "label": "API Domain"
@@ -116,7 +124,7 @@
    "label": "API Rate Limit"
   },
   {
-   "description": "Credentials are sent only to this host (host, or host:port), and to no other, redirects included. Filled from the API Domain when left empty.",
+   "description": "Credentials are sent only to this host (host, or host:port), and to no other, redirects included. Filled from the Server URL (or the API Domain) when left empty.",
    "fieldname": "allowed_host",
    "fieldtype": "Data",
    "label": "Allowed Host"
@@ -124,7 +132,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-07 20:00:00.000000",
+ "modified": "2026-11-07 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection",

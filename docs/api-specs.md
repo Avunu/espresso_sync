@@ -51,7 +51,7 @@ Every request the app sends (a sync, a sample, a spec fetched for import) goes t
 
 An API on a private network cannot be reached.
 
-**Credentials go to one host only**, the Connection's **Allowed Host** (`host`, or `host:port`), on that port: `host` alone means the scheme's default port (443 for https, 80 for http). It is filled from the API Domain when left empty. A request to any other host or port, a shot that overrides the API Domain or a redirect included, is sent without the credentials, and its Pull Log entry carries a `credentials-withheld` warning. The host is read from the URL as the request connects to it, so a URL such as `http://other.example\@api.example/` (which some parsers read as `api.example`) does not carry them to `other.example`. A redirect from https to http never carries them.
+**Credentials go to one host only**, the Connection's **Allowed Host** (`host`, or `host:port`), on that port: `host` alone means the scheme's default port (443 for https, 80 for http). It is filled from the Server URL (or the API Domain) when left empty. A request to any other host or port, a shot that overrides the API Domain or a redirect included, is sent without the credentials, and its Pull Log entry carries a `credentials-withheld` warning. The host is read from the URL as the request connects to it, so a URL such as `http://other.example\@api.example/` (which some parsers read as `api.example`) does not carry them to `other.example`. A redirect from https to http never carries them.
 
 ## Endpoints
 
