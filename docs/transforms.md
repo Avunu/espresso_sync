@@ -125,7 +125,7 @@ All are under `/api/method/espresso_sync.api.transform.<name>`.
 | -------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `validate_transform` | `name`                                                | the diagnostics; nothing is written                                                            |
 | `dry_run`            | `name` (POST)                                         | for each sample item, `{item, output, name, diagnostics}`                                      |
-| `activate_transform` | `name` (POST)                                         | `{name, status, active_compiled}`                                                              |
+| `activate_transform` | `name`, `modified` (POST)                             | `{name, status, active_compiled, modified}`                                                    |
 | `resolve_functions`  | `calls`, optional `transform` (POST)                  | for each `{function, args}` call (`"getValue"`, without the `$`), `{value}` or `{error, code}` |
 | `fetch_sample`       | `name`, optional `start`, `limit` (at most 50) (POST) | `{items, more}`                                                                                |
 

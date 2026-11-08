@@ -295,7 +295,7 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 		"espresso_sync.api.transform.dry_run",
 		"The dry run failed.",
 	);
-	const activate = useBackendCall<{ status: "Draft" | "Active"; active_compiled: string }>(
+	const activate = useBackendCall<{ status: "Draft" | "Active"; active_compiled: string; modified: string }>(
 		"espresso_sync.api.transform.activate_transform",
 		"The transform couldn't be activated.",
 	);
@@ -485,7 +485,12 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 	}
 
 	async function save() {
-		const values: Record<string, unknown> = { rules, sample: sampleText.trim() ? sampleText : null };
+		// with the version it was read at, a save over someone else's is refused, as in the desk
+		const values: Record<string, unknown> = {
+			rules,
+			sample: sampleText.trim() ? sampleText : null,
+			modified: saved.modified,
+		};
 		for (const name of SETTINGS) {
 			// nothing is null: a JSON field's column takes no empty text
 			values[name] = name === "max_pages" ? Number(settings[name] || 0) : settings[name] || null;
@@ -536,13 +541,15 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 	}
 
 	async function runActivate() {
-		const result = await activate.call({ name: saved.name });
+		// refused, as a save is, when the transform was saved since this version
+		const result = await activate.call({ name: saved.name, modified: saved.modified });
 		if (!result.ok) {
 			// the refusal lists the errors; the diagnostics show them on their rows
 			await check();
 			return;
 		}
-		const doc = { ...saved, status: result.data.status, active_compiled: result.data.active_compiled };
+		const { status, active_compiled, modified } = result.data;
+		const doc = { ...saved, status, active_compiled, modified };
 		setSaved(doc);
 		onSaved();
 		showToast({ kind: "success", title: `${saved.name} is Active: syncs run it.` });

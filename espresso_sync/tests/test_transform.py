@@ -10,7 +10,7 @@ import frappe
 import responses
 from frappe.desk.doctype.todo.todo import ToDo
 from frappe.tests import IntegrationTestCase
-from frappe.utils import background_jobs, safe_exec
+from frappe.utils import background_jobs, get_datetime, safe_exec
 from rq import Queue
 
 from espresso_sync.api import schema as schema_api
@@ -160,7 +160,7 @@ class TestTransform(IntegrationTestCase):
 	def test_activation_is_refused_on_errors(self):
 		doc = make_transform("ES Import Tasks", rules=TODO_RULES[1:])
 		with self.assertRaises(frappe.ValidationError) as raised:
-			api.activate_transform(doc.name)
+			api.activate_transform(doc.name, str(doc.modified))
 		self.assertIn("/description", str(raised.exception))
 		doc.reload()
 		self.assertEqual((doc.status, doc.active_compiled), ("Draft", None))
@@ -169,7 +169,7 @@ class TestTransform(IntegrationTestCase):
 		doc.rules = json.dumps([*TODO_RULES, {"ptr": "/priority", "kind": "field", "expr": "$number(title)"}])
 		doc.save()
 		with self.assertRaises(frappe.ValidationError):
-			api.activate_transform(doc.name)
+			api.activate_transform(doc.name, str(doc.modified))
 
 	def test_activation_is_refused_when_the_schema_changed(self):
 		doc = make_transform("ES Import Tasks")
@@ -178,16 +178,16 @@ class TestTransform(IntegrationTestCase):
 		changed["components"]["schemas"]["Task"]["properties"]["done"]["type"] = "string"
 		schema_api.save_spec(json.dumps(changed), spec.title, name=spec.name)
 		with self.assertRaises(frappe.ValidationError) as raised:
-			api.activate_transform(doc.name)
+			api.activate_transform(doc.name, str(doc.modified))
 		self.assertIn("changed", str(raised.exception))
 		# saved again, it is checked against the new schema
 		doc.reload()
 		doc.save()
-		self.assertEqual(api.activate_transform(doc.name)["status"], "Active")
+		self.assertEqual(api.activate_transform(doc.name, str(doc.modified))["status"], "Active")
 
 	def test_activation_freezes_the_rules(self):
 		doc = make_transform("ES Import Tasks")
-		result = api.activate_transform(doc.name)
+		result = api.activate_transform(doc.name, str(doc.modified))
 		self.assertEqual(result["status"], "Active")
 		self.assertEqual(result["active_compiled"], doc.compiled_jsonata)
 		doc.reload()
@@ -212,7 +212,7 @@ class TestTransform(IntegrationTestCase):
 				self.assertEqual((doc.status, doc.active_compiled), ("Draft", None))
 				doc.set(fieldname, before)
 				doc.save()
-				api.activate_transform(doc.name)
+				api.activate_transform(doc.name, str(doc.modified))
 				doc.reload()
 				self.assertEqual((doc.status, doc.active_hash()), ("Active", ran))
 
@@ -222,6 +222,20 @@ class TestTransform(IntegrationTestCase):
 		doc.active_compiled = "{}"
 		doc.save()
 		self.assertEqual((doc.status, doc.active_compiled), ("Draft", None))
+
+	def test_activation_is_refused_on_a_version_not_read(self):
+		doc = make_transform("ES Import Tasks")
+		read = str(doc.modified)
+		# someone else saves it in the meantime
+		frappe.get_doc(doc.doctype, doc.name).save()
+		with self.assertRaises(frappe.TimestampMismatchError):
+			api.activate_transform(doc.name, read)
+		doc.reload()
+		self.assertEqual(doc.status, "Draft")
+		# the version activated is the caller's next one to save on
+		result = api.activate_transform(doc.name, str(doc.modified))
+		doc.reload()
+		self.assertEqual((doc.status, get_datetime(result["modified"])), ("Active", doc.modified))
 
 	def test_collections_and_dynamic_links(self):
 		doc = make_transform(
@@ -353,7 +367,7 @@ class TestEndpoints(IntegrationTestCase):
 		for call in (
 			lambda: api.validate_transform(doc.name),
 			lambda: api.dry_run(doc.name),
-			lambda: api.activate_transform(doc.name),
+			lambda: api.activate_transform(doc.name, str(doc.modified)),
 			lambda: api.resolve_functions([]),
 			lambda: api.fetch_sample(doc.name),
 		):
