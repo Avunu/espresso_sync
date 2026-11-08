@@ -47,11 +47,11 @@ Every request the app sends (a sync, a sample, a spec fetched for import) goes t
 - Only `http` and `https` URLs, and no proxy.
 - The host must resolve to public addresses only. Loopback, private, link-local (the cloud metadata address `169.254.169.254` among them), shared and reserved ranges are refused, and so is a host with any such address. The address connected to is checked again, so a DNS answer that changes in between is refused too.
 - At most 5 redirects, each checked the same way.
-- A response body of at most 20 MiB (32 MiB for a spec fetched for the import screen, which saves it minified: a stored spec is at most 10 MiB), all of it arrived within 2 minutes of the request, however slowly it trickles in.
+- A response body of at most 20 MiB (32 MiB for a spec fetched for the import screen, which saves it minified: a stored spec is at most 10 MiB), all of it arrived within 2 minutes of the request, however slowly it trickles in. The status line and headers are not under that limit: each read of them waits at most 60 seconds, and the whole is bounded by the web worker's or the background job's timeout.
 
 An API on a private network cannot be reached.
 
-**Credentials go to one host only**, the Connection's **Allowed Host** (`host`, or `host:port`), on that port: `host` alone means the scheme's default port (443 for https, 80 for http). It is filled from the API Domain when left empty. A request to any other host or port, a shot that overrides the API Domain or a redirect included, is sent without the credentials, and its Pull Log entry carries a `credentials-withheld` warning. A redirect from https to http never carries them.
+**Credentials go to one host only**, the Connection's **Allowed Host** (`host`, or `host:port`), on that port: `host` alone means the scheme's default port (443 for https, 80 for http). It is filled from the API Domain when left empty. A request to any other host or port, a shot that overrides the API Domain or a redirect included, is sent without the credentials, and its Pull Log entry carries a `credentials-withheld` warning. The host is read from the URL as the request connects to it, so a URL such as `http://other.example\@api.example/` (which some parsers read as `api.example`) does not carry them to `other.example`. A redirect from https to http never carries them.
 
 ## Endpoints
 

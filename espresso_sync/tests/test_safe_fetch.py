@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import json
+import re
 import socket
 import threading
 import time
@@ -26,9 +27,9 @@ OTHER = "https://other.example.invalid/v1"
 SECRET = {"Authorization": "Basic c3luYzpodW50ZXIy"}
 
 
-def loopback_server(test, head: bytes, trickle: bool = True) -> int:
+def loopback_server(test, head: bytes, trickle: bool = True, drip: bytes = b"x") -> int:
 	"""The port of a server on the loopback address that answers with `head`, then (when
-	`trickle`) a byte every 0.2 seconds."""
+	`trickle`) `drip` every 0.2 seconds, holding the connection open."""
 	listener = socket.create_server(("127.0.0.1", 0))
 	listener.settimeout(10)
 	stop = threading.Event()
@@ -43,7 +44,7 @@ def loopback_server(test, head: bytes, trickle: bool = True) -> int:
 			connection.sendall(head)
 			while trickle and not stop.wait(0.2):
 				try:
-					connection.sendall(b"x")
+					connection.sendall(drip)
 				except OSError:
 					return
 
@@ -165,6 +166,17 @@ class TestRequests(IntegrationTestCase):
 		self.assertTrue(safe_fetch.credentials_apply("http://api.example.invalid:8080/x", f"{allowed}:8080"))
 		self.assertFalse(safe_fetch.credentials_apply("http://api.example.invalid/x", f"{allowed}:8080"))
 		self.assertFalse(safe_fetch.credentials_apply("ftp://api.example.invalid/x", allowed))
+		# the host urllib3 connects to, not the one urlsplit reads after a backslash
+		self.assertFalse(
+			safe_fetch.credentials_apply("https://other.example.invalid\\@api.example.invalid/x", allowed)
+		)
+		self.assertFalse(
+			safe_fetch.credentials_apply(
+				"http://other.example.invalid:8080\\@api.example.invalid:8080/x", f"{allowed}:8080"
+			)
+		)
+		self.assertTrue(safe_fetch.credentials_apply("https://API.example.invalid./x", allowed))
+		self.assertTrue(safe_fetch.credentials_apply("https://[::1]:8443/x", "[::1]:8443"))
 
 	def test_a_redirect_to_http_or_another_port_drops_the_credentials(self):
 		plain = "http://api.example.invalid/v1"
@@ -186,6 +198,22 @@ class TestRequests(IntegrationTestCase):
 			safe_request("GET", f"{plain}/x", credentials=SECRET, allowed_host="api.example.invalid")
 			sent = [call.request.headers.get("Authorization") for call in rsps.calls]
 		self.assertEqual(sent, [SECRET["Authorization"], SECRET["Authorization"]])
+
+	def test_a_backslash_before_the_allowed_host_does_not_take_the_credentials_elsewhere(self):
+		# urlsplit reads the host as api.example.invalid, urllib3 connects to other.example.invalid
+		tricky = "https://other.example.invalid\\@api.example.invalid"
+		elsewhere = re.compile(r"https://other\.example\.invalid/.*")
+		with responses.RequestsMock() as rsps:
+			rsps.add(responses.GET, elsewhere, json={})
+			safe_request("GET", f"{tricky}/x", credentials=SECRET, allowed_host="api.example.invalid")
+			self.assertNotIn("Authorization", rsps.calls[0].request.headers)
+		with responses.RequestsMock() as rsps:
+			rsps.add(responses.GET, f"{API}/x", status=302, headers={"Location": f"{tricky}/stolen"})
+			rsps.add(responses.GET, elsewhere, json={})
+			safe_request("GET", f"{API}/x", credentials=SECRET, allowed_host="api.example.invalid")
+			self.assertEqual(rsps.calls[0].request.headers.get("Authorization"), SECRET["Authorization"])
+			self.assertTrue(rsps.calls[1].request.url.startswith("https://other.example.invalid/"))
+			self.assertNotIn("Authorization", rsps.calls[1].request.headers)
 
 	def test_no_allowed_host_no_credentials(self):
 		with responses.RequestsMock() as rsps:
@@ -276,6 +304,18 @@ class TestRequests(IntegrationTestCase):
 				finally:
 					self.assertLess(time.monotonic() - started, 4)
 
+	def test_the_headers_are_bounded_by_the_read_timeout_not_the_deadline(self):
+		# the deadline's timer starts once the headers are in: until then, each read waits at
+		# most the read timeout, and the worker's or job's timeout bounds the whole
+		port = loopback_server(self, b"HTTP/1.1 200 OK\r\n", drip=b"")
+		url = f"http://127.0.0.1:{port}/x"
+		with patch.object(safe_fetch, "DEADLINE", 30), self.assertRaises(requests.Timeout):
+			started = time.monotonic()
+			try:
+				safe_request("GET", url, session=requests.Session(), timeout=(2, 1))
+			finally:
+				self.assertLess(time.monotonic() - started, 4)
+
 	def test_the_body_is_read(self):
 		with responses.RequestsMock() as rsps:
 			rsps.add(responses.GET, f"{API}/x", json={"a": [1, 2]})
@@ -329,6 +369,7 @@ class TestAllowedHost(IntegrationTestCase):
 			"https://api.example.invalid",
 			"api.example.invalid/v1",
 			"user@api.example.invalid",
+			"other.example.invalid\\",
 			":80",
 		):
 			with self.subTest(bad=bad), self.assertRaises(ValueError):

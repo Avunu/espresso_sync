@@ -11,11 +11,12 @@ socket, so a DNS answer that changes in between cannot reach a private address.
 
 On top of it, ``safe_request`` follows redirects itself, at most MAX_REDIRECTS of them,
 because only then can it decide for each hop whether the credentials go along: only to
-the ``allowed_host``, on its port (the scheme's default when it names none), and never
-to an http hop of a request that began on https. It reads at most ``max_bytes`` of the
-body, and gives up on a body still arriving DEADLINE seconds after the request began
-(the status line and headers are bounded by the read timeout of each read, and in the
-end by the web worker's or the background job's own timeout).
+the ``allowed_host``, on its port (the scheme's default when it names none), read from
+the URL as urllib3 reads it to connect, and never to an http hop of a request that
+began on https. It reads at most ``max_bytes`` of the body, and gives up on a body
+still arriving DEADLINE seconds after the request began. The deadline does not cover
+the status line and headers: those are bounded by the read timeout of each read, and in
+the end by the web worker's or the background job's own timeout.
 """
 
 import contextlib
@@ -28,7 +29,7 @@ from urllib.parse import urljoin, urlsplit
 import requests
 from frappe import _
 from frappe.utils.safe_exec import BlockedRequest, get_safe_request_session
-from urllib3.util import Retry
+from urllib3.util import Retry, Url, parse_url
 
 # (connect, read) seconds
 REQUEST_TIMEOUT = (10, 60)
@@ -57,7 +58,7 @@ def normalize_allowed_host(value: str | None) -> str:
 	value = (value or "").strip()
 	if not value:
 		return ""
-	if any(char in value for char in "/@?# "):
+	if any(char in value for char in "/\\@?# "):
 		raise ValueError(value)
 	host, port = split_host(value)
 	if not host:
@@ -80,23 +81,33 @@ def host_of(url_or_domain: str | None) -> str:
 		return ""
 
 
+def connect_target(url: str) -> Url:
+	"""The scheme, host and port of `url` as requests and urllib3 read it, the ones they
+	connect to: urlsplit can read the same URL otherwise ("http://a\\@b/" is host b to it,
+	host a to urllib3). Raises ValueError for a URL requests refuses."""
+	try:
+		return parse_url(requests.Request("GET", url).prepare().url or "")
+	except requests.RequestException as e:
+		raise ValueError(url) from e
+
+
 def credentials_apply(url: str, allowed_host: str | None) -> bool:
 	"""Whether a request to `url` may carry the credentials of a Connection whose allowed
-	host is `allowed_host`: the host is the same, and so is the port, which is the URL
-	scheme's default (443, or 80 for http) when the allowed host names none."""
+	host is `allowed_host`: the host requests connects to is the same, and so is the
+	port, which is the URL scheme's default (443, or 80 for http) when the allowed host
+	names none."""
 	if not allowed_host:
 		return False
 	try:
-		allowed, allowed_port = split_host(allowed_host)
-		parts = urlsplit(url)
-		port = parts.port
+		target = connect_target(url)
+		allowed = connect_target(f"{target.scheme}://{allowed_host}/")
 	except ValueError:
 		return False
-	default_port = DEFAULT_PORTS.get(parts.scheme.lower())
-	host = (parts.hostname or "").rstrip(".")
-	return bool(default_port and allowed and host == allowed) and (port or default_port) == (
-		allowed_port or default_port
-	)
+	default_port = DEFAULT_PORTS.get(target.scheme or "")
+	host = (target.host or "").rstrip(".")
+	return bool(default_port and allowed.host and host == allowed.host.rstrip(".")) and (
+		target.port or default_port
+	) == (allowed.port or default_port)
 
 
 def make_session() -> requests.Session:
