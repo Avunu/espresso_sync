@@ -36,6 +36,6 @@ The ERP is always one side: a transform maps between a DocType and an API operat
 - **Expressions are sandboxed.** JSONata cannot reach the server. The functions the app adds read the site as the user the transform runs as, through Frappe's permission checks, and every evaluation stops after 5 seconds.
 - **The Pull Log is redacted**: header values and JSON keys that look like credentials, URL user-info and secret query parameters, and every literal occurrence of the Connection's secret, before an entry is saved.
 
-## Status
+## The /espresso_sync page
 
-The portal page at `/espresso_sync` lists the Connections, the API Specs and the transforms, imports specs, starts a Draft transform on an operation, and edits a transform's rules in the [transform editor](transforms.md#the-editor). The app is not published to the Frappe marketplace yet.
+The portal page at `/espresso_sync`, which the **Espresso Sync** tile on the apps screen opens, lists the Connections, the API Specs and the transforms, imports specs, starts a Draft transform on an operation, and edits a transform's rules in the [transform editor](transforms.md#the-editor). The tile and the page are for System Managers only. The app is not published to the Frappe marketplace yet.

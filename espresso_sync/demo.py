@@ -17,6 +17,14 @@ CONNECTION = "Example Shop"
 SPEC_TITLE = "Shop"
 TRANSFORM = "Example Shop Tasks"
 
+TASK = {"$ref": "#/components/schemas/Task"}
+TASK_ID = {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}
+
+
+def json_body(schema: dict, description: str) -> dict:
+	return {"description": description, "content": {"application/json": {"schema": schema}}}
+
+
 SPEC = {
 	"openapi": "3.1.0",
 	"info": {"title": "Example Shop", "version": "1"},
@@ -25,27 +33,46 @@ SPEC = {
 		"/tasks": {
 			"get": {
 				"operationId": "listTasks",
+				"summary": "List tasks",
+				"tags": ["Tasks"],
 				"parameters": [{"name": "page", "in": "query", "schema": {"type": "integer"}}],
 				"responses": {
-					"200": {
-						"description": "A page of tasks",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "object",
-									"properties": {
-										"data": {
-											"type": "array",
-											"items": {"$ref": "#/components/schemas/Task"},
-										}
-									},
-								}
-							}
-						},
-					}
+					"200": json_body(
+						{"type": "object", "properties": {"data": {"type": "array", "items": TASK}}},
+						"A page of tasks",
+					)
 				},
-			}
-		}
+			},
+			"post": {
+				"operationId": "createTask",
+				"summary": "Create a task",
+				"tags": ["Tasks"],
+				"requestBody": json_body(TASK, "The new task"),
+				"responses": {"201": json_body(TASK, "The task")},
+			},
+		},
+		"/tasks/{id}": {
+			"parameters": [TASK_ID],
+			"get": {
+				"operationId": "getTask",
+				"summary": "Get a task",
+				"tags": ["Tasks"],
+				"responses": {"200": json_body(TASK, "The task")},
+			},
+			"patch": {
+				"operationId": "updateTask",
+				"summary": "Update a task",
+				"tags": ["Tasks"],
+				"requestBody": json_body(TASK, "The fields to change"),
+				"responses": {"200": json_body(TASK, "The task")},
+			},
+			"delete": {
+				"operationId": "deleteTask",
+				"summary": "Delete a task",
+				"tags": ["Tasks"],
+				"responses": {"204": {"description": "Deleted"}},
+			},
+		},
 	},
 	"components": {
 		"schemas": {

@@ -2,7 +2,7 @@
 	"name": "espresso-sync",
 	"version": "0.0.1",
 	"private": true,
-	"description": "Two-way sync between Frappe documents and external REST APIs",
+	"description": "Two-way REST API sync: JSONata transforms checked against OpenAPI and DocTypes",
 	"license": "MIT",
 	"author": "Avunu LLC",
 	"type": "module",
