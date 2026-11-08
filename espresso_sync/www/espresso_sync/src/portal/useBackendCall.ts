@@ -3,9 +3,9 @@
 
 import { useCallback } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
+import type { FrappeResponse, FrappeServerMessage } from "frappe-types";
 import { useSession } from "./session";
 import { useToasts } from "./Toasts";
-import type { FrappeEnvelope } from "./types";
 
 export type BackendResult<T> = { ok: true; data: T } | { ok: false };
 
@@ -49,11 +49,33 @@ export function readFailure(error: unknown): BackendFailure {
 	};
 }
 
-/** One entry of `_server_messages`: JSON text of a `{message}` object, or else plain text. */
+function isStringList(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+/** A decoded `_server_messages` entry that carries frappe's text: a string, an `as_list`
+ * list or an `as_table` list of rows. Checked, not asserted: the entry is JSON from the body.
+ * `msgprint(None)` sends `"message": null`, which carries no text and is not accepted. */
+function isServerMessage(value: unknown): value is { message: NonNullable<FrappeServerMessage["message"]> } {
+	if (!isRecord(value)) return false;
+	const { message } = value;
+	return (
+		typeof message === "string" ||
+		isStringList(message) ||
+		(Array.isArray(message) && message.every(isStringList))
+	);
+}
+
+/** One entry of `_server_messages`: JSON text of a FrappeServerMessage, or else plain text.
+ * A list message is one line per item, a table one line per row. */
 function messageOf(entry: unknown): string {
 	if (typeof entry !== "string") return "";
 	const parsed = parseJson(entry);
-	return isRecord(parsed) && typeof parsed["message"] === "string" ? parsed["message"] : entry;
+	if (!isServerMessage(parsed)) return entry;
+	const { message } = parsed;
+	if (typeof message === "string") return message;
+	const lines: readonly (string | string[])[] = message;
+	return lines.map((line) => (typeof line === "string" ? line : line.join(" "))).join("<br>");
 }
 
 /**
@@ -83,18 +105,27 @@ export function getErrorMessage(error: unknown, fallback: string): string {
  * reloads the page on a 403 (see SessionProvider), and shows any other
  * failure as an error toast. Callers get a result instead of an exception,
  * so a fire-and-forget call can't leak an unhandled rejection.
+ *
+ * frappe-js-sdk's call.get/call.post resolve with the raw body, a
+ * FrappeResponse, not the inner payload its own generic suggests (verified
+ * against the bundled SDK 1.17.1, call.get `.then(m => m.data)`), so anything
+ * read straight through the SDK (useFrappeGetCall) is typed as one too. The
+ * methods called here all return a value: a body without `message` (frappe
+ * leaves it out when the method returned None) is a failure.
  */
 export function useBackendCall<T>(method: string, errorTitle: string) {
-	const { call, loading } = useFrappePostCall<FrappeEnvelope<T>>(method);
+	const { call, loading } = useFrappePostCall<FrappeResponse<T>>(method);
 	const { recordActivity, reportForbidden } = useSession();
 	const showToast = useToasts();
 
 	const run = useCallback(
 		async (params: Record<string, unknown> = {}): Promise<BackendResult<T>> => {
 			try {
-				const envelope = await call(params);
+				const { message } = await call(params);
 				recordActivity();
-				return { ok: true, data: envelope.message };
+				if (message !== undefined) return { ok: true, data: message };
+				showToast({ kind: "error", title: errorTitle });
+				return { ok: false };
 			} catch (error) {
 				if (readFailure(error).httpStatus === 403) {
 					reportForbidden();

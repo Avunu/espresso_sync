@@ -18,8 +18,8 @@ import {
 	TextInput,
 } from "@carbon/react";
 import { useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
+import type { FrappeResponse } from "frappe-types";
 import { MAX_SOURCE_BYTES, prepareSpec, SpecImportError } from "../../../../public/js/editor/specImport.ts";
-import type { FrappeEnvelope } from "../portal/types";
 import { getErrorMessage } from "../portal/useBackendCall";
 import { useSessionRead } from "../useSessionRead";
 
@@ -94,10 +94,10 @@ export function ImportSpec({ open, spec, launcherButtonRef, onClose, onImported 
 		{ fields: ["name"], orderBy: { field: "name", order: "asc" }, limit: 500 },
 		spec ? null : undefined,
 	);
-	const fetchSource = useFrappePostCall<FrappeEnvelope<SourceText>>(
+	const fetchSource = useFrappePostCall<FrappeResponse<SourceText>>(
 		"espresso_sync.api.schema.fetch_spec_source",
 	);
-	const saveSpec = useFrappePostCall<FrappeEnvelope<SavedSpec>>("espresso_sync.api.schema.save_spec");
+	const saveSpec = useFrappePostCall<FrappeResponse<SavedSpec>>("espresso_sync.api.schema.save_spec");
 	useSessionRead(fetchSource.result, fetchSource.error);
 	useSessionRead(saveSpec.result, saveSpec.error);
 
@@ -114,10 +114,13 @@ export function ImportSpec({ open, spec, launcherButtonRef, onClose, onImported 
 	/** The text at a URL, fetched by the server; a failure is an Error with its reason. */
 	async function fetchText(target: string): Promise<SourceText> {
 		try {
-			return (await fetchSource.call({ url: target, connection: credentials })).message;
+			const { message } = await fetchSource.call({ url: target, connection: credentials });
+			if (message) return message;
 		} catch (error) {
 			throw new Error(getErrorMessage(error, `${target} couldn't be fetched.`), { cause: error });
 		}
+		// frappe leaves `message` out only when the method returned None
+		throw new Error(`${target} couldn't be fetched.`);
 	}
 
 	async function submit() {
@@ -157,6 +160,7 @@ export function ImportSpec({ open, spec, launcherButtonRef, onClose, onImported 
 				original_version: prepared.originalVersion,
 				name: spec?.name,
 			});
+			if (!saved) throw new Error("The spec couldn't be saved.");
 			onImported(saved);
 		} catch (error) {
 			setFailure(toFailure(error));

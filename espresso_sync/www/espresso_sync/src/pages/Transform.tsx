@@ -31,6 +31,7 @@ import {
 	Save,
 } from "@carbon/react/icons";
 import { useFrappeGetCall, useFrappeGetDoc, useFrappeUpdateDoc } from "frappe-react-sdk";
+import type { FrappeResponse } from "frappe-types";
 import { compileRules, type Rule } from "../../../../public/js/editor/compile.ts";
 import {
 	type Diagnostic,
@@ -69,7 +70,6 @@ import {
 } from "../../../../public/js/editor/schemaTree.ts";
 import { inferFromSamples, inferType, toJsonSchema } from "../../../../public/js/editor/typeInfer.ts";
 import { useToasts } from "../portal/Toasts";
-import type { FrappeEnvelope } from "../portal/types";
 import { getErrorMessage, parseJson, useBackendCall } from "../portal/useBackendCall";
 import { deskFormUrl, hrefFor } from "../route";
 import { useSessionRead } from "../useSessionRead";
@@ -196,7 +196,7 @@ export function Transform({ name }: { name: string }) {
 	useSessionRead(doc.data, doc.error);
 	const transform = doc.data;
 	const importing = transform?.direction === "Import";
-	const operation = useFrappeGetCall<FrappeEnvelope<OperationSchema>>(
+	const operation = useFrappeGetCall<FrappeResponse<OperationSchema>>(
 		"espresso_sync.api.schema.get_operation_schema",
 		transform && {
 			spec: transform.api_spec,
@@ -206,7 +206,7 @@ export function Transform({ name }: { name: string }) {
 		},
 		transform ? undefined : null,
 	);
-	const doctype = useFrappeGetCall<FrappeEnvelope<unknown>>(
+	const doctype = useFrappeGetCall<FrappeResponse<unknown>>(
 		"espresso_sync.api.schema.get_doctype_schema",
 		transform && { doctype: transform.document_type, mode: importing ? "insert" : "read" },
 		transform ? undefined : null,
@@ -222,7 +222,9 @@ export function Transform({ name }: { name: string }) {
 		</Breadcrumb>
 	);
 	const error = doc.error ?? operation.error ?? doctype.error;
-	if (error) {
+	// get_operation_schema always returns a schema: a body without one is a failed load, not a pending one.
+	const noSchema = operation.data !== undefined && operation.data.message === undefined;
+	if (error || noSchema) {
 		const missing = doc.error && (doc.error as { httpStatus?: number }).httpStatus === 404;
 		return (
 			<Stack gap={6}>
@@ -237,7 +239,7 @@ export function Transform({ name }: { name: string }) {
 			</Stack>
 		);
 	}
-	if (!transform || !operation.data || !doctype.data) {
+	if (!transform || !operation.data?.message || !doctype.data) {
 		return (
 			<Stack gap={6}>
 				{breadcrumb}
