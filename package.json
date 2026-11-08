@@ -1,6 +1,6 @@
 {
 	"name": "espresso-sync",
-	"version": "0.0.1",
+	"version": "16.0.0",
 	"private": true,
 	"description": "Two-way REST API sync: JSONata transforms checked against OpenAPI and DocTypes",
 	"license": "MIT",
