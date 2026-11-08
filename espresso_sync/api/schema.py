@@ -104,7 +104,7 @@ def save_spec(
 	doc.update(
 		{
 			"title": title,
-			"spec_json": json.dumps(spec, ensure_ascii=False),
+			"spec_json": json.dumps(spec, ensure_ascii=False, separators=(",", ":")),
 			"source_url": source_url,
 			"source_format": source_format or "OpenAPI 3.1",
 			"original_version": original_version or openapi.spec_version(spec),

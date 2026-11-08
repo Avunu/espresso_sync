@@ -125,6 +125,11 @@ class TestSchemaEndpoints(IntegrationTestCase):
 		self.assertEqual(len(doc.spec_hash or ""), 64)
 		self.assertEqual(doc.original_version, "3.1.0")
 		self.assertTrue(frappe.get_meta(api.SPEC).track_changes)
+		# stored as compact as the import screen measures it against MAX_SPEC_BYTES
+		spec_json = str(doc.spec_json)
+		self.assertEqual(
+			spec_json, json.dumps(json.loads(spec_json), ensure_ascii=False, separators=(",", ":"))
+		)
 		# saving it again changes nothing; a changed spec gets a new hash
 		again = api.save_spec(as_json("composition.yaml"), "Payments", name=self.spec)
 		self.assertFalse(again["changed"])

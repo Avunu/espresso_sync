@@ -47,7 +47,7 @@ class EspressoSyncAPISpec(Document):
 		if not self.flags.ignore_permissions:
 			frappe.only_for("System Manager")
 		spec = self.get_spec()
-		self.spec_json = json.dumps(spec, ensure_ascii=False)
+		self.spec_json = json.dumps(spec, ensure_ascii=False, separators=(",", ":"))
 		self.spec_hash = spec_hash(spec)
 		self.operations = json.dumps(list_operations(spec), ensure_ascii=False)
 		self.auth_hints = json.dumps(auth_hints(spec), ensure_ascii=False)
