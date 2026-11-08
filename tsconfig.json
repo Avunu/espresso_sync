@@ -1,28 +1,21 @@
-// The /espresso_sync page's React app (espresso_sync/www/espresso_sync/src) and its Vite config.
-// App-owned: declared in pyproject.toml's [[tool.frappe-nix.typescript.spa]]. The managed
-// projects are in tsconfig.solution.json; the pure modules the app imports from
-// espresso_sync/public/js/editor are also checked there, with their tests.
+// The /espresso_sync page's React sources (espresso_sync/www/espresso_sync/src). App-owned:
+// declared in pyproject.toml's [[tool.frappe-nix.typescript.spa]]. Frappe's esbuild reads
+// "jsx" from here too. The managed projects are in tsconfig.solution.json.
 {
 	"extends": "frappe-types/tsconfig/base.json",
 	"compilerOptions": {
 		"jsx": "react-jsx",
-		"types": ["node", "vite/client"],
+		// Browser code: none of node_modules/@types (Node's timers, say) unless imported.
+		"types": [],
 		"allowImportingTsExtensions": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noImplicitReturns": true,
 		"noPropertyAccessFromIndexSignature": true,
-		"noUncheckedSideEffectImports": true,
-		"allowUnreachableCode": false,
-		"allowUnusedLabels": false,
 		// @carbon/react's declarations import prop-types and aren't written for these strict
 		// flags; the app's own code is still checked with them.
 		"skipLibCheck": true
 	},
-	"include": [
-		"espresso_sync/www/espresso_sync/src/**/*.ts",
-		"espresso_sync/www/espresso_sync/src/**/*.tsx",
-		"vite.config.ts"
-	],
+	"include": ["espresso_sync/www/espresso_sync/src/**/*.ts", "espresso_sync/www/espresso_sync/src/**/*.tsx"],
 	"exclude": ["node_modules", "espresso_sync/public/dist"]
 }

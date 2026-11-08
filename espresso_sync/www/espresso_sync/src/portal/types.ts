@@ -3,9 +3,10 @@
 
 /** frappe-js-sdk's call.get/call.post resolve with the raw HTTP body -
  * Frappe's `{ message: <return value> }` envelope - not the inner payload,
- * even though the SDK's own generic pretends otherwise. useBackendCall
- * unwraps it; anything read straight through the SDK (useFrappeGetCall) must
- * type its response as an envelope. */
+ * even though the SDK's own generic pretends otherwise (verified against the
+ * bundled SDK 1.17.1, call.get `.then(m => m.data)`). useBackendCall unwraps
+ * it; anything read straight through the SDK (useFrappeGetCall) must type
+ * its response as an envelope. */
 export interface FrappeEnvelope<T> {
 	message: T;
 }
@@ -16,24 +17,22 @@ export interface ToastState {
 	id: number;
 	kind: ToastKind;
 	title: string;
-	subtitle?: string;
 }
 
 export type ShowToast = (toast: Omit<ToastState, "id">) => void;
 
-/** What espresso_sync/portal.py's get_boot() puts in `boot`: no Connection data, nothing secret. */
+/** What espresso_sync/portal.py's set_portal_context() puts in `boot`: nothing about any Connection. */
 export interface PortalBoot {
 	user: string;
-	full_name: string;
-	/** System Settings' session_expiry, "HH:MM[:SS]". */
 	session_expiry?: string;
+	/** The expression engine's worker script (public/js/jsonata-worker.bundle.js). */
+	jsonata_worker_url: string;
 }
 
 declare global {
 	interface Window {
 		csrf_token?: string;
 		sitename?: string;
-		developer_mode?: boolean;
 		portal_boot?: PortalBoot;
 	}
 }

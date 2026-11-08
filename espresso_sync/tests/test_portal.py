@@ -25,6 +25,7 @@ API_KEY = "X-Portal-Test-Key"
 ASSETS = {
 	"espresso-sync.bundle.js": "/assets/espresso_sync/dist/js/espresso-sync.bundle.T3stH4sh.js",
 	"espresso-sync.bundle.css": "/assets/espresso_sync/dist/css/espresso-sync.bundle.T3stH4sh.css",
+	"jsonata-worker.bundle.js": "/assets/espresso_sync/dist/js/jsonata-worker.bundle.T3stH4sh.js",
 }
 
 
@@ -103,14 +104,22 @@ class TestPortalPage(IntegrationTestCase):
 		response, html = self.render(self.outsider)
 
 		self.assertEqual(response.status_code, 403)
+		# Core's /logout page signs out; core's own Not Permitted page would offer "Login",
+		# which sends a signed-in user straight back here.
+		self.assertIn('href="/logout"', html)
 		self.assertIn("Sign out", html)
-		self.assertIn('action="/api/method/web_logout"', html)
-		self.assertIn(f'name="csrf_token" value="{frappe.session.data.csrf_token}"', html)
 		self.assertIn(self.outsider, html)
-		# A desk user is offered the desk too; the app itself is never sent.
-		self.assertIn('href="/desk"', html)
+		# The app itself is never sent.
 		self.assertNotIn("portal_boot", html)
-		self.assertNotIn("espresso-sync.bundle", html)
+		self.assertNotIn(ASSETS["espresso-sync.bundle.js"], html)
+
+	def test_a_system_manager_without_read_on_connections_gets_403(self):
+		# Otherwise the page's list would be refused, which the page takes for an ended session.
+		frappe.set_user(self.manager)
+		with patch("frappe.has_permission", return_value=False):
+			self.assertFalse(portal.has_access())
+			context = self.context_for(self.manager)
+		self.assertTrue(context.forbidden)
 
 	def test_the_forbidden_context_carries_no_boot(self):
 		context = self.context_for(self.outsider)
@@ -125,7 +134,7 @@ class TestPortalPage(IntegrationTestCase):
 				self.assertEqual(response.status_code, 200)
 				self.assertIn('<div id="app"></div>', html)
 				self.assertIn(
-					f'<script type="module" src="{ASSETS["espresso-sync.bundle.js"]}"></script>', html
+					f'<script type="text/javascript" src="{ASSETS["espresso-sync.bundle.js"]}">', html
 				)
 				self.assertIn(ASSETS["espresso-sync.bundle.css"], html)
 				self.assertIn(f"window.csrf_token = {json.dumps(frappe.session.data.csrf_token)}", html)
@@ -136,9 +145,11 @@ class TestPortalPage(IntegrationTestCase):
 
 		self.assertFalse(context.forbidden)
 		boot = context["boot"]
-		self.assertEqual(set(boot), {"user", "full_name", "session_expiry"})
+		self.assertEqual(set(boot), {"user", "session_expiry", "jsonata_worker_url"})
 		self.assertEqual(boot["user"], self.manager)
 		self.assertEqual(boot["session_expiry"], frappe.get_system_settings("session_expiry"))
+		# The worker is asked for by its bundle name, so a build's hash reaches the page.
+		self.assertEqual(boot["jsonata_worker_url"], ASSETS["jsonata-worker.bundle.js"])
 		self.assertTrue(context.csrf_token)
 		self.assertEqual(context.sitename, frappe.local.site)
 
@@ -146,15 +157,6 @@ class TestPortalPage(IntegrationTestCase):
 		for value in (SECRET, API_KEY, CONNECTION_NAME):
 			self.assertNotIn(value, json.dumps(boot))
 			self.assertNotIn(value, html)
-
-	def test_the_boot_cannot_break_out_of_its_script(self):
-		frappe.db.set_value("User", self.manager, "first_name", "</script><script>alert(1)</script>")
-		self.addCleanup(frappe.db.set_value, "User", self.manager, "first_name", "es-portal-manager")
-		# get_fullname keeps the names it has read for the rest of the request.
-		getattr(frappe.local, "fullnames", {}).pop(self.manager, None)
-		_response, html = self.render(self.manager)
-		self.assertNotIn("<script>alert(1)", html)
-		self.assertIn("\\u003c/script\\u003e\\u003cscript\\u003ealert(1)", html)
 
 	def test_the_page_refuses_to_be_framed(self):
 		for user in (self.manager, self.outsider):
@@ -179,7 +181,9 @@ class TestPortalPage(IntegrationTestCase):
 
 	def test_roles_are_checked_against_the_portal_roles(self):
 		frappe.set_user(self.outsider)
-		set_request(method="GET", path=ROUTE)
-		self.assertFalse(portal.require_login())
-		with patch.object(portal, "PORTAL_ROLES", ("Website Manager",)):
-			self.assertTrue(portal.require_login())
+		self.assertFalse(portal.has_access())
+		with (
+			patch.object(portal, "PORTAL_ROLES", ("Website Manager",)),
+			patch("frappe.has_permission", return_value=True),
+		):
+			self.assertTrue(portal.has_access())

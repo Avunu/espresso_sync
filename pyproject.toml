@@ -26,25 +26,18 @@ siblings = []
 # Off the marketplace until the transform editor replaces the legacy maps.
 publish = false
 
-# The /espresso_sync page: a React app built by the root vite.config.ts. Its pure modules
-# (espresso_sync/public/js/editor) are in the managed projects, with their node:test tests.
+# The /espresso_sync page's React sources, built by Frappe's esbuild through
+# public/js/espresso-sync.bundle.js and checked with the app's own tsconfig.json (JSX).
+# The pure modules they import (public/js/editor) stay in the managed projects, with their tests.
 [[tool.frappe-nix.typescript.spa]]
 root = "."
-include = ["espresso_sync/www/espresso_sync/src/**", "vite.config.ts"]
+include = ["espresso_sync/www/espresso_sync/src/**"]
 tsconfig = "tsconfig.json"
 check = "tsc -p tsconfig.json"
 
 [[tool.frappe-nix.js.oxlint.overrides]]
-# The page's entry imports its fonts and stylesheet for what they do on load.
-files = ["espresso_sync/www/espresso_sync/src/main.tsx"]
-rules = { "import/no-unassigned-import" = "off" }
-
-[[tool.frappe-nix.js.oxlint.overrides]]
 # A Worker's postMessage has no target origin: the rule is for window.postMessage.
-files = [
-	"espresso_sync/public/js/editor/evalWorker.ts",
-	"espresso_sync/www/espresso_sync/src/evalWorker.worker.ts",
-]
+files = ["espresso_sync/public/js/editor/evalWorker.ts"]
 rules = { "unicorn/require-post-message-target-origin" = "off" }
 
 [[tool.frappe-nix.unchecked-js]]

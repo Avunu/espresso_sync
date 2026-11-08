@@ -67,16 +67,7 @@
 			}
 		},
 		{
-			"files": ["espresso_sync/www/espresso_sync/src/main.tsx"],
-			"rules": {
-				"import/no-unassigned-import": "off"
-			}
-		},
-		{
-			"files": [
-				"espresso_sync/public/js/editor/evalWorker.ts",
-				"espresso_sync/www/espresso_sync/src/evalWorker.worker.ts"
-			],
+			"files": ["espresso_sync/public/js/editor/evalWorker.ts"],
 			"rules": {
 				"unicorn/require-post-message-target-origin": "off"
 			}

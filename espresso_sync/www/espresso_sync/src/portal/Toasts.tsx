@@ -17,9 +17,9 @@ export function ToastProvider({ children }: PropsWithChildren) {
 	const [toasts, setToasts] = useState<ToastState[]>([]);
 
 	const showToast = useCallback<ShowToast>((next) => {
-		// Newest on top; older toasts stay until they time out or are closed
+		// Newest nearest the corner; older toasts stay until they are closed,
 		// so a burst of them can't silently replace each other.
-		setToasts((current) => [{ ...next, id: nextToastId++ }, ...current]);
+		setToasts((current) => [...current, { ...next, id: nextToastId++ }]);
 	}, []);
 
 	const dismissToast = useCallback((id: number) => {
@@ -29,17 +29,23 @@ export function ToastProvider({ children }: PropsWithChildren) {
 	return (
 		<ToastContext.Provider value={showToast}>
 			{children}
-			{/* Top-right, just under Carbon's 3rem fixed Header. */}
-			<div className="es-toasts" aria-live="polite">
+			{/* Bottom right, where the desk shows its own alerts. */}
+			<div
+				style={{
+					position: "fixed",
+					bottom: "1rem",
+					right: "1rem",
+					maxHeight: "calc(100vh - 5rem)",
+					overflowY: "auto",
+					zIndex: 9000,
+				}}
+			>
 				{toasts.map((toast) => (
 					<ToastNotification
 						key={toast.id}
 						kind={toast.kind}
 						title={toast.title}
-						{...(toast.subtitle === undefined ? {} : { subtitle: toast.subtitle })}
-						timeout={toast.kind === "error" ? 0 : 8000}
 						onClose={() => dismissToast(toast.id)}
-						className="es-toast"
 					/>
 				))}
 			</div>

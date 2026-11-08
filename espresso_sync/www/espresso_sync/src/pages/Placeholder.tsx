@@ -2,34 +2,26 @@
 // For license information, please see license.txt
 
 import type { ReactNode } from "react";
-import { Breadcrumb, BreadcrumbItem, Button, Tile } from "@carbon/react";
-import { ArrowLeft } from "@carbon/react/icons";
+import { Breadcrumb, BreadcrumbItem, Stack, Tile } from "@carbon/react";
+import { hrefFor } from "../route";
 
 interface PlaceholderProps {
-	/** What the page is, above the name: "API spec", "Transform". */
+	/** What the page is: "API spec", "Transform". */
 	kind: string;
-	name: string;
+	name: string | undefined;
 	children: ReactNode;
 }
 
 /** A screen whose tools aren't built yet: where it is, what it will do, and the way back. */
 export function Placeholder({ kind, name, children }: PlaceholderProps) {
 	return (
-		<div className="es-page">
+		<Stack gap={6}>
 			<Breadcrumb noTrailingSlash>
-				<BreadcrumbItem href="#/">Espresso Sync</BreadcrumbItem>
+				<BreadcrumbItem href={hrefFor("connections")}>Connections</BreadcrumbItem>
 				<BreadcrumbItem isCurrentPage>{kind}</BreadcrumbItem>
 			</Breadcrumb>
-			<header className="es-heading">
-				<p className="es-heading__kind">{kind}</p>
-				<h1>{name}</h1>
-			</header>
-			<Tile className="es-placeholder">{children}</Tile>
-			<div>
-				<Button kind="tertiary" size="md" href="#/" renderIcon={ArrowLeft}>
-					Back to the overview
-				</Button>
-			</div>
-		</div>
+			<h1>{name ?? kind}</h1>
+			<Tile>{children}</Tile>
+		</Stack>
 	);
 }

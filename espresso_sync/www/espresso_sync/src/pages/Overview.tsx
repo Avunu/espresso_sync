@@ -18,13 +18,12 @@ import {
 	TableToolbar,
 	TableToolbarContent,
 	Tag,
-	Tile,
 } from "@carbon/react";
 import { Add, Launch } from "@carbon/react/icons";
 import { useFrappeGetDocList } from "frappe-react-sdk";
-import { deskFormUrl } from "../../../../public/js/editor/routes.ts";
 import { useSession } from "../portal/session";
 import { getErrorMessage, readFailure } from "../portal/useBackendCall";
+import { deskFormUrl } from "../route";
 
 const CONNECTION = "Espresso Sync Connection";
 
@@ -44,6 +43,9 @@ const HEADERS = [
 	{ key: "sync_frequency", header: "Runs" },
 	{ key: "last_pull", header: "Last sync" },
 ];
+
+const DESCRIPTION =
+	"Each Connection holds an API's address and credentials, which are edited in the desk. API specs and transforms are on their way.";
 
 /** Frappe's "YYYY-MM-DD HH:MM:SS.ffffff" (system time zone), to the minute. */
 function formatDatetime(value: string | null): string {
@@ -79,7 +81,8 @@ function ConnectionCell({ row, column }: { row: ConnectionRow; column: string })
 	}
 }
 
-function Connections() {
+/** `#/connections`, and where the page opens: the Connections, linking to the desk for each. */
+export function Overview() {
 	const { data, error, isLoading } = useFrappeGetDocList<ConnectionRow>(CONNECTION, {
 		fields: ["name", "api_domain", "pull_shot", "sync_frequency", "last_pull"],
 		orderBy: { field: "modified", order: "desc" },
@@ -92,19 +95,12 @@ function Connections() {
 	}, [data, recordActivity]);
 
 	useEffect(() => {
-		// A 403 here usually means the session ended; reportForbidden checks before it reloads.
-		// If the session is alive (the site took System Manager's read off the DocType), the
-		// error notification below stays.
-		if (error && readFailure(error).httpStatus === 403) void reportForbidden();
+		// portal.py lets no one in who can't read the Connections, so a 403 means the session ended.
+		if (error && readFailure(error).httpStatus === 403) reportForbidden();
 	}, [error, reportForbidden]);
 
-	const description =
-		"Each Connection holds an API's address and credentials. Credentials are edited in the desk, never here.";
-
 	if (isLoading) {
-		return (
-			<DataTableSkeleton headers={HEADERS} columnCount={HEADERS.length} rowCount={3} showHeader={false} />
-		);
+		return <DataTableSkeleton headers={HEADERS} columnCount={HEADERS.length} rowCount={3} />;
 	}
 	if (error) {
 		return (
@@ -129,12 +125,12 @@ function Connections() {
 	const byId = new Map(rows.map((row) => [row.id, row]));
 
 	return (
-		<DataTable rows={rows} headers={HEADERS} size="md">
+		<DataTable rows={rows} headers={HEADERS}>
 			{({ rows: tableRows, headers, getTableProps, getTableContainerProps }) => (
-				<TableContainer title="Connections" description={description} {...getTableContainerProps()}>
+				<TableContainer title="Connections" description={DESCRIPTION} {...getTableContainerProps()}>
 					<TableToolbar aria-label="Connections">
 						<TableToolbarContent>
-							<Button kind="primary" size="md" href={deskFormUrl(CONNECTION)} renderIcon={Add}>
+							<Button kind="primary" href={deskFormUrl(CONNECTION)} renderIcon={Add}>
 								New connection
 							</Button>
 						</TableToolbarContent>
@@ -162,41 +158,8 @@ function Connections() {
 							})}
 						</TableBody>
 					</Table>
-					{rows.length === 0 && (
-						<p className="es-empty">No Connections yet. Add one in the desk to get started.</p>
-					)}
 				</TableContainer>
 			)}
 		</DataTable>
-	);
-}
-
-/** `#/`: the Connections, and what will be built on them. */
-export function Overview() {
-	return (
-		<div className="es-page">
-			<header className="es-heading">
-				<h1>Espresso Sync</h1>
-				<p>Keep your DocTypes in step with other systems&apos; REST APIs.</p>
-			</header>
-			<Connections />
-			<section className="es-coming" aria-labelledby="es-coming-title">
-				<h2 id="es-coming-title">API specs and transforms</h2>
-				<div className="es-coming__tiles">
-					<Tile>
-						<h3>API specs</h3>
-						<p>Import an API&apos;s OpenAPI document to see the operations a Connection can call.</p>
-					</Tile>
-					<Tile>
-						<h3>Transforms</h3>
-						<p>
-							Map an operation&apos;s data to a DocType and back, one field at a time, checked against both
-							schemas and previewed on real samples.
-						</p>
-					</Tile>
-				</div>
-				<p className="es-muted">Both are on their way in a coming version of Espresso Sync.</p>
-			</section>
-		</div>
 	);
 }

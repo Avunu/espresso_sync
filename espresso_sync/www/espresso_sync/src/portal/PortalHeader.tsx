@@ -1,12 +1,8 @@
 // Copyright (c) 2026, Avunu LLC and contributors
 // For license information, please see license.txt
 
-import { Header, HeaderGlobalAction, HeaderGlobalBar, HeaderName, SkipToContent, Theme } from "@carbon/react";
+import { Header, HeaderGlobalAction, HeaderGlobalBar, HeaderName, Theme } from "@carbon/react";
 import { type CarbonIconType, Home, Renew } from "@carbon/react/icons";
-import type { MouseEvent } from "react";
-
-/** The id of App's `<main>`, which the skip link focuses. */
-export const MAIN_CONTENT_ID = "main-content";
 
 interface UtilityAction {
 	label: string;
@@ -15,20 +11,8 @@ interface UtilityAction {
 }
 
 /**
- * Carbon's skip link is a plain `<a href="#main-content">`: followed, it would
- * put `#main-content` in the URL in place of the route (a reload or a shared
- * link would then lose the screen; useRoute only keeps it for this page view).
- * It moves focus to the page's main region instead (App gives it tabIndex -1),
- * leaving the hash alone.
- */
-function skipToMain(event: MouseEvent<HTMLAnchorElement>): void {
-	event.preventDefault();
-	document.getElementById(MAIN_CONTENT_ID)?.focus();
-}
-
-/**
- * The actions at the far end of the toolbar. The page is for System Managers,
- * who all have the desk, so the last one goes back to it.
+ * The actions at the far end of the toolbar. The last one leaves the page:
+ * everyone who can open it is a System Manager, so it goes back to the desk.
  */
 const UTILITY_ACTIONS: UtilityAction[] = [
 	{ label: "Reload page", icon: Renew, onClick: () => window.location.reload() },
@@ -36,27 +20,26 @@ const UTILITY_ACTIONS: UtilityAction[] = [
 ];
 
 /**
- * The toolbar: Carbon's UI Shell header, always on the dark g100 theme (light
- * text and icons on a near-black bar, as in IBM's own products) whatever theme
- * the page below follows. Fixed at 3rem tall, so the page leaves 3rem at the top.
+ * The toolbar: Carbon's UI Shell header, on the dark g100 theme - light text
+ * and icons on a near-black bar, as in IBM's own products - while the page
+ * below stays on the light theme set by mountPortal. Fixed at 3rem tall;
+ * Carbon's `Content` leaves the room for it.
  */
-export function PortalHeader() {
-	const user = window.portal_boot?.full_name ?? window.portal_boot?.user;
+export function PortalHeader({ name }: { name: string }) {
 	return (
 		<Theme theme="g100">
-			<Header aria-label="Espresso Sync">
-				<SkipToContent href={`#${MAIN_CONTENT_ID}`} onClick={skipToMain} />
-				<HeaderName href="#/" prefix="">
-					Espresso Sync
+			<Header aria-label={name}>
+				<HeaderName href="#" prefix="">
+					{name}
 				</HeaderName>
 				<HeaderGlobalBar>
-					{user && <span className="es-header-user">{user}</span>}
 					{UTILITY_ACTIONS.map(({ label, icon: Icon, onClick }, index) => (
 						<HeaderGlobalAction
 							key={label}
 							aria-label={label}
 							onClick={onClick}
-							// A tooltip centred under the last icon would hang off the screen.
+							// A tooltip centered under the last icon would hang off the
+							// edge of the screen.
 							tooltipAlignment={index === UTILITY_ACTIONS.length - 1 ? "end" : "center"}
 						>
 							<Icon size={20} />

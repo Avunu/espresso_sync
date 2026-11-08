@@ -1,23 +1,15 @@
 # Copyright (c) 2026, Avunu LLC and contributors
 # For license information, please see license.txt
 
-"""Server side of the Espresso Sync page at /espresso_sync (www/espresso_sync).
+"""Server side of the standalone React page at /espresso_sync (www/espresso_sync).
 
-The page is a React app (www/espresso_sync/src) that reads and writes through
-Frappe's own REST API and the app's whitelisted methods, each of which checks
-permissions itself. What this module adds is the gate in front of the page and
-the little the app needs to start:
+Signing in is Frappe core's job, not the page's: a Guest is sent to core's
+/login with `redirect-to`, the same way frappe/www/desk.py guards /desk.
+Core's login page offers whichever providers are configured and passes
+`redirect-to` into each of them, so nothing here knows or cares which
+authentication method the site uses.
 
-- A Guest is sent to core's /login, coming back here once signed in, the way
-  frappe/www/desk.py guards /desk. Core's login page offers whichever sign-in
-  methods the site has, so nothing here knows which.
-- A signed-in user without the System Manager role gets a 403 page with a
-  Sign out button (core's own Not Permitted page only offers "Login", which a
-  signed-in user can't use), and never the app.
-- The page can't be framed by another site (clickjacking): it sends
-  `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`.
-- The boot holds who is signed in and the session settings, and nothing about
-  any Connection: the app fetches what it shows, through the permission checks.
+Front-end counterpart: www/espresso_sync/src/portal/.
 """
 
 from urllib.parse import urlencode
@@ -25,66 +17,65 @@ from urllib.parse import urlencode
 import frappe
 from frappe import _
 from frappe.sessions import get_csrf_token
+from frappe.utils.jinja_globals import bundled_asset
 
 #: Who may use the page. The editor writes transforms that run as background
 #: jobs against external systems, so it is the same role the sync endpoints require.
 PORTAL_ROLES = ("System Manager",)
 
-#: Response headers that keep the page out of frames on any other site.
-FRAMING_HEADERS = {
-	"X-Frame-Options": "DENY",
-	"Content-Security-Policy": "frame-ancestors 'none'",
-}
+#: The DocType the page lists.
+CONNECTION = "Espresso Sync Connection"
 
 
 def deny_framing() -> None:
-	"""Refuse to be shown in a frame. frappe.app adds these to the response it builds."""
-	for header, value in FRAMING_HEADERS.items():
-		frappe.local.response_headers.set(header, value)
+	"""Refuse to be shown in a frame on another site (clickjacking). frappe.app adds these to the response."""
+	frappe.local.response_headers.set("X-Frame-Options", "DENY")
+	frappe.local.response_headers.set("Content-Security-Policy", "frame-ancestors 'none'")
 
 
-def require_login() -> bool:
-	"""Send a Guest to core /login and back; answer whether the signed-in user may use the page."""
+def require_login() -> None:
+	"""Send a Guest to core /login, coming back to this page once signed in."""
 	if frappe.session.user == "Guest":
 		frappe.redirect(f"/login?{urlencode({'redirect-to': frappe.request.path})}")
-	if frappe.session.user == "Administrator":
-		return True
-	return not set(PORTAL_ROLES).isdisjoint(frappe.get_roles())
 
 
-def is_desk_user() -> bool:
-	"""Whether the user can open the desk (a System User), so the 403 page can offer it."""
-	return frappe.get_cached_value("User", frappe.session.user, "user_type") == "System User"
+def has_access() -> bool:
+	"""Whether the signed-in user may use the page: one of PORTAL_ROLES, and read on the Connections.
+
+	Checked here rather than left to the page's own calls, so a user without
+	access never loads the page - and so its 403s can only mean the session
+	ended (see SessionProvider), never "reload and be refused again".
+	"""
+	if set(PORTAL_ROLES).isdisjoint(frappe.get_roles()):
+		return False
+	return bool(frappe.has_permission(CONNECTION, "read"))
 
 
 def set_forbidden_context(context: frappe._dict) -> None:
-	"""The 403 page: who is signed in, and a Sign out form (core's web_logout is a POST)."""
+	"""The 403 page, with a Sign out link.
+
+	Core's own Not Permitted page offers only "Login", which sends a signed-in
+	user straight back here; core's /logout page signs them out instead.
+	"""
 	context.http_status_code = 403
 	context.forbidden = True
 	context.title = _("Not permitted")
 	context.message = _("Espresso Sync is only for users with the {0} role.").format(_(PORTAL_ROLES[0]))
 	context.user = frappe.session.user
-	context.desk_user = is_desk_user()
-	context.csrf_token = get_csrf_token()
-
-
-def get_boot() -> dict:
-	"""What the React app starts with. No Connection data, and nothing secret."""
-	user = frappe.session.user
-	return {
-		"user": user,
-		"full_name": frappe.utils.get_fullname(user),
-		# The app reloads when the session would have run out (www/espresso_sync/src/portal/session.tsx).
-		"session_expiry": frappe.get_system_settings("session_expiry"),
-	}
 
 
 def set_portal_context(context: frappe._dict) -> None:
-	"""Everything index.html hands the React app."""
+	"""Fill in what index.html hands to the React app: who is signed in, and nothing about any Connection."""
 	context.title = _("Espresso Sync")
 	context.forbidden = False
-	# get_csrf_token stores a new token in the session, which saves itself.
+	# get_csrf_token stores a new token in the session, which commits itself.
 	context.csrf_token = get_csrf_token()
 	context.sitename = frappe.local.site
-	context.developer_mode = bool(frappe.conf.developer_mode)
-	context.boot = get_boot()
+	context.boot = {
+		"user": frappe.session.user,
+		# The React side times the session out from this and reloads the
+		# page when it runs out, which lands on require_login() above.
+		"session_expiry": frappe.get_system_settings("session_expiry"),
+		# The expression engine's worker, built by Frappe's esbuild like any bundle.
+		"jsonata_worker_url": bundled_asset("jsonata-worker.bundle.js"),
+	}

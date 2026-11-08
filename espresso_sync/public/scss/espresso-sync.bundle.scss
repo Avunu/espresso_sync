@@ -1,0 +1,17 @@
+// Copyright (c) 2026, Avunu LLC and contributors
+// For license information, please see license.txt
+
+// Carbon's styles for the /espresso_sync page (www/espresso_sync), which
+// index.html includes as espresso-sync.bundle.css.
+// $css--font-face: false - Carbon's default @font-face rules use webpack-style
+// `url("~@ibm/plex/...")` paths that Frappe's esbuild cannot resolve, so the
+// page uses Carbon's fallback fonts unless IBM Plex is installed.
+@use "@carbon/react" with (
+	$css--font-face: false
+);
+@use "@carbon/react/scss/type";
+
+// Carbon's reset leaves headings unstyled.
+h1 {
+	@include type.type-style("heading-05");
+}
