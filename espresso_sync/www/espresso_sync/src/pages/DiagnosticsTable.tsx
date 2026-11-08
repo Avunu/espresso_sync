@@ -12,22 +12,22 @@ import {
 	TableHeader,
 	TableRow,
 } from "@carbon/react";
-import type { Diagnostic } from "../../../../public/js/editor/diagnostics.ts";
+import { type Finding, itemRanges } from "../../../../public/js/editor/mapping.ts";
 import { SeverityIcon } from "./SeverityIcon";
 
 const HEADERS = [
 	{ key: "severity", header: "Severity" },
 	{ key: "rule", header: "Field" },
 	{ key: "message", header: "Finding" },
-	{ key: "item", header: "Sample item" },
+	{ key: "items", header: "Sample items" },
 	{ key: "origin", header: "Found by" },
 ];
 
 interface DiagnosticsTableProps {
-	diagnostics: Diagnostic[];
+	diagnostics: Finding[];
 	/** Whether the server's findings are of the transform as it is: false while it has unsaved changes. */
 	current: boolean;
-	onShow: (diagnostic: Diagnostic) => void;
+	onShow: (diagnostic: Finding) => void;
 }
 
 /** What the browser and the server's last check found, a row each; a row's field opens its rule. */
@@ -37,7 +37,7 @@ export function DiagnosticsTable({ diagnostics, current, onShow }: DiagnosticsTa
 		severity: found.severity,
 		rule: found.rule,
 		message: found.message,
-		item: found.item ?? "",
+		items: itemRanges(found.items),
 		origin: found.origin,
 	}));
 	const description = current
@@ -77,7 +77,7 @@ export function DiagnosticsTable({ diagnostics, current, onShow }: DiagnosticsTa
 										<TableCell>
 											{found.message} <code>{found.code}</code>
 										</TableCell>
-										<TableCell>{found.item === undefined ? "" : found.item + 1}</TableCell>
+										<TableCell>{itemRanges(found.items)}</TableCell>
 										<TableCell>{found.origin === "server" ? "Server" : "Browser"}</TableCell>
 									</TableRow>
 								);

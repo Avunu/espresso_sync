@@ -13,6 +13,7 @@ import {
 	ruleReads,
 	insertSnippet,
 	collectionChain,
+	itemRanges,
 	itemsSchema,
 	mappingCounts,
 	pathExpression,
@@ -378,7 +379,33 @@ describe("mapping", () => {
 		};
 		const server = { ...base, message: "y", origin: "server" as const };
 		const other = { ...base, item: 1 };
-		assert.deepEqual(withoutRepeats([base, server, other]), [base, other]);
+		assert.deepEqual(withoutRepeats([base, server, other]), [
+			{ ...base, items: [] },
+			{ ...other, items: [1] },
+		]);
+	});
+
+	it("lists a finding the sample's items share once, with its items", () => {
+		const on = (item: number, message = "must have required property first_name"): Diagnostic => ({
+			rule: "",
+			path: "",
+			severity: "error",
+			code: "schema.required",
+			message,
+			origin: "client",
+			item,
+		});
+		const listed = withoutRepeats([on(0), on(1), on(2), on(4), on(3, "other")]);
+		assert.deepEqual(
+			listed.map((finding) => [finding.message, finding.items]),
+			[
+				["must have required property first_name", [0, 1, 2, 4]],
+				["other", [3]],
+			],
+		);
+		assert.equal(itemRanges([4, 0, 1, 2, 2]), "1–3, 5");
+		assert.equal(itemRanges([7]), "8");
+		assert.equal(itemRanges([]), "");
 	});
 });
 

@@ -43,6 +43,7 @@ import {
 	schemaValidator,
 	shownRow,
 	simplePath,
+	type Finding,
 	type Snippet,
 	sourceContext,
 	sourceReference,
@@ -363,7 +364,7 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 		[clientDiagnostics, serverDiagnostics, dirty],
 	);
 	const byRule = useMemo(() => {
-		const map = new Map<string, Diagnostic[]>();
+		const map = new Map<string, Finding[]>();
 		for (const found of diagnostics) map.set(found.rule, [...(map.get(found.rule) ?? []), found]);
 		return map;
 	}, [diagnostics]);

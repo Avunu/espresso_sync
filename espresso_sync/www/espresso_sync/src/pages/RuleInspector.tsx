@@ -16,8 +16,13 @@ import {
 } from "@carbon/react";
 import { TrashCan } from "@carbon/react/icons";
 import type { Rule } from "../../../../public/js/editor/compile.ts";
-import type { Diagnostic } from "../../../../public/js/editor/diagnostics.ts";
-import { type RuleResults, type Snippet, syntaxError } from "../../../../public/js/editor/mapping.ts";
+import {
+	type Finding,
+	itemRanges,
+	type RuleResults,
+	type Snippet,
+	syntaxError,
+} from "../../../../public/js/editor/mapping.ts";
 import { fromPointer, toPointer } from "../../../../public/js/editor/pointer.ts";
 import { ruleKind, type TreeNode as Field } from "../../../../public/js/editor/schemaTree.ts";
 import { fieldType } from "./FieldTree";
@@ -106,7 +111,7 @@ interface RuleInspectorProps {
 	/** The source path of the items a rule here runs on; undefined when that isn't a plain path. */
 	context: string[] | undefined;
 	results: RuleResults | undefined;
-	diagnostics: Diagnostic[];
+	diagnostics: Finding[];
 	/** How many sample items there are. */
 	items: number;
 	/** The source fields the rule reads. */
@@ -283,11 +288,15 @@ export function RuleInspector(props: RuleInspectorProps) {
 			)}
 			{diagnostics.map((found) => (
 				<InlineNotification
-					key={`${found.origin} ${found.code} ${found.path} ${found.item ?? ""}`}
+					key={`${found.origin} ${found.code} ${found.path} ${found.message} ${found.items.join()}`}
 					kind={found.severity === "info" ? "info" : found.severity}
 					lowContrast
 					hideCloseButton
-					title={found.item === undefined ? found.message : `Item ${found.item + 1}: ${found.message}`}
+					title={
+						found.items.length === 0
+							? found.message
+							: `${found.items.length === 1 ? "Item" : "Items"} ${itemRanges(found.items)}: ${found.message}`
+					}
 					subtitle={`${found.code} (${found.origin === "server" ? "server" : "browser"})`}
 				/>
 			))}

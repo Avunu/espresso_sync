@@ -422,18 +422,47 @@ export function schemaValidator(schema: unknown): ValidateFunction | undefined {
 	}
 }
 
+/** A diagnostic as the editor lists it, with the sample items it was found on (none when it isn't about one). */
+export interface Finding extends Diagnostic {
+	items: number[];
+}
+
 /**
  * The diagnostics as the editor lists them: one for each rule, path, code and
- * sample item, the first of any the browser and the server both found.
+ * sample item, the first of any the browser and the server both found; and of
+ * those, the ones that differ only in their item as one finding, with its
+ * items. A rule that fails on the whole sample is then one finding, not one an
+ * item.
  */
-export function withoutRepeats(diagnostics: readonly Diagnostic[]): Diagnostic[] {
+export function withoutRepeats(diagnostics: readonly Diagnostic[]): Finding[] {
 	const seen = new Set<string>();
-	return diagnostics.filter((found) => {
+	const findings = new Map<string, Finding>();
+	for (const found of diagnostics) {
 		const key = JSON.stringify([found.rule, found.path, found.code, found.item ?? null]);
-		if (seen.has(key)) return false;
+		if (seen.has(key)) continue;
 		seen.add(key);
-		return true;
-	});
+		const { rule, path, code, message, severity, origin, item } = found;
+		const shared = JSON.stringify([rule, path, code, message, severity, origin, item === undefined]);
+		const finding = findings.get(shared);
+		if (finding && item !== undefined) finding.items.push(item);
+		else findings.set(shared, { ...found, items: item === undefined ? [] : [item] });
+	}
+	return [...findings.values()];
+}
+
+/** Sample items as people count them, runs as ranges: [0, 3, 4, 5] is "1, 4–6". */
+export function itemRanges(items: readonly number[]): string {
+	const sorted = [...new Set(items)].sort((a, b) => a - b);
+	const ranges: string[] = [];
+	for (let start = 0; start < sorted.length;) {
+		let end = start;
+		while (end + 1 < sorted.length && (sorted[end + 1] as number) === (sorted[end] as number) + 1) end += 1;
+		const first = (sorted[start] as number) + 1;
+		const last = (sorted[end] as number) + 1;
+		ranges.push(first === last ? `${first}` : `${first}–${last}`);
+		start = end + 1;
+	}
+	return ranges.join(", ");
 }
 
 /** Text to insert into an expression: the caret (or the selection, wrapped) goes between `before` and `after`. */
