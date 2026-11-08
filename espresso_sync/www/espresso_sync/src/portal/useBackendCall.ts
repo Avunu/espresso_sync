@@ -3,7 +3,7 @@
 
 import { useCallback } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
-import type { FrappeResponse } from "frappe-types";
+import type { FrappeResponse, FrappeServerMessage } from "frappe-types";
 import { useSession } from "./session";
 import { useToasts } from "./Toasts";
 
@@ -49,11 +49,32 @@ export function readFailure(error: unknown): BackendFailure {
 	};
 }
 
-/** One entry of `_server_messages`: JSON text of a `{message}` object, or else plain text. */
+function isStringList(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+/** A decoded `_server_messages` entry that carries frappe's text: a string, an `as_list`
+ * list or an `as_table` list of rows. Checked, not asserted: the entry is JSON from the body. */
+function isServerMessage(value: unknown): value is Pick<FrappeServerMessage, "message"> {
+	if (!isRecord(value)) return false;
+	const { message } = value;
+	return (
+		typeof message === "string" ||
+		isStringList(message) ||
+		(Array.isArray(message) && message.every(isStringList))
+	);
+}
+
+/** One entry of `_server_messages`: JSON text of a FrappeServerMessage, or else plain text.
+ * A list message is one line per item, a table one line per row. */
 function messageOf(entry: unknown): string {
 	if (typeof entry !== "string") return "";
 	const parsed = parseJson(entry);
-	return isRecord(parsed) && typeof parsed["message"] === "string" ? parsed["message"] : entry;
+	if (!isServerMessage(parsed)) return entry;
+	const { message } = parsed;
+	if (typeof message === "string") return message;
+	const lines: readonly (string | string[])[] = message;
+	return lines.map((line) => (typeof line === "string" ? line : line.join(" "))).join("<br>");
 }
 
 /**
