@@ -54,8 +54,9 @@ function isStringList(value: unknown): value is string[] {
 }
 
 /** A decoded `_server_messages` entry that carries frappe's text: a string, an `as_list`
- * list or an `as_table` list of rows. Checked, not asserted: the entry is JSON from the body. */
-function isServerMessage(value: unknown): value is Pick<FrappeServerMessage, "message"> {
+ * list or an `as_table` list of rows. Checked, not asserted: the entry is JSON from the body.
+ * `msgprint(None)` sends `"message": null`, which carries no text and is not accepted. */
+function isServerMessage(value: unknown): value is { message: NonNullable<FrappeServerMessage["message"]> } {
 	if (!isRecord(value)) return false;
 	const { message } = value;
 	return (
