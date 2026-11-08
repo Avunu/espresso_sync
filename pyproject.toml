@@ -28,8 +28,8 @@ frappe-major = 16
 siblings = []
 
 [tool.frappe-nix.listing]
-# Registry pull requests stay manual for now: with publish on, every release would open one
-# (release.yml, when the MARKETPLACE_PUBLISH variable is "true") and nightly.yml would refresh it.
+# Off for now: with publish on, every release would open a registry pull request (release.yml,
+# when the MARKETPLACE_PUBLISH variable is "true") and nightly.yml would refresh it.
 publish = false
 
 # The /espresso_sync page's React sources, built by Frappe's esbuild through
