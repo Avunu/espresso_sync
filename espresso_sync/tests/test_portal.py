@@ -25,6 +25,7 @@ API_KEY = "X-Portal-Test-Key"
 ASSETS = {
 	"espresso-sync.bundle.js": "/assets/espresso_sync/dist/js/espresso-sync.bundle.T3stH4sh.js",
 	"espresso-sync.bundle.css": "/assets/espresso_sync/dist/css/espresso-sync.bundle.T3stH4sh.css",
+	"espresso-sync-eval.bundle.js": "/assets/espresso_sync/dist/js/espresso-sync-eval.bundle.T3stH4sh.js",
 }
 
 
@@ -144,9 +145,11 @@ class TestPortalPage(IntegrationTestCase):
 
 		self.assertFalse(context.forbidden)
 		boot = context["boot"]
-		self.assertEqual(set(boot), {"user", "session_expiry"})
+		self.assertEqual(set(boot), {"user", "session_expiry", "eval_worker"})
 		self.assertEqual(boot["user"], self.manager)
 		self.assertEqual(boot["session_expiry"], frappe.get_system_settings("session_expiry"))
+		# the worker is started from the URL the build gave its bundle
+		self.assertEqual(boot["eval_worker"], ASSETS["espresso-sync-eval.bundle.js"])
 		self.assertTrue(context.csrf_token)
 		self.assertEqual(context.sitename, frappe.local.site)
 

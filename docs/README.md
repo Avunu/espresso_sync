@@ -38,4 +38,4 @@ The ERP is always one side: a transform maps between a DocType and an API operat
 
 ## Status
 
-The portal page at `/espresso_sync` lists the Connections and the API Specs, imports specs, and starts a Draft transform on an operation. The transform editor that will build the rules there is in progress, and until it ships the app is not published to the Frappe marketplace. Rules can be written in the desk meanwhile.
+The portal page at `/espresso_sync` lists the Connections, the API Specs and the transforms, imports specs, starts a Draft transform on an operation, and edits a transform's rules in the [transform editor](transforms.md#the-editor). The app is not published to the Frappe marketplace yet.

@@ -11,6 +11,7 @@ from typing import Any, cast
 import frappe
 import requests
 from frappe import _
+from frappe.utils import get_datetime
 
 from espresso_sync.transform import dry_run as dry_run_module
 from espresso_sync.transform import engine, validate
@@ -53,13 +54,26 @@ def dry_run(name: str) -> list[dict[str, Any]]:
 
 
 @frappe.whitelist(methods=["POST"])
-def activate_transform(name: str) -> dict[str, Any]:
+def activate_transform(name: str, modified: str) -> dict[str, Any]:
 	"""Make the Transform Active, its rules frozen as they are; refused while a check finds
-	an error, or when the schemas changed since it was saved."""
+	an error, when the schemas changed since it was saved, and, as a save is, when it was
+	saved since `modified`, the version the caller read."""
 	frappe.only_for("System Manager")
 	doc = get_transform(name, "write")
+	if get_datetime(modified) != get_datetime(doc.modified):
+		frappe.throw(
+			_(
+				"{0} has been modified after you have opened it. Please refresh to get the latest document."
+			).format(doc.name),
+			frappe.TimestampMismatchError,
+		)
 	doc.activate()
-	return {"name": doc.name, "status": doc.status, "active_compiled": doc.active_compiled}
+	return {
+		"name": doc.name,
+		"status": doc.status,
+		"active_compiled": doc.active_compiled,
+		"modified": doc.modified,
+	}
 
 
 def connection_of(transform: str | None) -> str | None:

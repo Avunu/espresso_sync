@@ -4,12 +4,20 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	callKey,
 	DEFAULT_LIMITS,
 	EvalClient,
+	type EvalCall,
 	type EvalRequest,
 	type EvalResponse,
 	evaluate,
+	evaluateAll,
 	FUNCTION_PLACEHOLDER,
+	type FunctionCall,
+	type FunctionResult,
+	MAX_CALLS,
+	MAX_FUNCTION_ROUNDS,
+	re2Refusal,
 	serve,
 	toEvalError,
 	toPlain,
@@ -83,9 +91,42 @@ describe("evaluate", () => {
 		let clock = 0;
 		const timed = await evaluate(request("1"), () => (clock += 5));
 		assert.equal(timed.elapsedMs, 5);
-		const huge = await evaluate(request("[1..1000]", { limits: { maxSequence: 10 } }));
-		assert.ok(!huge.ok);
-		assert.match(huge.error.code, /^D201[45]$/);
+	});
+
+	it("stops what the server stops, and only that", async () => {
+		assert.deepEqual(DEFAULT_LIMITS, { timeoutMs: 5000, maxDepth: 200 });
+		// jsonata-python's MAX_DEPTH of 200 stops this too
+		const deep = await evaluate(request("($f := function($n){ $n >= 80 ? $n : 1 + $f($n + 1) }; $f(0))"));
+		assert.ok(!deep.ok);
+		assert.equal(deep.error.code, "D1011");
+		// the server has no limit on a sequence's length
+		const long = await evaluate(request("$count([1..200000])"));
+		assert.ok(long.ok);
+		assert.equal(long.value, 200000);
+	});
+
+	it("refuses the regular expressions the server's RE2 refuses", async () => {
+		const refused: [string, string][] = [
+			['$match("abc", /a(?=b)/).match', "invalid perl operator: (?="],
+			['$match("abc", /a(?!b)/).match', "invalid perl operator: (?!"],
+			['$match("abc", /(?<=a)b/).match', "invalid perl operator: (?<="],
+			['$match("abc", /(?<!a)b/).match', "invalid perl operator: (?<!"],
+			['$replace("aa", /(a)\\1/, "x")', "invalid escape sequence: \\1"],
+			['$replace("aa", /(?<n>a)\\k<n>/, "x")', "invalid escape sequence: \\k"],
+		];
+		for (const [expression, message] of refused) {
+			const response = await evaluate(request(expression));
+			assert.ok(!response.ok, expression);
+			assert.deepEqual([response.error.code, response.error.message], ["error", message]);
+		}
+		// escaped, or in a class, it is no lookaround
+		const escaped = await evaluate(request('$match("a=b", /\\(?=b/).match'));
+		assert.ok(escaped.ok);
+		assert.equal(escaped.value, "=b");
+		assert.equal(re2Refusal("[(?=]"), undefined);
+		const named = await evaluate(request('$match("aa", /(?<n>a)/).groups'));
+		assert.ok(named.ok);
+		assert.deepEqual(named.value, ["a", "a"]);
 	});
 
 	it("reads any thrown value as an error", () => {
@@ -318,5 +359,209 @@ describe("EvalClient", () => {
 		worker?.answer(late);
 		worker?.fail("too late to matter");
 		assert.equal(response.error.code, "ES_DEADLINE");
+	});
+});
+
+describe("the app's functions", () => {
+	const due = { due_on: "2026-01-20" };
+
+	it("are left unbound without answers, as before", async () => {
+		const response = await evaluate({ id: 1, expression: "$frappeDate(due_on)", input: due });
+		assert.ok(!response.ok);
+		assert.equal(response.error.code, "T1006");
+	});
+
+	it("list the calls nothing answers, and give nothing for them", async () => {
+		const response = await evaluate({
+			id: 1,
+			expression: '{"date": $frappeDate(due_on), "none": $frappeDate(missing), "id": $syncId("ToDo", "a")}',
+			input: due,
+			functions: {},
+		});
+		assert.ok(response.ok);
+		assert.deepEqual(response.value, {});
+		// jsonata evaluates an object's values in no set order
+		assert.deepEqual(
+			new Set(response.calls?.map(callKey)),
+			new Set([
+				callKey({ function: "frappeDate", args: ["2026-01-20"] }),
+				// an undefined argument is sent as null, as the server reads it
+				callKey({ function: "frappeDate", args: [null] }),
+				callKey({ function: "syncId", args: ["ToDo", "a"] }),
+			]),
+		);
+	});
+
+	it("answer from the server's results: null is nothing, and an error is thrown with its code", async () => {
+		const functions = {
+			[callKey({ function: "frappeDate", args: ["2026-01-20"] })]: { value: "2026-01-20" },
+			[callKey({ function: "frappeDate", args: [null] })]: { value: null },
+			[callKey({ function: "getValue", args: ["ToDo", "x", "status"] })]: {
+				error: "Not permitted",
+				code: "permission",
+			},
+		};
+		const answered = await evaluate({
+			id: 1,
+			expression: '{"date": $frappeDate(due_on), "none": $frappeDate(missing)}',
+			input: due,
+			functions,
+		});
+		assert.ok(answered.ok);
+		assert.deepEqual(answered.value, { date: "2026-01-20" });
+		assert.equal(answered.calls, undefined);
+		const refused = await evaluate({
+			id: 2,
+			expression: '$getValue("ToDo", "x", "status")',
+			input: null,
+			functions,
+		});
+		assert.ok(!refused.ok);
+		assert.deepEqual([refused.error.code, refused.error.message], ["permission", "Not permitted"]);
+	});
+});
+
+describe("evaluateAll", () => {
+	/** The signal of an evaluation nothing replaces. */
+	const running = () => new AbortController().signal;
+
+	/** A client that evaluates in-process, and a server that answers $frappeDate and $getValue. */
+	function setup() {
+		const asked: FunctionCall[][] = [];
+		const client = { evaluate: (call: EvalCall) => evaluate({ ...call, id: 1 }) };
+		const resolve = async (calls: FunctionCall[]): Promise<FunctionResult[]> => {
+			asked.push(calls);
+			return calls.map((call) =>
+				call.function === "getValue"
+					? { value: `${String(call.args[1])}!` }
+					: { value: call.args[0] ?? null },
+			);
+		};
+		return { asked, client, resolve };
+	}
+
+	it("resolves every request's calls in one request a round, and evaluates again", async () => {
+		const { asked, client, resolve } = setup();
+		const results = {};
+		const responses = await evaluateAll(
+			client,
+			[
+				{ expression: "$frappeDate(d)", input: { d: "2026-01-01" } },
+				{ expression: "$frappeDate(d)", input: { d: "2026-01-02" } },
+				{ expression: "1 + 1", input: null },
+				// the second call's argument is the first one's answer
+				{ expression: '$getValue("ToDo", $getValue("ToDo", "a", "f"), "f")', input: null },
+			],
+			results,
+			resolve,
+			running(),
+		);
+		assert.deepEqual(
+			responses.map((response) => response.ok && response.value),
+			["2026-01-01", "2026-01-02", 2, "a!!"],
+		);
+		assert.deepEqual(
+			asked.map((calls) => calls.map(callKey)),
+			[
+				[
+					{ function: "frappeDate", args: ["2026-01-01"] },
+					{ function: "frappeDate", args: ["2026-01-02"] },
+					{ function: "getValue", args: ["ToDo", "a", "f"] },
+					// unanswered, the inner call gave nothing to the outer one
+					{ function: "getValue", args: ["ToDo", null, "f"] },
+				].map(callKey),
+				[callKey({ function: "getValue", args: ["ToDo", "a!", "f"] })],
+			],
+		);
+		// answers are kept: the same calls again ask nothing
+		await evaluateAll(
+			client,
+			[{ expression: "$frappeDate(d)", input: { d: "2026-01-01" } }],
+			results,
+			resolve,
+			running(),
+		);
+		assert.equal(asked.length, 2);
+	});
+
+	it("stops when the server fails, or after the last round", async () => {
+		const { client } = setup();
+		const [failed] = await evaluateAll(
+			client,
+			[{ expression: "$frappeCheck(1)", input: null }],
+			{},
+			() => Promise.resolve(undefined),
+			running(),
+		);
+		assert.ok(failed?.ok);
+		assert.equal(failed.defined, false);
+		let rounds = 0;
+		// every answer leads to a new call
+		const [endless] = await evaluateAll(
+			client,
+			[
+				{
+					expression: "$frappeCheck($frappeCheck($frappeCheck($frappeCheck($frappeCheck($frappeCheck(0))))))",
+					input: null,
+				},
+			],
+			{},
+			(calls) => {
+				rounds += 1;
+				return Promise.resolve(calls.map((call) => ({ value: [call.args[0]] })));
+			},
+			running(),
+		);
+		assert.equal(rounds, MAX_FUNCTION_ROUNDS - 1);
+		assert.ok(endless?.ok);
+		assert.ok(endless.calls?.length);
+	});
+
+	it("asks for at most MAX_CALLS calls a request", async () => {
+		const { asked, client, resolve } = setup();
+		const inputs = Array.from({ length: MAX_CALLS + 20 }, (_item, index) => ({ d: `day ${index}` }));
+		const responses = await evaluateAll(
+			client,
+			inputs.map((input) => ({ expression: "$frappeDate(d)", input })),
+			{},
+			resolve,
+			running(),
+		);
+		assert.deepEqual(
+			asked.map((calls) => calls.length),
+			[MAX_CALLS, 20],
+		);
+		assert.deepEqual(
+			responses.map((response) => response.ok && response.value),
+			inputs.map((input) => input.d),
+		);
+	});
+
+	it("stops once aborted: no more requests, and no new round", async () => {
+		const { asked, client } = setup();
+		const evaluated: EvalCall[] = [];
+		const counting = {
+			evaluate: (call: EvalCall) => {
+				evaluated.push(call);
+				return client.evaluate(call);
+			},
+		};
+		const controller = new AbortController();
+		const [response] = await evaluateAll(
+			counting,
+			[{ expression: "$frappeDate(d)", input: { d: "2026-01-01" } }],
+			{},
+			(calls) => {
+				asked.push(calls);
+				// a newer evaluation replaces this one while the server answers
+				controller.abort();
+				return Promise.resolve(calls.map(() => ({ value: "answered" })));
+			},
+			controller.signal,
+		);
+		assert.equal(asked.length, 1);
+		assert.equal(evaluated.length, 1);
+		assert.ok(response?.ok);
+		assert.equal(response.defined, false);
 	});
 });

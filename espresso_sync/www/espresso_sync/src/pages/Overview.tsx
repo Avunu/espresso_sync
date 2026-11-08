@@ -120,6 +120,9 @@ export function Overview() {
 				<TableContainer title="Connections" description={DESCRIPTION} {...getTableContainerProps()}>
 					<TableToolbar aria-label="Connections">
 						<TableToolbarContent>
+							<Button kind="ghost" href={hrefFor("transforms")}>
+								Transforms
+							</Button>
 							<Button kind="ghost" href={hrefFor("specs")}>
 								API specs
 							</Button>

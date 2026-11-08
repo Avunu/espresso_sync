@@ -107,6 +107,16 @@ Activating a transform freezes its compiled rules as **Active JSONata**, what a 
 
 A later change to the rules (or the sample) does not change what runs until the transform is activated again. A change to anything else a sync reads (DocType, API Spec, Method, Path, Items Pointer, Path and Query Parameters, Next Request, Maximum Pages, External ID, Modified, Runtime Validation, Child Tables and their keys) makes the transform a Draft again: it stops running until it is activated with the change, and the checks run on it. That is also how an Active transform goes back to Draft.
 
+## The editor
+
+The `/espresso_sync` page's **transform editor** (`/espresso_sync#/transforms/<name>`) shows the two sides of a transform as trees: the source on the left (an item of the operation's response, after the Items Pointer, for an import; a document of the DocType for an export) and the target on the right (a new document of the DocType; the operation's request body). A line joins each source field a rule reads to the field the rule fills. Groups below the top level start closed; a filter, and **Required only**, **Mapped only** and **Read by a rule only**, narrow the trees.
+
+Everything works from the keyboard: Tab moves between the controls and into a tree, the arrow keys move within it and open groups, and Enter or Space selects a field. To map a field, select a source field, then a target field: the rule reads the source field as it must where it runs (`sku` on a line item, `$$.currency` for the source item's own field from inside a collection). Selecting only a target field opens its rule: its expression, the source fields and functions to insert at the caret (wrapping what is selected), what it gives on each sample item, and its diagnostics.
+
+The rules are evaluated in the browser as they are typed, in a Web Worker that stops a runaway expression, on up to 50 sample items. The app's functions are answered by the server (`resolve_functions`), so the preview gives what a dry run gives. The browser's own checks (the rules that don't compile or parse, the required fields no rule fills, values of the wrong type, the target's schema) are listed with the server's, which **Save** runs, as **Validate** does. A DocType's schema findings are only warnings in the browser: the server knows which values Frappe converts.
+
+The sample is pasted, or fetched 20 items at a time (`fetch_sample`), and saved with the rules; a pasted sample is saved as written, so whole numbers past 2^53, which the browser rounds, stay exact on the server. The **Settings** tab edits the fields a sync reads besides the rules (Items Pointer, parameters, Next Request, External ID, Modified, Runtime Validation, Child Tables), saved with them. **Dry run** compares each item's result with the preview, and **Activate** activates the saved transform: both, and Validate, wait until the changes are saved. As in the desk, Save and Activate are refused when someone else saved the transform since the editor read it (reload to get their version), and Save with no changes saves it as it is, which checks it against the API Spec and the DocType again. The preview runs with the server's limits (5 s, a depth of 200) and refuses the regular expressions the server's RE2 refuses (a lookaround, a backreference).
+
 ## Endpoints
 
 All are under `/api/method/espresso_sync.api.transform.<name>`.
@@ -115,7 +125,7 @@ All are under `/api/method/espresso_sync.api.transform.<name>`.
 | -------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `validate_transform` | `name`                                                | the diagnostics; nothing is written                                                            |
 | `dry_run`            | `name` (POST)                                         | for each sample item, `{item, output, name, diagnostics}`                                      |
-| `activate_transform` | `name` (POST)                                         | `{name, status, active_compiled}`                                                              |
+| `activate_transform` | `name`, `modified` (POST)                             | `{name, status, active_compiled, modified}`                                                    |
 | `resolve_functions`  | `calls`, optional `transform` (POST)                  | for each `{function, args}` call (`"getValue"`, without the `$`), `{value}` or `{error, code}` |
 | `fetch_sample`       | `name`, optional `start`, `limit` (at most 50) (POST) | `{items, more}`                                                                                |
 

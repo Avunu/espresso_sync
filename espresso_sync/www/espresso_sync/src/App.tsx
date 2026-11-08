@@ -7,6 +7,7 @@ import { Overview } from "./pages/Overview";
 import { Spec } from "./pages/Spec";
 import { Specs } from "./pages/Specs";
 import { Transform } from "./pages/Transform";
+import { Transforms } from "./pages/Transforms";
 import { PortalHeader } from "./portal/PortalHeader";
 import { useRoute } from "./route";
 
@@ -34,7 +35,8 @@ export function App() {
 			<Content id={MAIN} tabIndex={-1} style={{ outline: "none" }}>
 				{route.section === "connections" && <Overview />}
 				{route.section === "specs" && (route.name ? <Spec name={route.name} /> : <Specs />)}
-				{route.section === "transforms" && <Transform name={route.name} />}
+				{route.section === "transforms" &&
+					(route.name ? <Transform key={route.name} name={route.name} /> : <Transforms />)}
 			</Content>
 		</>
 	);

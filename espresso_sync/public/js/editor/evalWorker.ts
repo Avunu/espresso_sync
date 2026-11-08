@@ -9,8 +9,9 @@
  * Web Worker and is bounded twice:
  *
  * 1. Inside the worker, jsonata's own guardrails stop a runaway evaluation
- *    between steps: `timeoutMs` (D1012), `maxDepth` (D1011) and `maxSequence`
- *    (D2015). These are the limits the server's jsonata-python `timebox` uses.
+ *    between steps: `timeoutMs` (D1012) and `maxDepth` (D1011). These are the
+ *    limits the server's jsonata-python timebox uses (transform/engine.py), so
+ *    an expression stopped on the server is stopped here, and only then.
  * 2. Outside it, `EvalClient` sends the worker one request at a time and gives
  *    each a deadline a little past `timeoutMs`, counted from when it is sent.
  *    Something the guardrails can't interrupt (a catastrophic regular
@@ -19,8 +20,20 @@
  *
  * `evaluate` and `serve` are the worker's side and `EvalClient` the page's; all
  * three are plain functions of their inputs, so the tests run them in Node with
- * a stand-in for the Worker. The page's worker entry is two lines: import
- * `serve` and call it on `self`.
+ * a stand-in for the Worker. The page's worker entry
+ * (public/js/espresso-sync-eval.bundle.js) is two lines: import `serve` and
+ * call it on `self`.
+ *
+ * The app's own functions (`$syncId`, `$getValue`, … in transform/engine.py)
+ * read the site, so only the server can answer them. A request that carries
+ * `functions`, the server's answers so far, binds them: a call answered there
+ * gives that answer, and any other gives nothing and is listed in the
+ * response's `calls`. `evaluateAll` sends those to the server
+ * (resolve_functions) and evaluates again, until nothing new is called.
+ *
+ * The server runs regular expressions on RE2, which refuses a lookaround or a
+ * backreference; a pattern with one fails here too, with RE2's message, rather
+ * than working in the preview only.
  */
 
 import jsonata from "jsonata";
@@ -30,11 +43,41 @@ export interface EvalLimits {
 	timeoutMs: number;
 	/** jsonata's maximum evaluation depth (recursion). */
 	maxDepth: number;
-	/** The largest sequence an evaluation may build. */
-	maxSequence: number;
 }
 
-export const DEFAULT_LIMITS: Readonly<EvalLimits> = { timeoutMs: 1000, maxDepth: 300, maxSequence: 100_000 };
+/** transform/engine.py's TIMEOUT_MS and MAX_DEPTH. */
+export const DEFAULT_LIMITS: Readonly<EvalLimits> = { timeoutMs: 5000, maxDepth: 200 };
+
+/** The functions transform/engine.py gives an expression besides JSONata's own. */
+export const APP_FUNCTIONS = [
+	"syncId",
+	"localName",
+	"getValue",
+	"frappeDate",
+	"frappeDatetime",
+	"frappeCheck",
+] as const;
+
+/** A call of one of the app's functions, as resolve_functions takes it: named without the `$`. */
+export interface FunctionCall {
+	function: string;
+	args: unknown[];
+}
+
+/** resolve_functions' answer to a call: its value, or the error it raised and its code. */
+export interface FunctionResult {
+	value?: unknown;
+	error?: string;
+	code?: string;
+}
+
+/** The server's answers, by `callKey`. */
+export type FunctionResults = Record<string, FunctionResult>;
+
+/** What identifies a call: the function and its arguments, as JSON. */
+export function callKey(call: FunctionCall): string {
+	return JSON.stringify([call.function, call.args]);
+}
 
 export interface EvalRequest {
 	id: number;
@@ -42,6 +85,8 @@ export interface EvalRequest {
 	input: unknown;
 	bindings?: Record<string, unknown>;
 	limits?: Partial<EvalLimits>;
+	/** With this, the app's functions are bound and answered from it (see the module's comment). */
+	functions?: FunctionResults;
 }
 
 export interface EvalError {
@@ -64,8 +109,10 @@ export type EvalResponse =
 			/** False when the expression produced nothing (`undefined`), which JSON can't say. */
 			defined: boolean;
 			elapsedMs: number;
+			/** The calls of the app's functions `functions` had no answer for. */
+			calls?: FunctionCall[];
 	  }
-	| { id: number; ok: false; error: EvalError; elapsedMs: number };
+	| { id: number; ok: false; error: EvalError; elapsedMs: number; calls?: FunctionCall[] };
 
 /** A jsonata function value, which can't cross to the page: shown by this text instead. */
 export const FUNCTION_PLACEHOLDER = "[function]";
@@ -103,6 +150,66 @@ export function toEvalError(error: unknown): EvalError {
 	return result;
 }
 
+/**
+ * The app's functions, answered from `results`. A value of null is nothing, as
+ * a Python function's None is to jsonata-python; an error is thrown with
+ * resolve_functions' code, so it reads as the server's `eval.<code>`. A call
+ * with no answer gives nothing and is added to `unanswered`.
+ */
+function appFunctions(
+	results: FunctionResults,
+	unanswered: Map<string, FunctionCall>,
+): Record<string, unknown> {
+	const bound: Record<string, unknown> = {};
+	for (const name of APP_FUNCTIONS) {
+		bound[name] = (...args: unknown[]): unknown => {
+			const call: FunctionCall = { function: name, args: toPlain(args) as unknown[] };
+			const key = callKey(call);
+			const result = results[key];
+			if (!result) {
+				unanswered.set(key, call);
+				return undefined;
+			}
+			if (result.error !== undefined) {
+				throw Object.assign(new Error(result.error), { code: result.code ?? "error" });
+			}
+			return result.value ?? undefined;
+		};
+	}
+	return bound;
+}
+
+/** What RE2 refuses in a pattern that RegExp takes (a lookaround, a backreference): RE2's message for it. */
+export function re2Refusal(source: string): string | undefined {
+	let inClass = false;
+	for (let at = 0; at < source.length; at += 1) {
+		const char = source[at];
+		if (char === "\\") {
+			const escaped = source[at + 1] ?? "";
+			if (/[1-9k]/.test(escaped)) return `invalid escape sequence: \\${escaped}`;
+			at += 1;
+		} else if (inClass) {
+			inClass = char !== "]";
+		} else if (char === "[") {
+			inClass = true;
+		} else if (char === "(") {
+			const lookaround = ["(?=", "(?!", "(?<=", "(?<!"].find((operator) => source.startsWith(operator, at));
+			if (lookaround) return `invalid perl operator: ${lookaround}`;
+		}
+	}
+	return undefined;
+}
+
+/** jsonata's regular expressions, refused where the server's RE2 refuses them. */
+class Re2Pattern extends RegExp {
+	constructor(pattern: RegExp | string, flags?: string) {
+		const refusal = re2Refusal(typeof pattern === "string" ? pattern : pattern.source);
+		// thrown as the server's engine.evaluate raises it: not a jsonata error, so `eval.error`
+		if (refusal) throw Object.assign(new Error(refusal), { code: "error" });
+		super(pattern, flags);
+	}
+}
+
 /** Evaluate one request. Never throws: a failure is the response. */
 export async function evaluate(
 	request: EvalRequest,
@@ -110,22 +217,30 @@ export async function evaluate(
 ): Promise<EvalResponse> {
 	const started = now();
 	const limits = { ...DEFAULT_LIMITS, ...request.limits };
+	const unanswered = new Map<string, FunctionCall>();
+	const bindings = request.functions
+		? { ...appFunctions(request.functions, unanswered), ...request.bindings }
+		: request.bindings;
+	const calls = (): { calls?: FunctionCall[] } =>
+		unanswered.size > 0 ? { calls: [...unanswered.values()] } : {};
 	try {
 		const expression = jsonata(request.expression, {
 			timeout: limits.timeoutMs,
 			stack: limits.maxDepth,
-			sequence: limits.maxSequence,
+			// jsonata only constructs it (`new RegexEngine(regex)`); its typings ask for RegExp's call signature too
+			RegexEngine: Re2Pattern as RegExpConstructor,
 		});
-		const result: unknown = await expression.evaluate(request.input, request.bindings);
+		const result: unknown = await expression.evaluate(request.input, bindings);
 		return {
 			id: request.id,
 			ok: true,
 			value: toPlain(result),
 			defined: result !== undefined,
 			elapsedMs: now() - started,
+			...calls(),
 		};
 	} catch (error) {
-		return { id: request.id, ok: false, error: toEvalError(error), elapsedMs: now() - started };
+		return { id: request.id, ok: false, error: toEvalError(error), elapsedMs: now() - started, ...calls() };
 	}
 }
 
@@ -283,4 +398,67 @@ export class EvalClient {
 		this.worker?.terminate();
 		this.worker = undefined;
 	}
+}
+
+/** How many times `evaluateAll` asks the server: a function's answer can be another's argument. */
+export const MAX_FUNCTION_ROUNDS = 5;
+
+/** The most calls one resolve_functions request takes (api/transform.py's MAX_CALLS). */
+export const MAX_CALLS = 500;
+
+/**
+ * Evaluate every call, with the app's functions answered by the server: the
+ * calls nothing in `results` answers are sent to `resolve` (one
+ * resolve_functions request a round, for every `MAX_CALLS` of them), their
+ * answers are added to `results` (the page's cache, kept between evaluations),
+ * and the requests that made them are evaluated again. When `resolve` fails (it
+ * answers undefined) or after `MAX_FUNCTION_ROUNDS` rounds, the last responses
+ * stand. Once `signal` is aborted (a newer evaluation replaces this one), it
+ * asks nothing more and starts no new round, so it can't take the place of the
+ * newer one's requests.
+ */
+export async function evaluateAll(
+	client: Pick<EvalClient, "evaluate">,
+	calls: readonly EvalCall[],
+	results: FunctionResults,
+	resolve: (calls: FunctionCall[]) => Promise<FunctionResult[] | undefined>,
+	signal: AbortSignal,
+): Promise<EvalResponse[]> {
+	const responses: EvalResponse[] = [];
+	// one round: evaluate `pending` (indexes into `calls`), then ask for what they called
+	const round = async (pending: number[], number: number): Promise<void> => {
+		if (signal.aborted) return;
+		const answered = await Promise.all(
+			pending.map((index) => client.evaluate({ ...calls[index], functions: results } as EvalCall)),
+		);
+		const unanswered = new Map<string, FunctionCall>();
+		const again: number[] = [];
+		for (const [position, response] of answered.entries()) {
+			const index = pending[position] as number;
+			responses[index] = response;
+			const missing = (response.calls ?? []).filter((call) => !results[callKey(call)]);
+			if (missing.length === 0) continue;
+			again.push(index);
+			for (const call of missing) unanswered.set(callKey(call), call);
+		}
+		if (unanswered.size === 0 || number >= MAX_FUNCTION_ROUNDS) return;
+		if (signal.aborted) return;
+		const asked = [...unanswered.values()];
+		const chunks: FunctionCall[][] = [];
+		for (let start = 0; start < asked.length; start += MAX_CALLS)
+			chunks.push(asked.slice(start, start + MAX_CALLS));
+		const answers = await Promise.all(chunks.map((chunk) => resolve(chunk)));
+		if (answers.some((answer) => !answer)) return;
+		for (const [index, chunk] of chunks.entries()) {
+			for (const [position, call] of chunk.entries()) {
+				results[callKey(call)] = answers[index]?.[position] ?? { error: "No answer", code: "error" };
+			}
+		}
+		await round(again, number + 1);
+	};
+	await round(
+		calls.map((_call, index) => index),
+		1,
+	);
+	return responses;
 }
