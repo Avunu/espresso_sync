@@ -20,9 +20,7 @@ class EspressoSyncPullLog(Document):
 
 		diagnostics: DF.JSON | None
 		document: DF.JSON | None
-		map: DF.JSON | None
 		object: DF.JSON | None
-		request: DF.JSON | None
 		request_type: DF.Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 		response: DF.Code | None
 		sync_connection: DF.Link | None
@@ -31,6 +29,8 @@ class EspressoSyncPullLog(Document):
 		sync_doctype: DF.Link | None
 		sync_status: DF.Literal["Success", "Failure"]
 		traceback: DF.Code | None
+		transform: DF.Link | None
+		transform_hash: DF.Data | None
 		url: DF.Data | None
 	# end: auto-generated types
 

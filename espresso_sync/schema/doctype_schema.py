@@ -369,23 +369,28 @@ def check_notes(schema: dict[str, Any], payload: Any, path: list) -> list[dict[s
 	return notes
 
 
-def without_dunder_keys(schema: dict[str, Any], payload: Any) -> Any:
+def without_ignored_keys(schema: dict[str, Any], payload: Any) -> Any:
 	"""`payload` without the keys Frappe marks a document's state with (__islocal,
-	__unsaved...), on the document and its child rows."""
+	__unsaved...), on the document and its child rows, and without the app's own sync
+	fields, which a document read from the site has and the schema leaves out."""
 	if not isinstance(payload, dict):
 		return payload
-	document = {key: value for key, value in payload.items() if not str(key).startswith("__")}
+	document = {
+		key: value
+		for key, value in payload.items()
+		if not str(key).startswith("__") and key not in EXCLUDED_FIELDS
+	}
 	for fieldname, field in (schema.get("properties") or {}).items():
 		rows = document.get(fieldname)
 		if (field.get("x-frappe") or {}).get("fieldtype") in table_fields and isinstance(rows, list):
-			document[fieldname] = [without_dunder_keys(field.get("items") or {}, row) for row in rows]
+			document[fieldname] = [without_ignored_keys(field.get("items") or {}, row) for row in rows]
 	return document
 
 
 def validate_doctype_payload(doctype: str, payload: Any, mode: str = "insert") -> list[dict[str, Any]]:
 	"""Diagnostics ({rule, path, severity, code, message, origin}) for a document payload."""
 	schema = doctype_json_schema(doctype, mode)
-	payload = without_dunder_keys(schema, payload)
+	payload = without_ignored_keys(schema, payload)
 	validator = Draft202012Validator(schema, format_checker=format_checker)
 	diagnostics: dict[tuple[str, str], dict[str, Any]] = {}
 	for error in validator.iter_errors(payload):

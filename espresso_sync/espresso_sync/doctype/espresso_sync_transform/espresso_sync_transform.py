@@ -11,6 +11,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import escape_html
 
+from espresso_sync.schema import openapi
 from espresso_sync.transform import engine, validate
 from espresso_sync.transform.compile import compile_rules
 
@@ -147,3 +148,14 @@ class EspressoSyncTransform(Document):
 
 		path = PATH_PARAMETER.sub(fill, self.path)
 		return server_url.rstrip("/") + path, self.evaluate_object("query_params", data, connection)
+
+	def read_items(self, body: Any) -> list[Any]:
+		"""The items at the Items Pointer in a response body: a list there, or the one item."""
+		try:
+			for token in openapi.tokens_of(self.items_pointer or ""):
+				body = body[int(token)] if isinstance(body, list) else body[token]
+		except KeyError, IndexError, TypeError, ValueError, openapi.SpecError:
+			frappe.throw(_("The response has nothing at {0}").format(self.items_pointer), title=_("No Items"))
+		if body is None:
+			return []
+		return body if isinstance(body, list) else [body]

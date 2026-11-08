@@ -17,9 +17,7 @@ from espresso_sync.api import transform as api
 from espresso_sync.espresso_sync.doctype.espresso_sync_api_spec.espresso_sync_api_spec import (
 	EspressoSyncAPISpec,
 )
-from espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection import (
-	ensure_sync_fields,
-)
+from espresso_sync.sync import ensure_sync_fields
 from espresso_sync.tests.egress import public_dns
 from espresso_sync.tests.test_schema_api import make_user
 from espresso_sync.transform import dry_run, validate

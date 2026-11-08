@@ -58,14 +58,14 @@ def connections_due(frequency: str, now: datetime | None = None) -> list[str]:
 	if sync_frequency != "Cron":
 		return frappe.get_all(
 			CONNECTION,
-			filters={"pull_shot": 1, "sync_frequency": sync_frequency},
+			filters={"enabled": 1, "sync_frequency": sync_frequency},
 			pluck="name",
 			order_by="name asc",
 		)
 	now = now or now_datetime()
 	rows = frappe.get_all(
 		CONNECTION,
-		filters={"pull_shot": 1, "sync_frequency": "Cron"},
+		filters={"enabled": 1, "sync_frequency": "Cron"},
 		fields=["name", "cron_rule", "last_pull", "last_sync_attempt", "creation"],
 		order_by="name asc",
 	)
@@ -149,7 +149,7 @@ def run_connection_sync(connection: str) -> bool:
 		if not acquired:
 			frappe.logger("espresso_sync").info(f"{connection}: a sync is already running")
 			return False
-		if not frappe.db.get_value(CONNECTION, connection, "pull_shot"):
+		if not frappe.db.get_value(CONNECTION, connection, "enabled"):
 			return False
 		# a sync that raises sets no last_pull: without this its Cron Rule would be due again
 		# at every tick

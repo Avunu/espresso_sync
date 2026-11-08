@@ -10,12 +10,19 @@
   "sync_connection",
   "column_break_nzxn",
   "external_id",
-  "section_break_rrpr",
-  "metadata",
+  "section_break_synced",
+  "last_synced_modified",
+  "column_break_synced",
+  "external_modified",
   "section_break_disabled",
   "dont_sync"
  ],
  "fields": [
+  {
+   "fieldname": "section_break_id",
+   "fieldtype": "Section Break",
+   "hide_border": 1
+  },
   {
    "fieldname": "sync_connection",
    "fieldtype": "Link",
@@ -25,6 +32,10 @@
    "reqd": 1
   },
   {
+   "fieldname": "column_break_nzxn",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "external_id",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -32,20 +43,26 @@
    "mandatory_depends_on": "eval: !(doc.dont_sync)"
   },
   {
-   "fieldname": "column_break_nzxn",
+   "fieldname": "section_break_synced",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "The document's Last Updated On when this Connection last imported or exported it: an export skips the document until it changes again, so an import is not sent back.",
+   "fieldname": "last_synced_modified",
+   "fieldtype": "Datetime",
+   "label": "Last Synced",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_synced",
    "fieldtype": "Column Break"
   },
   {
-   "default": "0",
-   "fieldname": "dont_sync",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Disabled"
-  },
-  {
-   "fieldname": "section_break_id",
-   "fieldtype": "Section Break",
-   "hide_border": 1
+   "description": "When the object last changed in the API (the import transform's Modified), as last imported: an object no newer is skipped.",
+   "fieldname": "external_modified",
+   "fieldtype": "Datetime",
+   "label": "External Modified",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_disabled",
@@ -53,20 +70,17 @@
    "hide_border": 1
   },
   {
-   "fieldname": "section_break_rrpr",
-   "fieldtype": "Section Break"
-  },
-  {
-   "default": "[]",
-   "fieldname": "metadata",
-   "fieldtype": "JSON",
-   "label": "Metadata"
+   "default": "0",
+   "fieldname": "dont_sync",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Disabled"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-08-14 11:10:04.778928",
+ "modified": "2026-11-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync ID",

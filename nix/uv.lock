@@ -519,7 +519,6 @@ name = "espresso-sync"
 source = { editable = "apps/espresso_sync" }
 dependencies = [
     { name = "jsonata-python" },
-    { name = "jsonpath-ng" },
     { name = "jsonschema" },
     { name = "openapi-spec-validator" },
 ]
@@ -527,7 +526,6 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "jsonata-python", specifier = ">=0.7.1" },
-    { name = "jsonpath-ng" },
     { name = "jsonschema", specifier = ">=4.26.0,<5" },
     { name = "openapi-spec-validator", specifier = ">=0.9.0,<0.10" },
 ]
@@ -1261,15 +1259,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5b/e1/a1247412b909987479acc5e376c65f975a7daf25ec37e91cc0c8ec5fa74e/jsonata_python-0.7.1.tar.gz", hash = "sha256:c3c4dd3e68d913cf079ed5374cfcc6b249fb33fedaef55b23b14c7168b797e4e", size = 87663, upload-time = "2026-10-10T03:48:51.755Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/46/85/1abd3677ad6c3a6ae249ed1234c0ab8dabbbca7b13d5bfd58c65acacb64f/jsonata_python-0.7.1-py3-none-any.whl", hash = "sha256:d34603578dd20add2aa0ac4562ca080d9c662f6b161298bd6254fe28247804ae", size = 87560, upload-time = "2026-10-10T03:48:49.643Z" },
-]
-
-[[package]]
-name = "jsonpath-ng"
-version = "1.16.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ca/15/bfb28139fc18edbc8a360aff4bd98be981065410eeabdf10b8d3ea8f982f/jsonpath_ng-1.16.0.tar.gz", hash = "sha256:a81066736e00d47d0c2b5c510d12b78d09b40fd1ec954e7beff1954a55606099", size = 124800, upload-time = "2026-11-04T14:37:02.513Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/59/a7/189b9c567504a84670cac5375bac7a1a1e2e2de260caae4298bbfc9b3168/jsonpath_ng-1.16.0-py3-none-any.whl", hash = "sha256:c5e28ddd70ebcaeba9af3c2b880933fbfeb108b5e68c9edb84e1b57803091218", size = 86201, upload-time = "2026-11-04T14:37:00.784Z" },
 ]
 
 [[package]]

@@ -5,424 +5,20 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "section_break_qchd",
   "dt",
-  "column_break_mler",
-  "uri",
-  "column_break_ocwp",
-  "id_field_map",
-  "column_break_dwif",
-  "modified_date_field_map",
-  "column_break_hacu",
-  "modified_date_format",
   "section_break_import",
   "do_import",
-  "section_break_pkkc",
-  "column_break_uupi",
-  "render_sample",
-  "column_break_wscx",
-  "test_import",
-  "column_break_wjnr",
-  "view_log",
-  "section_break_hhmu",
+  "import_transform",
+  "column_break_import",
   "last_import",
-  "objects_key",
-  "object_map_import",
-  "override_import_request",
-  "import_request_type",
-  "request_payload",
   "section_break_export",
   "do_export",
-  "section_break_mhaf",
-  "last_export",
-  "object_map_export",
-  "override_export_request_type",
-  "export_request_type",
-  "export_existing",
-  "filter_documents",
-  "section_filters",
-  "filter_widget",
-  "filters",
-  "section_break_busx",
-  "column_break_eqqk",
-  "get_samples",
-  "column_break_utzv",
-  "previous_sample",
-  "column_break_jfje",
-  "next_sample",
-  "section_break_lnhu",
-  "sample_index",
-  "sample_object",
-  "sample_count",
-  "sample_objects",
-  "section_break_ivzf",
-  "column_break_czob",
-  "get_references",
-  "column_break_jfjd",
-  "previous_reference",
-  "column_break_gajy",
-  "next_reference",
-  "section_break_pbld",
-  "reference_index",
-  "reference_doc",
-  "reference_count",
-  "reference_docs",
-  "section_break_uylz",
-  "override_url_scheme",
-  "override_api_domain",
-  "override_api_base",
-  "column_break_qudi",
-  "url_scheme",
-  "api_domain",
-  "api_base",
-  "section_break_ialv",
-  "override_uris",
-  "uris_section",
-  "get_uri",
-  "column_break_nzqk",
-  "post_uri",
-  "column_break_diri",
-  "put_uri",
-  "column_break_ezbi",
-  "delete_uri"
+  "export_transform",
+  "update_transform",
+  "column_break_export",
+  "last_export"
  ],
  "fields": [
-  {
-   "fieldname": "get_uri",
-   "fieldtype": "Data",
-   "label": "GET URI"
-  },
-  {
-   "fieldname": "column_break_ocwp",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.do_import==1;",
-   "fieldname": "section_break_hhmu",
-   "fieldtype": "Section Break",
-   "hide_border": 1
-  },
-  {
-   "depends_on": "eval: doc.sample_object !== ''",
-   "fieldname": "sample_object",
-   "fieldtype": "Code",
-   "label": "Sample Object",
-   "read_only": 1
-  },
-  {
-   "fieldname": "section_break_lnhu",
-   "fieldtype": "Section Break",
-   "hide_border": 1
-  },
-  {
-   "fieldname": "view_log",
-   "fieldtype": "Button",
-   "label": "View Log"
-  },
-  {
-   "fieldname": "column_break_uupi",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_dwif",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_hacu",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "id",
-   "fieldname": "id_field_map",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "ID Field"
-  },
-  {
-   "fieldname": "modified_date_field_map",
-   "fieldtype": "Data",
-   "label": "Modified Datetime Field"
-  },
-  {
-   "fieldname": "modified_date_format",
-   "fieldtype": "Data",
-   "label": "Modified Datetime Format"
-  },
-  {
-   "fieldname": "section_break_busx",
-   "fieldtype": "Section Break",
-   "hide_border": 1
-  },
-  {
-   "fieldname": "column_break_eqqk",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_jfje",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "fieldname": "sample_index",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Sample Index"
-  },
-  {
-   "fieldname": "render_sample",
-   "fieldtype": "Button",
-   "label": "Render Map w/ Sample"
-  },
-  {
-   "depends_on": "eval:doc.do_import==1;",
-   "fieldname": "section_break_pkkc",
-   "fieldtype": "Section Break",
-   "hide_border": 1
-  },
-  {
-   "fieldname": "column_break_wscx",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "test_import",
-   "fieldtype": "Button",
-   "label": "Test Import"
-  },
-  {
-   "fieldname": "column_break_wjnr",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "fieldname": "sample_count",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Sample Count"
-  },
-  {
-   "default": "{}",
-   "fieldname": "sample_objects",
-   "fieldtype": "JSON",
-   "hidden": 1,
-   "label": "Sample Objects"
-  },
-  {
-   "fieldname": "section_break_ivzf",
-   "fieldtype": "Section Break",
-   "hide_border": 1
-  },
-  {
-   "fieldname": "column_break_czob",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_gajy",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "section_break_pbld",
-   "fieldtype": "Section Break",
-   "hide_border": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "reference_index",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Reference Index"
-  },
-  {
-   "default": "0",
-   "fieldname": "reference_count",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "Reference Count"
-  },
-  {
-   "depends_on": "eval: doc.reference_doc !== ''",
-   "fieldname": "reference_doc",
-   "fieldtype": "Code",
-   "label": "Reference Doc",
-   "read_only": 1
-  },
-  {
-   "default": "{}",
-   "fieldname": "reference_docs",
-   "fieldtype": "JSON",
-   "hidden": 1,
-   "label": "Reference Docs"
-  },
-  {
-   "fieldname": "get_samples",
-   "fieldtype": "Button",
-   "label": "Load Sample(s)"
-  },
-  {
-   "depends_on": "eval:doc.sample_index > 0",
-   "fieldname": "previous_sample",
-   "fieldtype": "Button",
-   "label": "\u25c4 Previous Sample"
-  },
-  {
-   "depends_on": "eval:doc.sample_index < doc.sample_count",
-   "fieldname": "next_sample",
-   "fieldtype": "Button",
-   "label": "Next Sample \u25ba"
-  },
-  {
-   "fieldname": "column_break_utzv",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_jfjd",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "get_references",
-   "fieldtype": "Button",
-   "label": "Load Reference Doc(s)"
-  },
-  {
-   "depends_on": "eval:doc.reference_index > 0",
-   "fieldname": "previous_reference",
-   "fieldtype": "Button",
-   "label": "\u25c4 Previous Doc"
-  },
-  {
-   "depends_on": "eval:doc.reference_index < doc.reference_count",
-   "fieldname": "next_reference",
-   "fieldtype": "Button",
-   "label": "Next Doc \u25ba"
-  },
-  {
-   "default": "{}",
-   "depends_on": "eval:doc.override_import_request==1;",
-   "fieldname": "request_payload",
-   "fieldtype": "JSON",
-   "label": "Request Payload"
-  },
-  {
-   "fieldname": "section_break_qchd",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "section_break_uylz",
-   "fieldtype": "Section Break"
-  },
-  {
-   "depends_on": "eval:doc.override_uris==1;",
-   "fieldname": "uris_section",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "column_break_nzqk",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "post_uri",
-   "fieldtype": "Data",
-   "label": "POST URI"
-  },
-  {
-   "fieldname": "column_break_diri",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "put_uri",
-   "fieldtype": "Data",
-   "label": "PUT URI"
-  },
-  {
-   "depends_on": "eval:doc.do_export==1;",
-   "fieldname": "section_break_mhaf",
-   "fieldtype": "Section Break",
-   "hide_border": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "do_export",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Export Documents"
-  },
-  {
-   "default": "{}",
-   "fieldname": "object_map_export",
-   "fieldtype": "JSON",
-   "label": "Export Object Map",
-   "mandatory_depends_on": "eval:doc.do_export==1;"
-  },
-  {
-   "default": "0",
-   "fieldname": "do_import",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Import Objects"
-  },
-  {
-   "default": "{}",
-   "fieldname": "object_map_import",
-   "fieldtype": "JSON",
-   "label": "Import Object Map",
-   "mandatory_depends_on": "eval:doc.do_import==1;"
-  },
-  {
-   "fieldname": "column_break_mler",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "uri",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "URI",
-   "reqd": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "override_export_request_type",
-   "fieldtype": "Check",
-   "label": "Override Export Request Type"
-  },
-  {
-   "default": "POST",
-   "depends_on": "eval:doc.override_export_request_type==1;",
-   "fieldname": "export_request_type",
-   "fieldtype": "Select",
-   "label": "Request Type",
-   "options": "GET\nPOST\nPUT\nPATCH\nDELETE"
-  },
-  {
-   "depends_on": "eval:doc.override_import_request==1;",
-   "fieldname": "import_request_type",
-   "fieldtype": "Select",
-   "label": "Request Type",
-   "options": "GET\nPOST\nPUT\nPATCH"
-  },
-  {
-   "fieldname": "section_break_ialv",
-   "fieldtype": "Section Break"
-  },
-  {
-   "default": "0",
-   "fieldname": "override_uris",
-   "fieldtype": "Check",
-   "label": "Override URIs"
-  },
-  {
-   "fieldname": "column_break_ezbi",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "delete_uri",
-   "fieldtype": "Data",
-   "label": "DELETE URI"
-  },
-  {
-   "default": "0",
-   "fieldname": "override_import_request",
-   "fieldtype": "Check",
-   "label": "Advanced Import Request"
-  },
   {
    "fieldname": "dt",
    "fieldtype": "Link",
@@ -432,112 +28,87 @@
    "reqd": 1
   },
   {
-   "fieldname": "column_break_qudi",
+   "fieldname": "section_break_import",
+   "fieldtype": "Section Break",
+   "label": "Import"
+  },
+  {
+   "default": "0",
+   "fieldname": "do_import",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Import"
+  },
+  {
+   "depends_on": "eval:doc.do_import",
+   "description": "An Active Import transform of this DocType, on an API Spec of this Connection.",
+   "fieldname": "import_transform",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Import Transform",
+   "link_filters": "[[\"Espresso Sync Transform\", \"status\", \"=\", \"Active\"], [\"Espresso Sync Transform\", \"direction\", \"=\", \"Import\"], [\"Espresso Sync Transform\", \"document_type\", \"=\", \"eval: doc.dt\"]]",
+   "mandatory_depends_on": "eval:doc.do_import",
+   "options": "Espresso Sync Transform"
+  },
+  {
+   "fieldname": "column_break_import",
    "fieldtype": "Column Break"
   },
   {
-   "default": "0",
-   "fieldname": "override_api_base",
-   "fieldtype": "Check",
-   "label": "Override API Base"
-  },
-  {
-   "depends_on": "eval:doc.override_api_base==1",
-   "fieldname": "api_base",
-   "fieldtype": "Data",
-   "label": "API Base"
-  },
-  {
-   "default": "0",
-   "fieldname": "override_api_domain",
-   "fieldtype": "Check",
-   "label": "Override API Domain"
-  },
-  {
-   "depends_on": "eval:doc.override_api_domain==1",
-   "fieldname": "api_domain",
-   "fieldtype": "Data",
-   "label": "API Domain"
-  },
-  {
-   "default": "0",
-   "fieldname": "override_url_scheme",
-   "fieldtype": "Check",
-   "label": "Override URL Scheme"
-  },
-  {
-   "default": "https://",
-   "depends_on": "eval:doc.override_url_scheme==1",
-   "fieldname": "url_scheme",
-   "fieldtype": "Data",
-   "label": "URL Scheme"
-  },
-  {
-   "fieldname": "objects_key",
-   "fieldtype": "Data",
-   "label": "Objects Key"
-  },
-  {
-   "default": "0",
-   "fieldname": "filter_documents",
-   "fieldtype": "Check",
-   "label": "Filter Documents Before Export"
-  },
-  {
-   "depends_on": "eval:doc.do_export==1&&doc.filter_documents==1;",
-   "fieldname": "section_filters",
-   "fieldtype": "Section Break",
-   "hide_border": 1,
-   "label": "Filters"
-  },
-  {
-   "fieldname": "section_break_import",
-   "fieldtype": "Section Break",
-   "hide_border": 1,
-   "label": "Imports"
-  },
-  {
-   "fieldname": "section_break_export",
-   "fieldtype": "Section Break",
-   "hide_border": 1,
-   "label": "Exports"
-  },
-  {
-   "fieldname": "filter_widget",
-   "fieldtype": "HTML",
-   "label": "Filter Widget"
-  },
-  {
-   "default": "[]",
-   "fieldname": "filters",
-   "fieldtype": "JSON",
-   "hidden": 1,
-   "label": "Filters",
-   "read_only": 1
-  },
-  {
+   "description": "The start of the last import in which every object imported.",
    "fieldname": "last_import",
    "fieldtype": "Datetime",
    "label": "Last Import",
    "read_only": 1
   },
   {
+   "fieldname": "section_break_export",
+   "fieldtype": "Section Break",
+   "label": "Export"
+  },
+  {
+   "default": "0",
+   "fieldname": "do_export",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Export"
+  },
+  {
+   "depends_on": "eval:doc.do_export",
+   "description": "An Active Export transform of this DocType. It sends the documents this Connection has no external ID for yet, and the others too when there is no Update Transform.",
+   "fieldname": "export_transform",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Export Transform",
+   "link_filters": "[[\"Espresso Sync Transform\", \"status\", \"=\", \"Active\"], [\"Espresso Sync Transform\", \"direction\", \"=\", \"Export\"], [\"Espresso Sync Transform\", \"document_type\", \"=\", \"eval: doc.dt\"]]",
+   "mandatory_depends_on": "eval:doc.do_export",
+   "options": "Espresso Sync Transform"
+  },
+  {
+   "depends_on": "eval:doc.do_export",
+   "description": "An Active Export transform of this DocType that sends the documents with an external ID on this Connection, when the API updates with another operation than it creates (POST /tasks, then PUT /tasks/{id}).",
+   "fieldname": "update_transform",
+   "fieldtype": "Link",
+   "label": "Update Transform",
+   "link_filters": "[[\"Espresso Sync Transform\", \"status\", \"=\", \"Active\"], [\"Espresso Sync Transform\", \"direction\", \"=\", \"Export\"], [\"Espresso Sync Transform\", \"document_type\", \"=\", \"eval: doc.dt\"]]",
+   "options": "Espresso Sync Transform"
+  },
+  {
+   "fieldname": "column_break_export",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The newest change exported before the first document that failed.",
    "fieldname": "last_export",
    "fieldtype": "Datetime",
    "label": "Last Export",
    "read_only": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "export_existing",
-   "fieldtype": "Check",
-   "label": "Only Export Synced Documents"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-11-07 18:00:00.000000",
+ "modified": "2026-11-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection Shot",

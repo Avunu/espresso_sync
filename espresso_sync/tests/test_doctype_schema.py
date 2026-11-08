@@ -9,10 +9,8 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 from frappe.tests import IntegrationTestCase
 from jsonschema import Draft202012Validator
 
-from espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection import (
-	ensure_sync_fields,
-)
 from espresso_sync.schema.doctype_schema import doctype_json_schema, validate_doctype_payload
+from espresso_sync.sync import ensure_sync_fields
 
 GOLDEN = Path(__file__).parent / "fixtures" / "contact_insert.json"
 # the part of Contact's schema the golden file holds: the DocType, a Data field, a Link, a

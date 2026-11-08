@@ -12,7 +12,6 @@ import frappe
 import requests
 from frappe import _
 
-from espresso_sync.schema import openapi
 from espresso_sync.transform import dry_run as dry_run_module
 from espresso_sync.transform import engine, validate
 from espresso_sync.utils.safe_fetch import safe_request
@@ -96,18 +95,6 @@ def resolve_functions(calls: str | list, transform: str | None = None) -> list[d
 	return results
 
 
-def read_items(body: Any, pointer: str | None) -> list[Any]:
-	"""The items at `pointer` in a response body: a list there, or the one item."""
-	try:
-		for token in openapi.tokens_of(pointer or ""):
-			body = body[int(token)] if isinstance(body, list) else body[token]
-	except KeyError, IndexError, TypeError, ValueError, openapi.SpecError:
-		frappe.throw(_("The response has nothing at {0}").format(pointer), title=_("No Sample"))
-	if body is None:
-		return []
-	return body if isinstance(body, list) else [body]
-
-
 def fetch_api_sample(doc) -> list[Any]:
 	"""The items of the operation's response, from the Connection's server, with its
 	credentials (sent only to its Allowed Host)."""
@@ -139,7 +126,7 @@ def fetch_api_sample(doc) -> list[Any]:
 		body = response.json()
 	except ValueError:
 		frappe.throw(_("{0} did not answer JSON").format(url), title=_("No Sample"))
-	return read_items(body, doc.items_pointer)
+	return doc.read_items(body)
 
 
 def fetch_document_sample(doc, start: int, limit: int) -> list[Any]:
@@ -152,9 +139,7 @@ def fetch_document_sample(doc, start: int, limit: int) -> list[Any]:
 	for name in names:
 		document = frappe.get_doc(doc.document_type, name)
 		document.check_permission("read")
-		item = json.loads(document.as_json())
-		item.pop(engine.SYNC_IDS_FIELD, None)
-		items.append(item)
+		items.append(engine.document_item(document))
 	return items
 
 

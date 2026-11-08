@@ -53,6 +53,13 @@ def as_json_value(value: Any) -> Any:
 	return json.loads(frappe.as_json(value, indent=None))
 
 
+def document_item(doc) -> dict[str, Any]:
+	"""A document as an export's rules read it: as JSON gives it, without its Sync IDs."""
+	item = json.loads(doc.as_json())
+	item.pop(SYNC_IDS_FIELD, None)
+	return item
+
+
 def as_text(value: Any) -> str:
 	"""An id as text: a whole number without its ".0"."""
 	if isinstance(value, float) and value.is_integer():

@@ -10,9 +10,7 @@ import jsonata
 import jsonata.timebox
 from frappe.tests import IntegrationTestCase
 
-from espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection import (
-	ensure_sync_fields,
-)
+from espresso_sync.sync import ensure_sync_fields
 from espresso_sync.tests.test_schema_api import make_user
 from espresso_sync.transform import engine
 
@@ -23,7 +21,12 @@ MANAGER_USER = "es-engine-manager@example.com"
 def make_connection() -> str:
 	if not frappe.db.exists("Espresso Sync Connection", CONNECTION):
 		frappe.get_doc(
-			{"doctype": "Espresso Sync Connection", "connection_name": CONNECTION, "sync_frequency": "Manual"}
+			{
+				"doctype": "Espresso Sync Connection",
+				"connection_name": CONNECTION,
+				"server_url": "https://api.example.invalid/v1",
+				"sync_frequency": "Manual",
+			}
 		).insert(ignore_permissions=True)
 	return CONNECTION
 

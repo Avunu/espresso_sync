@@ -130,13 +130,13 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "JSONata giving an object of the path's parameters: {\"id\": $syncId(\"Customer\", customer)}. Export: evaluated on the document.",
+   "description": "JSONata giving an object of the path's parameters: {\"id\": $syncId(\"Customer\", customer)}. Import: evaluated on {\"last_import\"}, when the last import in which every item imported began. Export: evaluated on the document.",
    "fieldname": "path_params",
    "fieldtype": "Code",
    "label": "Path Parameters"
   },
   {
-   "description": "JSONata giving an object of the query parameters. Export: evaluated on the document.",
+   "description": "JSONata giving an object of the query parameters: {\"updated_since\": last_import}. Evaluated as Path Parameters is.",
    "fieldname": "query_params",
    "fieldtype": "Code",
    "label": "Query Parameters"
@@ -149,7 +149,7 @@
    "label": "Pages"
   },
   {
-   "description": "JSONata evaluated on the last response ({body, headers}): the next page's query parameters, or undefined after the last page.",
+   "description": "JSONata evaluated on the last page ({body, headers, query}): the next page's query parameters, merged into the last ones ({\"page\": query.page + 1}), or undefined after the last page.",
    "fieldname": "next_request_expr",
    "fieldtype": "Code",
    "label": "Next Request"
@@ -159,7 +159,8 @@
    "fieldname": "max_pages",
    "fieldtype": "Int",
    "label": "Maximum Pages",
-   "non_negative": 1
+   "non_negative": 1,
+   "description": "The most pages an import reads in one sync."
   },
   {
    "fieldname": "section_break_sync",
@@ -167,14 +168,14 @@
    "label": "Sync"
   },
   {
-   "description": "JSONata giving the object's id in the API. Import: evaluated on the item. Export: evaluated on the response.",
+   "description": "JSONata giving the object's id in the API. Import (required): evaluated on the item. Export: evaluated on a create's response.",
    "fieldname": "external_id_expr",
    "fieldtype": "Code",
    "label": "External ID"
   },
   {
    "depends_on": "eval:doc.direction==\"Import\"",
-   "description": "JSONata giving when the item last changed: an item no newer than its last import is skipped.",
+   "description": "JSONata giving when the item last changed: an item no newer than when it was last imported is skipped.",
    "fieldname": "modified_expr",
    "fieldtype": "Code",
    "label": "Modified"
@@ -185,7 +186,7 @@
   },
   {
    "default": "Enforce",
-   "description": "Each mapped object is checked against the target's schema. Enforce: one that fails is not saved or sent. Warn: it is, and the failure is logged.",
+   "description": "Each mapped object is checked against the target's schema when a sync runs: an import's against the DocType, an export's against the request body (an import's response is also checked against the operation, as warnings). Enforce: an object with an error is not saved or sent. Warn: it is, and the findings are logged. Off: nothing is checked.",
    "fieldname": "runtime_validation",
    "fieldtype": "Select",
    "label": "Runtime Validation",
@@ -273,7 +274,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-07 22:00:00.000000",
+ "modified": "2026-11-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Transform",

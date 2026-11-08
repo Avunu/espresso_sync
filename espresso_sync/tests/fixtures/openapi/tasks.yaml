@@ -26,13 +26,22 @@ paths:
           description: created
           content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } }
   /tasks/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
     get:
       operationId: getTask
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
       responses:
         "200":
           description: ok
+          content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } }
+    put:
+      operationId: updateTask
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } }
+      responses:
+        "200":
+          description: updated
           content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } }
   /people:
     get:
@@ -56,6 +65,7 @@ components:
         due: { type: string, format: date }
         assignee: { type: string }
         labels: { type: array, items: { type: string } }
+        updated: { type: string, format: date-time, readOnly: true }
     Person:
       type: object
       properties:

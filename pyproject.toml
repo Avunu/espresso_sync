@@ -7,12 +7,7 @@ license = { text = "MIT" }
 classifiers = ["License :: OSI Approved :: MIT License"]
 readme = "README.md"
 dynamic = ["version"]
-dependencies = [
-	"jsonpath-ng",
-	"jsonata-python>=0.7.1",
-	"jsonschema>=4.26.0,<5",
-	"openapi-spec-validator>=0.9.0,<0.10",
-]
+dependencies = ["jsonata-python>=0.7.1", "jsonschema>=4.26.0,<5", "openapi-spec-validator>=0.9.0,<0.10"]
 
 [build-system]
 requires = ["flit_core >=3.4,<4"]
@@ -28,7 +23,7 @@ frappe-major = 16
 siblings = []
 
 [tool.frappe-nix.listing]
-# Off the marketplace until the transform editor replaces the legacy maps.
+# Off the marketplace until the portal's transform editor ships.
 publish = false
 
 # The /espresso_sync page's React sources, built by Frappe's esbuild through
@@ -44,10 +39,6 @@ check = "tsc -p tsconfig.json"
 # A Worker's postMessage has no target origin: the rule is for window.postMessage.
 files = ["espresso_sync/public/js/editor/evalWorker.ts"]
 rules = { "unicorn/require-post-message-target-origin" = "off" }
-
-[[tool.frappe-nix.unchecked-js]]
-path = "espresso_sync/espresso_sync/doctype/espresso_sync_connection/espresso_sync_connection.js"
-reason = "Legacy map editor, replaced by the transform editor and deleted with the legacy executor"
 
 [tool.ruff]
 line-length = 110

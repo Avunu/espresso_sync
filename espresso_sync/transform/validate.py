@@ -13,7 +13,8 @@ The checks, from the cheapest:
 
 1. the rules compile, and each expression parses (on every save);
 2. every required field of the target is filled by a rule: the DocType's hard-required
-   fields (doctype_schema's tiers), the request body's required properties;
+   fields (doctype_schema's tiers), the request body's required properties; an import has
+   an External ID;
 3. each sample item maps, and what it maps to passes the target's schema: the DocType's,
    with Frappe's coercions as warnings and the fields Frappe fills in as warnings, or the
    operation's request body (openapi.validate_payload);
@@ -223,6 +224,16 @@ def static_diagnostics(transform, sides: Sides, compiled: Compiled) -> list[dict
 		expression = transform.get(fieldname)
 		if expression and (error := parse_error(expression)):
 			found.append(diagnostic(fieldname, "", "error", *error))
+	if sides.importing and not (transform.external_id_expr or "").strip():
+		found.append(
+			diagnostic(
+				"external_id_expr",
+				"",
+				"error",
+				"required",
+				_("An import needs an External ID: without one, each sync imports every item again"),
+			)
+		)
 	for table, expression in transform.get_child_table_keys().items():
 		if not isinstance(expression, str) or not expression.strip():
 			found.append(

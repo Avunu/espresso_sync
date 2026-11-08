@@ -30,22 +30,22 @@ const CONNECTION = "Espresso Sync Connection";
 /** The list's columns: what identifies a Connection and how it runs, never its credentials. */
 interface ConnectionRow {
 	name: string;
-	api_domain: string | null;
-	pull_shot: 0 | 1;
+	server_url: string | null;
+	enabled: 0 | 1;
 	sync_frequency: string | null;
 	last_pull: string | null;
 }
 
 const HEADERS = [
 	{ key: "name", header: "Connection" },
-	{ key: "api_domain", header: "API host" },
-	{ key: "pull_shot", header: "Status" },
+	{ key: "server_url", header: "Server URL" },
+	{ key: "enabled", header: "Status" },
 	{ key: "sync_frequency", header: "Runs" },
 	{ key: "last_pull", header: "Last sync" },
 ];
 
 const DESCRIPTION =
-	"Each Connection holds an API's address and credentials, which are edited in the desk. API specs and transforms are on their way.";
+	"Each Connection holds an API's address and credentials, which are edited in the desk, and the shots that sync its DocTypes through transforms.";
 
 /** Frappe's "YYYY-MM-DD HH:MM:SS.ffffff" (system time zone), to the minute. */
 function formatDatetime(value: string | null): string {
@@ -60,10 +60,10 @@ function ConnectionCell({ row, column }: { row: ConnectionRow; column: string })
 					{row.name}
 				</Link>
 			);
-		case "api_domain":
-			return <code>{row.api_domain || "—"}</code>;
-		case "pull_shot":
-			return row.pull_shot ? (
+		case "server_url":
+			return <code>{row.server_url || "—"}</code>;
+		case "enabled":
+			return row.enabled ? (
 				<Tag type="green" size="sm">
 					Enabled
 				</Tag>
@@ -84,7 +84,7 @@ function ConnectionCell({ row, column }: { row: ConnectionRow; column: string })
 /** `#/connections`, and where the page opens: the Connections, linking to the desk for each. */
 export function Overview() {
 	const { data, error, isLoading } = useFrappeGetDocList<ConnectionRow>(CONNECTION, {
-		fields: ["name", "api_domain", "pull_shot", "sync_frequency", "last_pull"],
+		fields: ["name", "server_url", "enabled", "sync_frequency", "last_pull"],
 		orderBy: { field: "modified", order: "desc" },
 		limit: 500,
 	});
@@ -117,8 +117,8 @@ export function Overview() {
 	const rows = (data ?? []).map((row) => ({
 		id: row.name,
 		name: row.name,
-		api_domain: row.api_domain,
-		pull_shot: row.pull_shot,
+		server_url: row.server_url,
+		enabled: row.enabled,
 		sync_frequency: row.sync_frequency,
 		last_pull: row.last_pull,
 	}));

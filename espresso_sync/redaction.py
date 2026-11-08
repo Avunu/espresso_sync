@@ -3,28 +3,25 @@
 
 """Mask credentials before they are stored in an Espresso Sync Pull Log.
 
-A single entry point, ``redact_pull_log_values``, is used both when a new
-Pull Log row is written and by the patch that scrubs existing rows, so the two
-can never disagree about what counts as a secret.
+``redact_pull_log_values`` is the one entry point: the Pull Log calls it when it is
+validated, and the sync again on what it could not insert, so nothing else decides what
+counts as a secret.
 
 Rules:
 
-- request headers: ``Authorization``, ``Proxy-Authorization``, the header name
-  the Connection uses for header-based auth (its API Key field), and any
-  header whose name contains auth, key, token, secret, passw, credential,
-  signature, session or cookie have their value replaced;
+- JSON keys and header names: ``Authorization``, ``Proxy-Authorization``, the header
+  name the Connection uses for header-based auth (its API Key field), and any name that
+  contains auth, key, token, secret, passw, credential, signature, session or cookie
+  have their value replaced;
 - URLs: the user-info part (``https://user:pass@host``) is replaced, and so is
   the value of every query parameter whose name matches the same pattern;
-- response, traceback, diagnostics and the imported object are read as JSON when they
-  parse and get the same key-based masking as the request; otherwise, like
-  any other free text, the value after one of those names
-  (``Authorization: Basic ...``, ``'X-Api-Key': '...'``,
-  ``"access_token": "..."``, ``client_secret=...``) and URL user-info are
-  masked;
+- the response, traceback, diagnostics and object are read as JSON when they parse and
+  get that key-based masking; otherwise, like any other free text, the value after one
+  of those names (``Authorization: Basic ...``, ``'X-Api-Key': '...'``,
+  ``"access_token": "..."``, ``client_secret=...``) and URL user-info are masked;
 - every literal occurrence of the Connection's API secret (and, for Basic
   auth, the ``key:secret`` pair and its base64 form), also JSON-escaped,
-  repr-escaped and URL-encoded, is replaced in every field, including the
-  local document and the map.
+  repr-escaped and URL-encoded, is replaced in every field, the local document included.
 """
 
 import base64
@@ -55,10 +52,10 @@ URL_ONLY = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://\S*$")
 MIN_SECRET_LENGTH = 6
 
 # fields holding data sent to or received from the API
-PULL_LOG_TEXT_FIELDS = ("url", "request", "response", "traceback", "diagnostics", "object")
-# local data (the document written, the map used): only literal secrets are
-# replaced, so a field that merely looks like a credential stays readable
-PULL_LOG_LOCAL_FIELDS = ("document", "map")
+PULL_LOG_TEXT_FIELDS = ("url", "response", "traceback", "diagnostics", "object")
+# local data (the document written or read): only literal secrets are replaced, so a
+# field that merely looks like a credential stays readable
+PULL_LOG_LOCAL_FIELDS = ("document",)
 PULL_LOG_FIELDS = PULL_LOG_TEXT_FIELDS + PULL_LOG_LOCAL_FIELDS
 
 
@@ -191,29 +188,29 @@ def _redact_structure(value, header_names, secrets):
 		if URL_ONLY.match(value):
 			return redact_url(value, secrets)
 		# a payload is usually JSON text itself
-		return redact_request(value, header_names, secrets)
+		return redact_json(value, header_names, secrets)
 	return value
 
 
-def redact_request(request, header_names=(), secrets=()):
-	"""Redact a Pull Log request ({"payload": ..., "headers": {...}}), dict or JSON text.
+def redact_json(value, header_names=(), secrets=()):
+	"""Redact a dict or a list, or JSON text (free text when it does not parse).
 
 	The value comes back in the type it was given; the input is never mutated,
-	because the caller may still be using the same headers dict for requests.
+	because the caller may still be using it (a dict of headers, say).
 	"""
-	if isinstance(request, (dict, list)):
-		return _redact_structure(copy.deepcopy(request), header_names, secrets)
-	if not isinstance(request, str) or not request:
-		return request
+	if isinstance(value, (dict, list)):
+		return _redact_structure(copy.deepcopy(value), header_names, secrets)
+	if not isinstance(value, str) or not value:
+		return value
 	try:
-		parsed = json.loads(request)
+		parsed = json.loads(value)
 	except ValueError:
-		return redact_text(request, secrets, header_names)
+		return redact_text(value, secrets, header_names)
 	if not isinstance(parsed, (dict, list)):
-		return redact_text(request, secrets, header_names)
+		return redact_text(value, secrets, header_names)
 	redacted = _redact_structure(parsed, header_names, secrets)
 	if redacted == parsed:
-		return request
+		return value
 	return json.dumps(redacted, indent=4, default=str)
 
 
@@ -226,35 +223,23 @@ def _as_text(value):
 	return frappe.utils.cstr(value)
 
 
-def redact_pull_log_values(values, connection_name=None, secrets_cache=None):
+def redact_pull_log_values(values, connection_name=None):
 	"""Return a copy of the Pull Log fields in ``values`` with secrets masked.
 
 	``values`` is a mapping holding any of PULL_LOG_FIELDS; only the keys it
-	contains are returned. ``secrets_cache`` (a dict) avoids decrypting the
-	same Connection secret once per row.
+	contains are returned.
 	"""
-	if secrets_cache is not None and connection_name in secrets_cache:
-		header_names, secrets = secrets_cache[connection_name]
-	else:
-		header_names, secrets = connection_secrets(connection_name)
-		if secrets_cache is not None:
-			secrets_cache[connection_name] = (header_names, secrets)
-
+	header_names, secrets = connection_secrets(connection_name)
 	redacted = {}
 	for field in PULL_LOG_FIELDS:
 		if field not in values:
 			continue
-		value = values[field]
-		if field == "request":
-			# a dict is kept as a dict: the caller may serialise it differently
-			redacted[field] = redact_request(value, header_names, secrets)
-			continue
-		value = _as_text(value)
+		value = _as_text(values[field])
 		if field == "url":
 			redacted[field] = redact_url(value, secrets)
 		elif field in PULL_LOG_LOCAL_FIELDS:
 			redacted[field] = redact_literals(value, secrets)
 		else:
 			# JSON when it parses, free text otherwise
-			redacted[field] = redact_request(value, header_names, secrets)
+			redacted[field] = redact_json(value, header_names, secrets)
 	return redacted
