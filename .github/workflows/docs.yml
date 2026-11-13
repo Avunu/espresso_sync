@@ -21,6 +21,6 @@ jobs:
   docs:
     permissions:
       contents: read # checkout
-    uses: Avunu/site-docs/.github/workflows/check-docs.yml@93732ee448d6ceb34c0e6d71e138bb793b2dd678 # 2026-11-07
+    uses: Avunu/site-docs/.github/workflows/check-docs.yml@b5456555957d4d63a6452c521cc75fad87fcb059 # 2026-11-07
     with:
       path: espresso-sync
