@@ -31,6 +31,7 @@ RUN_FIELDS = (
 	"max_pages",
 	"external_id_expr",
 	"modified_expr",
+	"skip_expr",
 	"runtime_validation",
 	"child_table_policy",
 	"child_table_keys",
@@ -72,6 +73,7 @@ class EspressoSyncTransform(Document):
 		rules: DF.JSON | None
 		runtime_validation: DF.Literal["Enforce", "Warn", "Off"]
 		sample: DF.JSON | None
+		skip_expr: DF.Code | None
 		status: DF.Literal["Draft", "Active"]
 		title: DF.Data
 		validated_source_hash: DF.Data | None

@@ -11,8 +11,8 @@ from croniter import croniter
 from frappe import _
 from frappe.model.document import Document
 
-from espresso_sync.scheduler import enqueue_connection_sync
-from espresso_sync.sync import Run, ensure_sync_fields
+from espresso_sync.scheduler import enqueue_connection_sync, holding_sync_lock
+from espresso_sync.sync import SHOT, Run, ensure_sync_fields
 from espresso_sync.utils.safe_fetch import credentials_apply, host_of, normalize_allowed_host
 
 TRANSFORM = "Espresso Sync Transform"
@@ -154,6 +154,42 @@ def get_connection(name: str) -> EspressoSyncConnection:
 @frappe.whitelist()
 def sync_action(doc: str):
 	return sync_now(json.loads(doc)["name"])
+
+
+@frappe.whitelist(methods=["POST"])
+def resync_action(doc: str):
+	return resync(json.loads(doc)["name"])
+
+
+def resync(name: str) -> EspressoSyncConnection:
+	"""Resync: forget when each shot last imported and exported, and queue a sync, which
+	reads and sends everything again (what is already synced is skipped, as in any sync).
+	For when what a sync skips changed: a skipped document or item is done as far as Last
+	Import and Last Export go. A Connection that is not Enabled is only reset. Refused while a
+	sync of the Connection is running, which would set them again."""
+	frappe.only_for("System Manager")
+	connection = get_connection(name)
+	connection.check_permission("write")
+	with holding_sync_lock(name) as acquired:
+		if not acquired:
+			frappe.throw(_("{0} is syncing: resync when it is done").format(frappe.bold(name)))
+		frappe.db.set_value(
+			SHOT,
+			{"parenttype": connection.doctype, "parent": name},
+			{"last_import": None, "last_export": None},
+			update_modified=False,
+		)
+		# committed before the lock is let go: a sync that starts then reads the reset
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- the reset must be seen by the sync the lock lets in
+	# the shots as they are now: the desk form is refreshed with this
+	connection.reload()
+	if connection.enabled:
+		enqueue_connection_sync(name)
+		message = _("{0} is reset and its sync is queued: see the Espresso Sync Pull Log")
+	else:
+		message = _("{0} is reset: it syncs everything again when it is Enabled")
+	frappe.msgprint(message.format(frappe.bold(name)), alert=True)
+	return connection
 
 
 def sync_now(name: str) -> EspressoSyncConnection:

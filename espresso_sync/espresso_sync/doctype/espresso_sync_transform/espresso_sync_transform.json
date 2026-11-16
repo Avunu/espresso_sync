@@ -25,6 +25,7 @@
   "section_break_sync",
   "external_id_expr",
   "modified_expr",
+  "skip_expr",
   "column_break_sync",
   "runtime_validation",
   "child_table_policy",
@@ -172,6 +173,12 @@
    "fieldname": "modified_expr",
    "fieldtype": "Code",
    "label": "Modified"
+  },
+  {
+   "description": "JSONata evaluated on the API's item (an import) or the document (an export): when it gives true (as JSONata's $boolean reads it), it is skipped, as if it were not there, and not logged. Nothing at all does not skip, and $not(nothing) is nothing: for an export, $not($exists($syncId(\"Project\", project))) skips a document whose Project has no id; for an import, $not($exists($localName(\"Project\", repository))) skips an item whose repository has none.",
+   "fieldname": "skip_expr",
+   "fieldtype": "Code",
+   "label": "Skip When"
   },
   {
    "fieldname": "column_break_sync",

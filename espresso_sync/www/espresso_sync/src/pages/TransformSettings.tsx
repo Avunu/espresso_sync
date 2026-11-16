@@ -13,6 +13,7 @@ export const SETTINGS = [
 	"max_pages",
 	"external_id_expr",
 	"modified_expr",
+	"skip_expr",
 	"runtime_validation",
 	"child_table_policy",
 	"child_table_keys",
@@ -113,6 +114,16 @@ export function TransformSettings({ importing, settings, onChange }: TransformSe
 					{...field}
 				/>
 			)}
+			<Expression
+				name="skip_expr"
+				label="Skip When"
+				help={
+					importing
+						? 'Evaluated on the API\'s item: when it gives true, the item is skipped, as if it were not there. Nothing at all does not skip, and $not(nothing) is nothing: $not($exists($localName("Project", repository))) skips an item whose repository has no Project.'
+						: 'Evaluated on the document: when it gives true, it is skipped, as if it were not there. Nothing at all does not skip, and $not(nothing) is nothing: $not($exists($syncId("Project", project))) skips a document whose Project has no id.'
+				}
+				{...field}
+			/>
 			<Expression
 				name="path_params"
 				label="Path Parameters"
