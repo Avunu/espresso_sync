@@ -4,6 +4,11 @@
    "action": "espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.sync_action",
    "action_type": "Server Action",
    "label": "Sync Now"
+  },
+  {
+   "action": "espresso_sync.espresso_sync.doctype.espresso_sync_connection.espresso_sync_connection.resync_action",
+   "action_type": "Server Action",
+   "label": "Resync"
   }
  ],
  "allow_import": 1,

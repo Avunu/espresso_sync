@@ -3,7 +3,7 @@ title: Connections and syncs
 description: An Espresso Sync Connection's server and credentials, its shots, and what a sync does with their Active transforms.
 nav_title: Connections and syncs
 order: 1
-updated: 2026-11-08
+updated: 2026-11-16
 ---
 
 An **Espresso Sync Connection** is one external API: where it is, how to authenticate, and what to sync with it. Only a System Manager can create, change or run one.
@@ -41,7 +41,7 @@ The **Export Transform** sends the documents this Connection has no external ID 
 
 ## When syncs run
 
-**Sync Now** on the Connection form queues one at once; the Pull Log shows how it went. An **Enabled** Connection also runs on its **Sync Frequency**:
+**Sync Now** on the Connection form queues one at once; the Pull Log shows how it went. **Resync** first resets every shot's Last Import and Last Export, so that the sync reads and sends everything again (what is already synced is skipped, as in any sync): for after a change to what a sync skips (see [Choosing what syncs](#choosing-what-syncs)). It is refused while the Connection is syncing, and a Connection that is not Enabled is only reset. An **Enabled** Connection also runs on its **Sync Frequency**:
 
 | Sync Frequency                 | Runs                                                                                   |
 | ------------------------------ | -------------------------------------------------------------------------------------- |
@@ -59,7 +59,7 @@ For each shot that imports, the import transform's operation is read from the Se
 1. **The request.** The path's parameters and the query come from the transform's **Path Parameters** and **Query Parameters**, evaluated on `{"last_import": …}`, when the last complete import began (absent before the first). `{"updated_since": last_import}` reads only what changed since.
 2. **The pages.** After each page, **Next Request** is evaluated on `{body, headers, query}` (the page's body and response headers, and the query it was asked with) and gives the next page's query parameters, merged into the last ones: `$count(body.data) > 0 ? {"page": query.page + 1}`. Nothing, an empty object, or one whose values are all `null` (`{"cursor": body.next}` when `next` is `null`) ends the import. An import that reads **Maximum Pages** while Next Request still gives another page fails, so Last Import stays where it was and the next import reads the pages left.
 3. **The response.** A status other than 2XX, or a body that is not JSON, fails the request. Unless Runtime Validation is Off, the body is checked against the operation's response schema, and what that finds is logged as warnings: the items are still imported.
-4. **The items**, at the **Items Pointer**. For each, **External ID** gives its id and **Modified**, if set, when it last changed. An item no newer than when it was last imported or exported is skipped, and so is one whose Espresso Sync IDs row is **Disabled**. When the shot also exports, a document changed here since it was last synced is not overwritten: the export sends the change. When the item is newer in the API too, the import of it fails as a `conflict`, and the export overwrites the API's change.
+4. **The items**, at the **Items Pointer**. For each, **Skip When**, if the transform has one, is evaluated first: an item it gives true for is skipped. Then **External ID** gives its id and **Modified**, if set, when it last changed. An item no newer than when it was last imported or exported is skipped, and so is one whose Espresso Sync IDs row is **Disabled**. When the shot also exports, a document changed here since it was last synced is not overwritten: the export sends the change. When the item is newer in the API too, the import of it fails as a `conflict`, and the export overwrites the API's change.
 5. **The mapping.** The transform's **Active JSONata** maps the item. Runtime Validation checks the result against the DocType: Enforce does not save it when there is an error, Warn saves it and logs the findings.
 6. **The document.** The one this Connection imported as that id before is updated, or else the document the mapped `name` names, or else a new one is inserted. On an update, each mapped child table is replaced by the mapped rows, or, with **Merge by Key**, rows with the same key are updated, the other mapped rows added, and the rows already there kept. A document that fails to save leaves nothing behind.
 
@@ -67,7 +67,7 @@ For each shot that imports, the import transform's operation is read from the Se
 
 For each shot that exports, the documents of its DocType changed since **Last Export** (every one, the first time, and after the shot changed) are read, the oldest first. A document with **Exclude from Sync** checked is left out.
 
-1. A document whose last change is one this Connection synced is skipped: what an import saved is not sent back, and what was exported is not sent again.
+1. A document whose last change is one this Connection synced is skipped: what an import saved is not sent back, and what was exported is not sent again. So is one that **Skip When** gives true for, of the transform that would send it: the Export Transform for a document with no external ID yet, the Update Transform for one with.
 2. The transform's Active JSONata maps the document, as the export's sample shows it: the document with its child tables, without its Sync IDs. Runtime Validation checks the result against the operation's request body (as a request: a `readOnly` property is flagged).
 3. It is sent with the operation's method to its path, the Path and Query Parameters evaluated on the document.
 4. A create's response gives the new object's id through **External ID**, which is stored on the document's Espresso Sync IDs and committed at once: the object exists in the API, whatever happens to the rest of the sync. A response without one is logged with a warning, as the next export would create the object again.
@@ -76,6 +76,22 @@ For each shot that exports, the documents of its DocType changed since **Last Ex
 ## Two-way sync
 
 A shot can import and export: in each sync, the import runs first. Each Espresso Sync IDs row records the document's **Last Synced** time, when this Connection last imported or exported it, and the item's **External Modified**, when it last changed in the API as last imported or exported. An import saves a document and records it as synced, so the export after it skips the document; an export records the document as synced, so it is not sent again until it changes, and, through the import transform's Modified on the response, records the object's change in the API, so the import does not read it back. A change made in the API comes back once, through the import, and is not sent back. A change made here is never overwritten by the import before the export sends it; when the item changed in the API too, the change made here wins, and the conflict is logged. Without a Modified, an import cannot tell a changed item from an unchanged one: it reads every item again, and skips those changed here.
+
+## Choosing what syncs
+
+A shot syncs every document of its DocType, and an import every item the API gives. **Skip When** narrows that: a JSONata expression on each item an import reads, or each document an export would send. When it gives true, as JSONata's `$boolean` reads it, the item or document is skipped as if it were not there: nothing is saved, sent or logged, and an export counts it as done, so Last Export moves past it. An error in it fails that item or document alone, as any mapping error does. An import evaluates it on the API's item, before anything else, so it reads the API's own fields; an export evaluates it on the document, as the transform that would send it has it.
+
+Nothing at all does not skip, and neither does `$not` of nothing (JSONata's `$not(undefined)` is undefined): to test for what is missing, use `$exists`.
+
+For example, to sync a Task only when its Project has been given an id by hand:
+
+1. Add a shot for Project with **Import** and **Export** both off, and save the Connection while it is Enabled (a sync does it too): the shot syncs nothing, and gives Project the **Sync** tab, with its Espresso Sync IDs.
+2. On each Project to sync, add a row to Espresso Sync IDs: this Connection, and the **External ID** the API knows the project by.
+3. On the export transforms (a create and an update), Path Parameters can use `$syncId("Project", project)`, and **Skip When** is `$not($exists($syncId("Project", project)))`: a task with no project is skipped too. On the import transform, which reads the API's items, Skip When asks the item's own field for the project, for example `$not($exists($localName("Project", repository)))` when the item names its repository: `$localName` gives the name of the Project with that External ID.
+
+A document or item that is skipped is done as far as Last Export goes, and, for an import whose request reads only what changed since `last_import` (as `{"updated_since": last_import}` does), as far as Last Import goes. So when something Skip When reads changes elsewhere (the Project's id is added), what it skipped is not read again until it changes: run **Resync**. An import whose request does not read `last_import` reads every item each sync, and needs no Resync.
+
+A document that was synced and is now skipped is left as it is, and an import of its item is no longer kept from it by a change made here: nothing will send that change. Disabling a Project's Espresso Sync IDs row does not change what `$syncId` gives, so it does not skip the Project's tasks: delete the row.
 
 ## The Pull Log
 
