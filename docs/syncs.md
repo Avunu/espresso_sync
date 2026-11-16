@@ -85,7 +85,7 @@ Nothing at all does not skip, and neither does `$not` of nothing (JSONata's `$no
 
 For example, to sync a Task only when its Project has been given an id by hand:
 
-1. Add a shot for Project with **Import** and **Export** both off, and save the Connection while it is Enabled (a sync does it too): the shot syncs nothing, and gives Project the **Sync** tab, with its Espresso Sync IDs.
+1. Add a shot for Project with **Import** and **Export** both off, and save the Connection while it is Enabled: the shot syncs nothing, and gives Project the **Sync** tab, with its Espresso Sync IDs.
 2. On each Project to sync, add a row to Espresso Sync IDs: this Connection, and the **External ID** the API knows the project by.
 3. On the export transforms (a create and an update), Path Parameters can use `$syncId("Project", project)`, and **Skip When** is `$not($exists($syncId("Project", project)))`: a task with no project is skipped too. On the import transform, which reads the API's items, Skip When asks the item's own field for the project, for example `$not($exists($localName("Project", repository)))` when the item names its repository: `$localName` gives the name of the Project with that External ID.
 

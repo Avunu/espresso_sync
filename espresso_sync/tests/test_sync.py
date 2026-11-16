@@ -788,24 +788,15 @@ class TestResync(SyncTestCase):
 
 
 class TestSyncOnlyTab(SyncTestCase):
-	def remove_note_fields(self, fields):
-		for fieldname in fields:
-			frappe.delete_doc("Custom Field", f"Note-{fieldname}", ignore_missing=True, force=True)
-		# dropping the columns is DDL, which commits; the deletes of the Custom Fields go with it
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- what the test added to Note is undone for good
-
 	def test_a_shot_that_neither_imports_nor_exports_adds_the_sync_tab(self):
-		fields = ("espresso_sync_tab", "exclude_from_sync", "espresso_sync_ids")
-		# Note has no Sync tab: another test may have added one
-		for fieldname in fields:
-			frappe.delete_doc("Custom Field", f"Note-{fieldname}", ignore_missing=True, force=True)
-		self.addCleanup(self.remove_note_fields, fields)
+		# saving the Connection while it is Enabled gives each shot's DocType its Sync tab
 		connection = esc.get_connection(self.connection)
 		connection.enabled = 1
 		connection.append("shots", {"dt": "Note"})
-		connection.save()
-		self.assertTrue(all(frappe.db.exists("Custom Field", f"Note-{fieldname}") for fieldname in fields))
-		# and a sync of it does nothing
+		with patch.object(esc, "ensure_sync_fields") as ensure:
+			connection.save()
+		ensure.assert_called_once_with("Note")
+		# and a sync of it does nothing: no request, nothing logged
 		self.assertEqual(self.sync(), [])
 		self.assertEqual(pull_logs(self.connection), [])
 
