@@ -14,7 +14,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 from responses import matchers
 
-from espresso_sync import sync
+from espresso_sync import scheduler, sync
 from espresso_sync.api import schema as schema_api
 from espresso_sync.espresso_sync.doctype.espresso_sync_connection import espresso_sync_connection as esc
 from espresso_sync.tests.egress import public_dns
@@ -361,6 +361,85 @@ class TestImport(SyncTestCase):
 		self.sync(page(1, task("x1", "es disabled, renamed", "2026-02-01T00:00:00Z")))
 		self.assertEqual(self.todo("x1").description, "es disabled")
 
+	def test_skip_when_skips_an_item_before_anything_else(self):
+		# done items are skipped, and a skipped item needs no id
+		frappe.db.set_value(
+			TRANSFORM, self.import_transform, {"next_request_expr": None, "skip_expr": "done"}
+		)
+		self.sync(
+			page(
+				1,
+				task("s1", "es skip kept"),
+				task("s2", "es skip done", done=True),
+				{"title": "no id", "done": True},
+			)
+		)
+		self.assertEqual(self.todo("s1").description, "es skip kept")
+		self.assertEqual(frappe.db.count("Espresso Sync ID", {"sync_connection": self.connection}), 1)
+		logs = pull_logs(self.connection)
+		# the request, and the one item imported: a skipped item is not logged
+		self.assertEqual(
+			[(log.sync_status, bool(log.sync_doc)) for log in logs], [("Success", False), ("Success", True)]
+		)
+
+	def test_skip_when_is_true_or_nothing(self):
+		frappe.db.set_value(TRANSFORM, self.import_transform, "next_request_expr", None)
+		# nothing at all does not skip, and neither does $not of it
+		frappe.db.set_value(TRANSFORM, self.import_transform, "skip_expr", "$not(missing)")
+		self.sync(page(1, task("n1", "es not skipped")))
+		self.todo("n1")
+		# $exists is always a boolean
+		frappe.db.set_value(TRANSFORM, self.import_transform, "skip_expr", "$not($exists(missing))")
+		self.sync(page(1, task("n2", "es skipped")))
+		self.assertFalse(
+			frappe.db.exists("Espresso Sync ID", {"sync_connection": self.connection, "external_id": "n2"})
+		)
+
+	def test_skip_when_reads_what_it_gives_as_jsonata_does(self):
+		frappe.db.set_value(TRANSFORM, self.import_transform, "next_request_expr", None)
+		for n, (expression, skipped) in enumerate(
+			[
+				('"x"', True),
+				('""', False),
+				("1", True),
+				("0", False),
+				("null", False),
+				("[]", False),
+				("[1]", True),
+				("{}", False),
+				('{"a": 1}', True),
+				("title", True),
+				("missing", False),
+				("  ", False),
+			]
+		):
+			with self.subTest(expression):
+				frappe.db.set_value(TRANSFORM, self.import_transform, "skip_expr", expression)
+				self.sync(page(1, task(f"c{n}", f"es coerced {n}")))
+				self.assertEqual(
+					bool(
+						frappe.db.exists(
+							"Espresso Sync ID", {"sync_connection": self.connection, "external_id": f"c{n}"}
+						)
+					),
+					not skipped,
+				)
+
+	def test_an_error_in_skip_when_fails_that_item_only(self):
+		frappe.db.set_value(
+			TRANSFORM, self.import_transform, {"next_request_expr": None, "skip_expr": "$number(title) > 0"}
+		)
+		self.sync(page(1, task("k1", "es bad"), task("k2", "5"), task("k3", "-1")))
+		self.assertEqual(self.todo("k3").description, "-1")
+		self.assertFalse(
+			frappe.db.exists("Espresso Sync ID", {"sync_connection": self.connection, "external_id": "k2"})
+		)
+		failed = [log for log in pull_logs(self.connection) if log.sync_status == "Failure"]
+		self.assertEqual(len(failed), 1)
+		self.assertIn("es bad", failed[0].object)
+		# a failure keeps Last Import where it was
+		self.assertIsNone(esc.get_connection(self.connection).shots[0].last_import)
+
 	def test_a_draft_transform_is_never_executed(self):
 		frappe.db.set_value(TRANSFORM, self.import_transform, "status", "Draft")
 		self.assertEqual(self.sync(), [])
@@ -540,8 +619,224 @@ class TestExport(SyncTestCase):
 		frappe.db.set_value("ToDo", self.todos[1].name, "exclude_from_sync", 1)
 		self.assertEqual(self.sync(), [])
 
+	def skip(self, expression: str | None):
+		for title in (f"{self.connection} export", f"{self.connection} update"):
+			frappe.db.set_value(TRANSFORM, title, "skip_expr", expression)
+
+	def test_a_skipped_document_is_not_sent_and_done(self):
+		self.skip(f'description = "{self.todos[0].description}"')
+		calls = self.sync((responses.POST, f"{SERVER}/tasks", {"status": 201, "json": {"id": "x2"}}))
+		self.assertEqual(
+			[json.loads(call.request.body)["title"] for call in calls], [self.todos[1].description]
+		)
+		self.assertEqual([self.external_id(t) for t in self.todos], [None, "x2"])
+		# it is not logged, and Last Export moved past it
+		self.assertEqual([log.sync_status for log in pull_logs(self.connection)], ["Success"])
+		shot = esc.get_connection(self.connection).shots[0]
+		self.assertGreaterEqual(shot.last_export, frappe.db.get_value("ToDo", self.todos[1].name, "modified"))
+
+		# so that what changed about the skip does not send it: Resync is for that
+		self.skip(None)
+		self.assertEqual(self.sync(), [])
+		frappe.db.set_value("Espresso Sync Connection", self.connection, "enabled", 1)
+		with patch.object(esc, "enqueue_connection_sync") as enqueue:
+			esc.resync(self.connection)
+		enqueue.assert_called_once_with(self.connection)
+		self.assertIsNone(esc.get_connection(self.connection).shots[0].last_export)
+		# the sync it queues reads everything: here, what changed since the test began
+		self.start_exports_now()
+		calls = self.sync((responses.POST, f"{SERVER}/tasks", {"status": 201, "json": {"id": "x1"}}))
+		self.assertEqual(
+			[json.loads(call.request.body)["title"] for call in calls], [self.todos[0].description]
+		)
+		self.assertEqual([self.external_id(t) for t in self.todos], ["x1", "x2"])
+
+	def test_the_transform_that_would_send_the_document_is_asked(self):
+		everything = 'description != ""'
+		# Skip When on the update alone: a document with no id is created, one with an id is not updated
+		frappe.db.set_value(TRANSFORM, f"{self.connection} update", "skip_expr", everything)
+		created = [
+			(responses.POST, f"{SERVER}/tasks", {"status": 201, "json": {"id": f"x{n}"}}) for n in (1, 2)
+		]
+		self.assertEqual([call.request.method for call in self.sync(*created)], ["POST", "POST"])
+		todo: Any = frappe.get_doc("ToDo", self.todos[0].name)
+		todo.status = "Closed"
+		todo.save()
+		self.assertEqual(self.sync(), [])
+		# on the create alone: what has an id is updated, a new document is not created
+		frappe.db.set_value(TRANSFORM, f"{self.connection} update", "skip_expr", None)
+		frappe.db.set_value(TRANSFORM, f"{self.connection} export", "skip_expr", everything)
+		# (the closed one was skipped, so done: it is sent when it changes again)
+		todo.reload()
+		todo.status = "Open"
+		todo.save()
+		newer: Any = frappe.get_doc(
+			{"doctype": "ToDo", "description": f"es {self._testMethodName} new"}
+		).insert()
+		calls = self.sync((responses.PUT, f"{SERVER}/tasks/x1", {"json": {}}))
+		self.assertEqual([(c.request.method, c.request.url) for c in calls], [("PUT", f"{SERVER}/tasks/x1")])
+		self.assertIsNone(self.external_id(newer))
+
+	def test_an_error_in_skip_when_fails_that_document_only(self):
+		# $number raises for the first (a title that is no number), and is a number for the second
+		frappe.db.set_value("ToDo", self.todos[1].name, "description", "5")
+		self.skip("$number(description) > 0")
+		calls = self.sync()
+		self.assertEqual(calls, [])
+		[failed] = pull_logs(self.connection)
+		self.assertEqual(failed.sync_status, "Failure")
+		self.assertEqual(failed.sync_doc, self.todos[0].name)
+		# the one that is skipped is done, the one that failed is sent again by the next sync
+		shot = esc.get_connection(self.connection).shots[0]
+		self.assertLess(shot.last_export, frappe.db.get_value("ToDo", self.todos[0].name, "modified"))
+
+	def test_only_documents_whose_parent_has_an_id_are_sent(self):
+		# the opt-in: an id set by hand on the parent, which the child's Skip When asks for
+		parent: Any = frappe.get_doc("ToDo", self.todos[0].name)
+		parent.append(
+			"espresso_sync_ids", {"sync_connection": self.connection, "external_id": "acme/website"}
+		)
+		parent.save()
+		child: Any = frappe.get_doc(
+			{
+				"doctype": "ToDo",
+				"description": f"es {self._testMethodName} child",
+				"reference_type": "ToDo",
+				"reference_name": parent.name,
+			}
+		).insert()
+		self.skip('$not($exists($syncId("ToDo", reference_name)))')
+		calls = self.sync((responses.POST, f"{SERVER}/tasks", {"status": 201, "json": {"id": "c1"}}))
+		self.assertEqual([json.loads(call.request.body)["title"] for call in calls], [child.description])
+		self.assertEqual(self.external_id(child), "c1")
+		# the parent has an id, and no parent of its own: it is skipped, with the other ToDo
+		self.assertEqual(self.external_id(parent), "acme/website")
+		self.assertIsNone(self.external_id(self.todos[1]))
+
+
+class TestResync(SyncTestCase):
+	def setUp(self):
+		super().setUp()
+		frappe.db.set_value("Espresso Sync Connection", self.connection, "enabled", 1)
+		add_shot(
+			self.connection,
+			dt="ToDo",
+			do_import=1,
+			import_transform=self.transform("import", IMPORT_TASKS),
+			do_export=1,
+			export_transform=self.transform("export", EXPORT_TASKS),
+			update_transform=self.transform("update", UPDATE_TASKS),
+		)
+		# a second shot, which syncs nothing, and a second Connection
+		add_shot(self.connection, dt="Contact")
+		self.other = make_connection(f"{self.connection} other")
+		add_shot(self.other, dt="ToDo")
+		self.start_exports_now()
+		for name in (self.connection, self.other):
+			for shot in esc.get_connection(name).shots:
+				for fieldname in ("last_import", "last_export"):
+					frappe.db.set_value(sync.SHOT, shot.name, fieldname, self.since, update_modified=False)
+
+	def watermarks(self, name: str | None = None) -> list:
+		return [
+			(shot.last_import, shot.last_export) for shot in esc.get_connection(name or self.connection).shots
+		]
+
+	def test_resync_resets_every_shot_of_the_connection_and_queues_a_sync(self):
+		self.assertEqual(self.watermarks(), [(self.since, self.since)] * 2)
+		with patch.object(esc, "enqueue_connection_sync") as enqueue:
+			returned = esc.resync(self.connection)
+		enqueue.assert_called_once_with(self.connection)
+		self.assertEqual(self.watermarks(), [(None, None)] * 2)
+		# the desk form is refreshed with what is returned: it is not the old watermarks
+		self.assertEqual([(s.last_import, s.last_export) for s in returned.shots], [(None, None)] * 2)
+		# nothing of another Connection
+		self.assertEqual(self.watermarks(self.other), [(self.since, self.since)])
+
+	def test_a_connection_that_is_not_enabled_is_only_reset(self):
+		frappe.db.set_value("Espresso Sync Connection", self.connection, "enabled", 0)
+		with patch.object(esc, "enqueue_connection_sync") as enqueue:
+			esc.resync(self.connection)
+		enqueue.assert_not_called()
+		self.assertEqual(self.watermarks(), [(None, None)] * 2)
+
+	def test_resync_is_refused_while_the_connection_syncs(self):
+		with scheduler.holding_sync_lock(self.connection) as acquired:
+			self.assertTrue(acquired)
+			with (
+				patch.object(esc, "enqueue_connection_sync") as enqueue,
+				self.assertRaises(frappe.ValidationError),
+			):
+				esc.resync(self.connection)
+		enqueue.assert_not_called()
+		self.assertEqual(self.watermarks(), [(self.since, self.since)] * 2)
+
+	def test_only_a_system_manager_resyncs(self):
+		frappe.set_user("Guest")
+		with (
+			patch.object(esc, "enqueue_connection_sync") as enqueue,
+			self.assertRaises(frappe.PermissionError),
+		):
+			esc.resync(self.connection)
+		enqueue.assert_not_called()
+		frappe.set_user("Administrator")
+		self.assertEqual(self.watermarks(), [(self.since, self.since)] * 2)
+
+	def test_the_action_answers_post_only(self):
+		# it writes: a GET would skip the CSRF check, and its changes are rolled back
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[esc.resync_action], ["POST"])
+
+
+class TestSyncOnlyTab(SyncTestCase):
+	def test_a_shot_that_neither_imports_nor_exports_adds_the_sync_tab(self):
+		# saving the Connection while it is Enabled gives each shot's DocType its Sync tab
+		connection = esc.get_connection(self.connection)
+		connection.enabled = 1
+		connection.append("shots", {"dt": "Note"})
+		with patch.object(esc, "ensure_sync_fields") as ensure:
+			connection.save()
+		ensure.assert_called_once_with("Note")
+		# and a sync of it does nothing: no request, nothing logged
+		self.assertEqual(self.sync(), [])
+		self.assertEqual(pull_logs(self.connection), [])
+
 
 class TestTwoWay(SyncTestCase):
+	def test_a_document_its_export_skips_is_not_kept_from_an_import(self):
+		import_transform = self.transform("import", IMPORT_TASKS, next_request_expr=None)
+		export = self.transform("export", EXPORT_TASKS)
+		update = self.transform("update", UPDATE_TASKS)
+		add_shot(
+			self.connection,
+			dt="ToDo",
+			do_import=1,
+			import_transform=import_transform,
+			do_export=1,
+			export_transform=export,
+			update_transform=update,
+		)
+		self.start_exports_now()
+		self.sync(page(1, task("k1", "es kept")))
+		# changed here, and the update transform now skips it: nothing will send the change
+		todo = self.todo("k1")
+		todo.description = "es kept, changed here"
+		todo.save()
+		frappe.db.set_value(TRANSFORM, update, "skip_expr", 'description != ""')
+		# a change in the API is imported over it, not a conflict that stays for ever
+		self.sync(page(1, task("k1", "es kept, changed there", "2026-02-01T00:00:00Z")))
+		self.assertEqual({log.sync_status for log in pull_logs(self.connection)}, {"Success"})
+		self.assertEqual(self.todo("k1").description, "es kept, changed there")
+		# while the export does send it, a change made here is kept as it was
+		frappe.db.set_value(TRANSFORM, update, "skip_expr", None)
+		todo = self.todo("k1")
+		todo.description = "es kept, changed here again"
+		todo.save()
+		self.sync(
+			page(1, task("k1", "es kept, changed there too", "2026-03-01T00:00:00Z")),
+			(responses.PUT, f"{SERVER}/tasks/k1", {"json": {}}),
+		)
+		self.assertEqual(self.todo("k1").description, "es kept, changed here again")
+
 	def test_no_echo_loop(self):
 		import_transform = self.transform("import", IMPORT_TASKS, next_request_expr=None)
 		add_shot(

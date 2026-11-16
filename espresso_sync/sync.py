@@ -123,6 +123,12 @@ class Step:
 		expression = self.transform.get(fieldname)
 		return engine.evaluate(expression, data, connection=self.connection) if expression else None
 
+	def skips(self, data: Any) -> bool:
+		"""Whether Skip When gives true on `data` (an item, or a document), as JSONata's
+		$boolean reads it: nothing at all does not skip."""
+		expression = engine.skip_expression(self.transform.get("skip_expr"))
+		return bool(expression) and engine.evaluate(expression, data, connection=self.connection) is True
+
 	def map(self, item: Any) -> dict[str, Any]:
 		output = engine.evaluate(self.transform.active_compiled, item, connection=self.connection)
 		if not isinstance(output, dict):
@@ -451,9 +457,17 @@ class Run:
 				diagnostics=diagnostics,
 			)
 
+	def export_skips(self, shot, row) -> bool:
+		"""Whether the export that would send the document of a Sync ID row skips it: a change made here
+		that no export will send is not waiting to be sent, and is not kept from an import."""
+		step = self.step(shot.update_transform or shot.export_transform, shot, "Export")
+		return step.skips(engine.document_item(frappe.get_doc(shot.dt, row.parent)))
+
 	def import_object(self, step: Step, shot, item: Any):
 		"""(the document saved, the diagnostics), or None for an item skipped."""
 		doctype = shot.dt
+		if step.skips(item):
+			return None
 		external_id = step.evaluate("external_id_expr", item)
 		if external_id in (None, ""):
 			raise SyncFailure("no-external-id", _("External ID gives nothing for this item"))
@@ -465,7 +479,7 @@ class Run:
 			row.dont_sync or (modified and row.external_modified and modified <= row.external_modified)
 		):
 			return None
-		if row and shot.do_export and changed_here(doctype, row):
+		if row and shot.do_export and changed_here(doctype, row) and not self.export_skips(shot, row):
 			# not overwritten: the export sends the change made here. When the item changed in
 			# the API too, the export overwrites that change, and the conflict is logged
 			if modified is None:
@@ -564,6 +578,9 @@ class Run:
 		item = engine.document_item(doc)
 		entry: dict[str, Any] = {**step.context, "sync_doc": name, "document": item}
 		try:
+			if step.skips(item):
+				# as if it were not there: done, so Last Export moves past it
+				return True
 			body = step.map(item)
 			entry["object"] = body
 			pointer = step.sides.pointer

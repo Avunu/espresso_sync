@@ -3,7 +3,7 @@ title: Transforms
 description: An Espresso Sync Transform maps an API operation's objects to a DocType's documents, or documents to an operation's request body, with JSONata rules.
 nav_title: Transforms
 order: 3
-updated: 2026-11-08
+updated: 2026-11-16
 ---
 
 An **Espresso Sync Transform** maps one way between a DocType and one operation of an [API Spec](api-specs.md): an **Import** maps the objects of the operation's response to documents of the DocType, an **Export** maps documents of the DocType to the operation's request body. The DocType is always one side.
@@ -12,24 +12,25 @@ Only a System Manager can see or change a Transform or call the endpoints below.
 
 ## Fields
 
-| Field                             | Holds                                                                                                                                                       |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Title                             | The name.                                                                                                                                                   |
-| Direction                         | Import or Export. It cannot be changed once saved.                                                                                                          |
-| Status                            | Draft or Active. Only an Active transform runs. It is set by activating the transform, and back to Draft by a change to what a sync reads (below).          |
-| DocType                           | The DocType of the documents (not a child table or a Single).                                                                                               |
-| API Spec, Method, Path            | The operation, as the spec has it (`GET`, `/orders/{id}`).                                                                                                  |
-| Items Pointer                     | Import: where the items are in the response, a JSON Pointer such as `/data`. Empty: the response is the item, or the list of items.                         |
-| Path Parameters, Query Parameters | JSONata giving an object: `{"id": $syncId("Customer", customer)}`. An import's are evaluated on `{last_import}`, an export's on the document.               |
-| Next Request, Maximum Pages       | Import: JSONata evaluated on the last page (`{body, headers, query}`) that gives the next page's query parameters, and how many pages a sync reads at most. |
-| External ID                       | JSONata giving the object's id in the API: on the item for an import, which needs one, and on a create's response for an export.                            |
-| Modified                          | Import: JSONata giving when the item last changed: an item no newer than when it was last imported is skipped.                                              |
-| Runtime Validation                | Enforce, Warn or Off: whether a mapped object that fails the target's schema is still saved or sent when a sync runs.                                       |
-| Child Tables, Child Table Keys    | Import: on an update, Replace sets each mapped child table to the mapped rows; Merge by Key matches rows by a JSONata key per table.                        |
-| Rules                             | The rules (below).                                                                                                                                          |
-| Compiled JSONata, Active JSONata  | The rules as one expression, and that expression as it was when the transform was activated: what runs.                                                     |
-| Sample                            | Source items the transform is checked and dry-run on.                                                                                                       |
-| Diagnostics                       | What the last save found.                                                                                                                                   |
+| Field                             | Holds                                                                                                                                                                              |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Title                             | The name.                                                                                                                                                                          |
+| Direction                         | Import or Export. It cannot be changed once saved.                                                                                                                                 |
+| Status                            | Draft or Active. Only an Active transform runs. It is set by activating the transform, and back to Draft by a change to what a sync reads (below).                                 |
+| DocType                           | The DocType of the documents (not a child table or a Single).                                                                                                                      |
+| API Spec, Method, Path            | The operation, as the spec has it (`GET`, `/orders/{id}`).                                                                                                                         |
+| Items Pointer                     | Import: where the items are in the response, a JSON Pointer such as `/data`. Empty: the response is the item, or the list of items.                                                |
+| Path Parameters, Query Parameters | JSONata giving an object: `{"id": $syncId("Customer", customer)}`. An import's are evaluated on `{last_import}`, an export's on the document.                                      |
+| Next Request, Maximum Pages       | Import: JSONata evaluated on the last page (`{body, headers, query}`) that gives the next page's query parameters, and how many pages a sync reads at most.                        |
+| External ID                       | JSONata giving the object's id in the API: on the item for an import, which needs one, and on a create's response for an export.                                                   |
+| Modified                          | Import: JSONata giving when the item last changed: an item no newer than when it was last imported is skipped.                                                                     |
+| Skip When                         | JSONata on the item (an import) or the document (an export): when it gives true, it is skipped, as if it were not there (see [Choosing what syncs](syncs.md#choosing-what-syncs)). |
+| Runtime Validation                | Enforce, Warn or Off: whether a mapped object that fails the target's schema is still saved or sent when a sync runs.                                                              |
+| Child Tables, Child Table Keys    | Import: on an update, Replace sets each mapped child table to the mapped rows; Merge by Key matches rows by a JSONata key per table.                                               |
+| Rules                             | The rules (below).                                                                                                                                                                 |
+| Compiled JSONata, Active JSONata  | The rules as one expression, and that expression as it was when the transform was activated: what runs.                                                                            |
+| Sample                            | Source items the transform is checked and dry-run on.                                                                                                                              |
+| Diagnostics                       | What the last save found.                                                                                                                                                          |
 
 The Connection a transform runs against is its API Spec's. The Connection's **Server URL** (`https://api.example.com/v1`) is the base the operation's path is appended to. A shot of that Connection runs the transform once it is Active: see [Connections and syncs](syncs.md) for what a sync does with it.
 
@@ -105,7 +106,7 @@ The **dry run** maps the sample and, for an import, inserts each document with e
 
 Activating a transform freezes its compiled rules as **Active JSONata**, what a sync runs, and sets it Active. A Draft transform never runs, and a shot cannot link one. It is refused while any check (the dry run aside) finds an error, a required field no rule fills among them, and when the API Spec's operation or the DocType changed since the transform was saved: open it, check it and save it again.
 
-A later change to the rules (or the sample) does not change what runs until the transform is activated again. A change to anything else a sync reads (DocType, API Spec, Method, Path, Items Pointer, Path and Query Parameters, Next Request, Maximum Pages, External ID, Modified, Runtime Validation, Child Tables and their keys) makes the transform a Draft again: it stops running until it is activated with the change, and the checks run on it. That is also how an Active transform goes back to Draft.
+A later change to the rules (or the sample) does not change what runs until the transform is activated again. A change to anything else a sync reads (DocType, API Spec, Method, Path, Items Pointer, Path and Query Parameters, Next Request, Maximum Pages, External ID, Modified, Skip When, Runtime Validation, Child Tables and their keys) makes the transform a Draft again: it stops running until it is activated with the change, and the checks run on it. That is also how an Active transform goes back to Draft.
 
 ## The editor
 
@@ -115,7 +116,7 @@ Everything works from the keyboard: Tab moves between the controls and into a tr
 
 The rules are evaluated in the browser as they are typed, in a Web Worker that stops a runaway expression, on up to 50 sample items. The app's functions are answered by the server (`resolve_functions`), so the preview gives what a dry run gives. The browser's own checks (the rules that don't compile or parse, the required fields no rule fills, values of the wrong type, the target's schema) are listed with the server's, which **Save** runs, as **Validate** does. A DocType's schema findings are only warnings in the browser: the server knows which values Frappe converts.
 
-The sample is pasted, or fetched 20 items at a time (`fetch_sample`), and saved with the rules; a pasted sample is saved as written, so whole numbers past 2^53, which the browser rounds, stay exact on the server. The **Settings** tab edits the fields a sync reads besides the rules (Items Pointer, parameters, Next Request, External ID, Modified, Runtime Validation, Child Tables), saved with them. **Dry run** compares each item's result with the preview, and **Activate** activates the saved transform: both, and Validate, wait until the changes are saved. As in the desk, Save and Activate are refused when someone else saved the transform since the editor read it (reload to get their version), and Save with no changes saves it as it is, which checks it against the API Spec and the DocType again. The preview runs with the server's limits (5 s, a depth of 200) and refuses the regular expressions the server's RE2 refuses (a lookaround, a backreference).
+The sample is pasted, or fetched 20 items at a time (`fetch_sample`), and saved with the rules; a pasted sample is saved as written, so whole numbers past 2^53, which the browser rounds, stay exact on the server. The **Settings** tab edits the fields a sync reads besides the rules (Items Pointer, parameters, Next Request, External ID, Modified, Skip When, Runtime Validation, Child Tables), saved with them. **Dry run** compares each item's result with the preview, and **Activate** activates the saved transform: both, and Validate, wait until the changes are saved. As in the desk, Save and Activate are refused when someone else saved the transform since the editor read it (reload to get their version), and Save with no changes saves it as it is, which checks it against the API Spec and the DocType again. The preview runs with the server's limits (5 s, a depth of 200) and refuses the regular expressions the server's RE2 refuses (a lookaround, a backreference).
 
 ## Endpoints
 

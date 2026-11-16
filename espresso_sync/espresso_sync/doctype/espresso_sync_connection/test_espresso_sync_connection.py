@@ -95,11 +95,25 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
-	def test_sync_now_is_the_only_endpoint(self):
+	def test_the_actions_are_the_only_endpoints(self):
 		whitelisted = {
 			name for name, fn in inspect.getmembers(esc, inspect.isfunction) if fn in frappe.whitelisted
 		} | {name for name, fn in vars(esc.EspressoSyncConnection).items() if fn in frappe.whitelisted}
-		self.assertEqual(whitelisted, {"sync_action"})
+		self.assertEqual(whitelisted, {"sync_action", "resync_action"})
+
+	def test_resync_is_for_system_managers(self):
+		doc = json.dumps({"name": self.connection.name})
+		# a Connection that is not Enabled is only reset, and no sync is queued
+		frappe.db.set_value("Espresso Sync Connection", self.connection.name, "enabled", 1)
+		with patch.object(esc, "enqueue_connection_sync") as enqueue:
+			for user in (WEBSITE_USER, DESK_USER):
+				frappe.set_user(user)
+				with self.subTest(user=user), self.assertRaises(frappe.PermissionError):
+					esc.resync_action(doc)
+			enqueue.assert_not_called()
+			frappe.set_user(MANAGER_USER)
+			self.assertEqual(esc.resync_action(doc).name, self.connection.name)
+			enqueue.assert_called_once_with(self.connection.name)
 
 	def test_sync_now_is_for_system_managers(self):
 		doc = json.dumps({"name": self.connection.name})
