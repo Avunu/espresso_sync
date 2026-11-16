@@ -110,6 +110,7 @@ class TestTransform(IntegrationTestCase):
 			"ES Import Tasks",
 			rules=[*TODO_RULES[1:], {"ptr": "/priority", "kind": "field", "expr": "priority ="}],
 			external_id_expr="id ~>",
+			skip_expr="done =",
 		)
 		self.assertEqual(doc.status, "Draft")
 		self.assertTrue(doc.compiled_jsonata.startswith('{\n\t"status": (done ? "Closed" : "Open"),'))
@@ -119,10 +120,19 @@ class TestTransform(IntegrationTestCase):
 				("/description", "required-unmapped", None),
 				("/priority", "jsonata.S0207", None),
 				("external_id_expr", "jsonata.S0207", None),
+				("skip_expr", "jsonata.S0207", None),
 			],
 		)
 		self.assertTrue(doc.validated_source_hash and doc.validated_target_hash)
 		self.assertTrue(all(d["origin"] == "server" for d in json.loads(doc.diagnostics)))
+
+	def test_skip_when_is_checked_as_it_runs(self):
+		for expression in (None, "  \n", "done /* a comment */", "$not($exists(done))"):
+			with self.subTest(expression):
+				doc = make_transform("ES Import Tasks", skip_expr=expression)
+				self.assertNotIn("skip_expr", [d["rule"] for d in json.loads(doc.diagnostics)])
+		doc = make_transform("ES Import Tasks", skip_expr="done =")
+		self.assertIn(("skip_expr", "jsonata.S0207"), [d[:2] for d in codes(json.loads(doc.diagnostics))])
 
 	def test_the_operation_must_be_in_the_spec(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -205,6 +215,7 @@ class TestTransform(IntegrationTestCase):
 			("path", "/tasks/{id}", "/tasks"),
 			("runtime_validation", "Off", "Enforce"),
 			("max_pages", 3, 10),
+			("skip_expr", "done", None),
 		):
 			with self.subTest(fieldname):
 				doc.set(fieldname, value)

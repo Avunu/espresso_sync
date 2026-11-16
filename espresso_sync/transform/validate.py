@@ -40,7 +40,14 @@ from espresso_sync.transform.compile import Compiled, compile_rules, rule_at
 
 SPEC = "Espresso Sync API Spec"
 # the Transform fields that hold a JSONata expression
-EXPRESSION_FIELDS = ("path_params", "query_params", "next_request_expr", "external_id_expr", "modified_expr")
+EXPRESSION_FIELDS = (
+	"path_params",
+	"query_params",
+	"next_request_expr",
+	"external_id_expr",
+	"modified_expr",
+	"skip_expr",
+)
 MAX_SAMPLE_ITEMS = 50
 
 
@@ -129,6 +136,15 @@ class Sides:
 		if self.pointer is None:
 			return []
 		return openapi.validate_payload(self.spec, self.pointer, output, write=True)
+
+
+def skip_error(expression: str | None) -> tuple[str, str] | None:
+	"""What is wrong with Skip When as it runs, wrapped (engine.skip_expression): an empty one, whitespace
+	only, is none. The expression's own error is given when it has one, as the editor gives it."""
+	wrapped = engine.skip_expression(expression)
+	if wrapped is None or (wrapped_error := parse_error(wrapped)) is None:
+		return None
+	return parse_error(expression or "") or wrapped_error
 
 
 def rule_kinds(rules: list[Any]) -> dict[str, str]:
@@ -222,7 +238,11 @@ def static_diagnostics(transform, sides: Sides, compiled: Compiled) -> list[dict
 			found.append(diagnostic(rule["ptr"], rule["ptr"], "error", *error))
 	for fieldname in EXPRESSION_FIELDS:
 		expression = transform.get(fieldname)
-		if expression and (error := parse_error(expression)):
+		if fieldname == "skip_expr":
+			error = skip_error(expression)
+		else:
+			error = parse_error(expression) if expression else None
+		if error:
 			found.append(diagnostic(fieldname, "", "error", *error))
 	if sides.importing and not (transform.external_id_expr or "").strip():
 		found.append(

@@ -168,6 +168,12 @@ def functions(connection: str | None = None) -> dict[str, Callable[..., Any]]:
 	}
 
 
+def skip_expression(expression: str | None) -> str | None:
+	"""Skip When as it runs: JSONata's $boolean of it, so that an item or document is skipped only when it
+	gives true as JSONata reads that. None for an empty one."""
+	return f"$boolean(({expression}))" if expression and expression.strip() else None
+
+
 def evaluate(expression: str, data: Any, *, default: Any = None, connection: str | None = None) -> Any:
 	"""The result of a JSONata expression on `data`: None for JSONata null, `default` when
 	it is undefined. A syntax error, a runtime error and the timebox raise."""
