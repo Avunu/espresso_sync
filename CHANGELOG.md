@@ -1,5 +1,12 @@
 # Changelog
 
+## [16.1.0](https://github.com/Avunu/espresso_sync/compare/v16.0.0...v16.1.0) (2026-11-17)
+
+
+### Features
+
+* skip items and documents with Skip When, and reset a Connection with Resync ([#29](https://github.com/Avunu/espresso_sync/issues/29)) ([1f18dc9](https://github.com/Avunu/espresso_sync/commit/1f18dc9ab8e8331e9ad9c4a3f402e64947da492c))
+
 ## [16.0.0](https://github.com/Avunu/espresso_sync/compare/v0.0.1...v16.0.0) (2026-11-08)
 
 
