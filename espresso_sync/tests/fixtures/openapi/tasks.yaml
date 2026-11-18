@@ -43,6 +43,22 @@ paths:
         "200":
           description: updated
           content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } }
+  /tasks/{id}/links:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: addTaskLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task]
+              properties:
+                task: { type: integer }
+      responses:
+        "201": { description: created }
   /people:
     get:
       operationId: listPeople

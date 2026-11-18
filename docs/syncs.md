@@ -3,7 +3,7 @@ title: Connections and syncs
 description: An Espresso Sync Connection's server and credentials, its shots, and what a sync does with their Active transforms.
 nav_title: Connections and syncs
 order: 1
-updated: 2026-11-16
+updated: 2026-11-18
 ---
 
 An **Espresso Sync Connection** is one external API: where it is, how to authenticate, and what to sync with it. Only a System Manager can create, change or run one.
@@ -27,17 +27,19 @@ An API Spec belongs to a Connection (its **Connection** field), and so do the tr
 
 Each shot syncs one DocType:
 
-| Field       | Holds                                                                                                                                        |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| DocType     | The DocType synced.                                                                                                                          |
-| Import      | Whether the shot imports, with its **Import Transform**.                                                                                     |
-| Export      | Whether the shot exports, with its **Export Transform**, and its **Update Transform** when the API updates an object with another operation. |
-| Last Import | The start of the last import in which every item imported.                                                                                   |
-| Last Export | The newest change exported before the first document that failed.                                                                            |
+| Field       | Holds                                                                                                                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DocType     | The DocType synced.                                                                                                                                                                                                       |
+| Import      | Whether the shot imports, with its **Import Transform**.                                                                                                                                                                  |
+| Export      | Whether the shot exports, with its **Export Transform**, its **Update Transform** when the API updates an object with another operation, and its **Follow-up Transform** for what the API sets with a request of its own. |
+| Last Import | The start of the last import in which every item imported.                                                                                                                                                                |
+| Last Export | The newest change exported before the first document that failed.                                                                                                                                                         |
 
 A shot's transforms must be Active, of its DocType, in the right direction, and on an API Spec of the Connection; the Connection cannot be saved otherwise. A sync checks again, and a transform that is no longer so is not run: the shot fails, and the failure is logged.
 
 The **Export Transform** sends the documents this Connection has no external ID for yet: a create, such as `POST /tasks`. When the shot has an **Update Transform**, it sends the documents that have one, such as `PUT /tasks/{id}` with Path Parameters `{"id": $syncId("ToDo", name)}`. Without one, the Export Transform sends every document, which suits an API whose one operation creates or updates.
+
+A **Follow-up Transform** sends a second request for each document the shot sent, for what the API sets with an operation of its own: a task put under another with `POST /tasks/{id}/links`, with Path Parameters `{"id": $syncId("ToDo", parent)}` and a body that holds the id of the task just sent. It is an Export transform like the others, evaluated on the document, and it can also read `$response`: the answer to the request just sent (a create's or an update's), as JSON. That is how it learns what only the answer holds, such as the id the API gave a new object, and it can skip itself with **Skip When** when the answer shows the relation is already there (`$response.parent = parentId`). See [An export](#an-export).
 
 ## When syncs run
 
@@ -72,6 +74,9 @@ For each shot that exports, the documents of its DocType changed since **Last Ex
 3. It is sent with the operation's method to its path, the Path and Query Parameters evaluated on the document.
 4. A create's response gives the new object's id through **External ID**, which is stored on the document's Espresso Sync IDs and committed at once: the object exists in the API, whatever happens to the rest of the sync. A response without one is logged with a warning, as the next export would create the object again.
 5. When the shot also imports, the import transform's **Modified**, evaluated on the response of a create or an update, gives when the object changed in the API, recorded as its **External Modified**: the next import does not read back what was exported.
+6. With a **Follow-up Transform**, a document that was sent (steps 2 to 5) is not synced yet: its follow-up request goes once every document has been sent, in the same order, so a document that points to another finds the other's id even when it changed first. The follow-up is mapped, validated and sent as in steps 2 and 3, on the same document, with `$response` the answer to the request that was just sent. A document its **Skip When** gives true for is synced without one, and is not logged. When the follow-up fails, the failure is logged, and the document stays unsynced: Last Export stays below it, and the next export sends it again, as an update (a create stored its id at step 4), and its follow-up after it. A follow-up that cannot be built for want of an id (a Path Parameter that gives nothing, because the document it points to has none) fails the same way, and goes when that document has one.
+
+A document whose last change was synced is not sent again, so a Follow-up Transform added to a shot goes only for the documents that change after it. To send it for the others, clear the **Last Synced** of their Espresso Sync IDs row, and Resync.
 
 ## Two-way sync
 

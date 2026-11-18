@@ -22,11 +22,14 @@ frappe.has_permission: an expression sees what its user may read, and nothing el
 - ``$frappeDate(value)``, ``$frappeDatetime(value)``: a date or a datetime as Frappe
   stores it, converted to the system time zone when it has one;
 - ``$frappeCheck(value)``: 0 or 1, from a boolean, a number or "true"/"false"/"1"/"0".
+
+A follow-up request's expressions can also read ``$response``: the answer, as JSON, to the
+request just sent for the document.
 """
 
 import copy
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import lru_cache, partial
 from typing import Any
 
@@ -174,9 +177,17 @@ def skip_expression(expression: str | None) -> str | None:
 	return f"$boolean(({expression}))" if expression and expression.strip() else None
 
 
-def evaluate(expression: str, data: Any, *, default: Any = None, connection: str | None = None) -> Any:
+def evaluate(
+	expression: str,
+	data: Any,
+	*,
+	default: Any = None,
+	connection: str | None = None,
+	variables: Mapping[str, Any] | None = None,
+) -> Any:
 	"""The result of a JSONata expression on `data`: None for JSONata null, `default` when
-	it is undefined. A syntax error, a runtime error and the timebox raise."""
+	it is undefined. A syntax error, a runtime error and the timebox raise. `variables` are
+	bound by name, for `$name`."""
 	# jsonata-python evaluates on the thread's current instance (Jsonata.CURRENT), which
 	# only its constructor sets, and $now() and $millis() read that instance's timestamp.
 	# A cached expression is not constructed again, so a copy of it is made current: the
@@ -189,6 +200,8 @@ def evaluate(expression: str, data: Any, *, default: Any = None, connection: str
 	bindings.set_runtime_bounds(TIMEOUT_MS, MAX_DEPTH)
 	for name, function in functions(connection).items():
 		bindings.bind(name, jsonata.Jsonata.JLambda(function))
+	for name, value in (variables or {}).items():
+		bindings.bind(name, as_json_value(value))
 	result = expr.evaluate(as_json_value(data), bindings)
 	if result is None:
 		return default

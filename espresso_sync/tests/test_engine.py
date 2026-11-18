@@ -67,6 +67,22 @@ class TestEngine(IntegrationTestCase):
 		with self.assertRaises(jsonata.JException):
 			engine.evaluate("lines[", {})
 
+	def test_variables_are_bound_by_name(self):
+		variables = {"response": {"id": 7, "tags": ["a", "b"], "parent": None}}
+		self.assertEqual(engine.evaluate("$response.id + 1", {}, variables=variables), 8)
+		self.assertEqual(engine.evaluate("$count($response.tags)", {}, variables=variables), 2)
+		# JSON null is null, and what is not there is undefined, as in the data
+		self.assertIsNone(engine.evaluate("$response.parent", {}, variables=variables, default="none"))
+		self.assertEqual(
+			engine.evaluate("$response.missing", {}, variables=variables, default="none"), "none"
+		)
+		# the document is still what the expression reads, and a variable is not bound without one
+		self.assertEqual(engine.evaluate("name & $response.id", {"name": "x"}, variables=variables), "x7")
+		self.assertEqual(engine.evaluate("$response.id", {}, default="none"), "none")
+		self.assertEqual(
+			engine.evaluate("$response.id", {}, variables={"response": None}, default="none"), "none"
+		)
+
 	def test_expressions_are_compiled_once(self):
 		engine.compile_expression.cache_clear()
 		for n in range(3):

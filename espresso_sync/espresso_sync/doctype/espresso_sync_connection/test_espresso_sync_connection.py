@@ -242,7 +242,25 @@ class TestShots(IntegrationTestCase):
 
 		other = make_connection("ES Shot Other")
 		other_spec = make_spec(other.name)
+		follow_up = make_transform("ES Shot Follow-up", self.spec, **EXPORT_TASKS)
+		# a Follow-up Transform is an Active Export transform of the DocType, on this Connection's
+		# spec, like the others
+		self.save_shot(
+			dt="ToDo", do_export=1, export_transform=self.export_transform, follow_up_transform=follow_up
+		)
+		export = {"dt": "ToDo", "do_export": 1, "export_transform": self.export_transform}
 		for shot in (
+			{**export, "follow_up_transform": self.import_transform},
+			{
+				**export,
+				"follow_up_transform": make_transform(
+					"ES Shot Draft 2", self.spec, activate=False, **EXPORT_TASKS
+				),
+			},
+			{
+				**export,
+				"follow_up_transform": make_transform("ES Shot Elsewhere 2", other_spec, **EXPORT_TASKS),
+			},
 			{"dt": "ToDo", "do_import": 1},
 			{"dt": "ToDo", "do_export": 1},
 			{"dt": "ToDo", "do_import": 1, "import_transform": self.export_transform},
