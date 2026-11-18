@@ -22,6 +22,7 @@ SHOT_TRANSFORMS = (
 	("do_import", "import_transform", "Import"),
 	("do_export", "export_transform", "Export"),
 	("do_export", "update_transform", "Export"),
+	("do_export", "follow_up_transform", "Export"),
 )
 
 

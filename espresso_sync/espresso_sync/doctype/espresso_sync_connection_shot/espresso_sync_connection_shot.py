@@ -17,6 +17,7 @@ class EspressoSyncConnectionShot(Document):
 		do_import: DF.Check
 		dt: DF.Link
 		export_transform: DF.Link | None
+		follow_up_transform: DF.Link | None
 		import_transform: DF.Link | None
 		last_export: DF.Datetime | None
 		last_import: DF.Datetime | None

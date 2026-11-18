@@ -45,6 +45,8 @@ with the next one. Last Import and Last Export move only past what succeeded.
 """
 
 import datetime
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import frappe
@@ -89,6 +91,17 @@ def succeeded(response: requests.Response) -> bool:
 	return 200 <= response.status_code < 300
 
 
+@dataclass
+class Sent:
+	"""A document whose create or update was sent, with what its follow-up request reads: the
+	document as sent, the answer to the request, and what marks it synced once that has gone."""
+
+	name: str
+	item: dict[str, Any]
+	answered: Any
+	synced: dict[str, Any]
+
+
 class Step:
 	"""An Active transform as a sync runs it."""
 
@@ -123,14 +136,19 @@ class Step:
 		expression = self.transform.get(fieldname)
 		return engine.evaluate(expression, data, connection=self.connection) if expression else None
 
-	def skips(self, data: Any) -> bool:
+	def skips(self, data: Any, variables: Mapping[str, Any] | None = None) -> bool:
 		"""Whether Skip When gives true on `data` (an item, or a document), as JSONata's
 		$boolean reads it: nothing at all does not skip."""
 		expression = engine.skip_expression(self.transform.get("skip_expr"))
-		return bool(expression) and engine.evaluate(expression, data, connection=self.connection) is True
+		return (
+			bool(expression)
+			and engine.evaluate(expression, data, connection=self.connection, variables=variables) is True
+		)
 
-	def map(self, item: Any) -> dict[str, Any]:
-		output = engine.evaluate(self.transform.active_compiled, item, connection=self.connection)
+	def map(self, item: Any, variables: Mapping[str, Any] | None = None) -> dict[str, Any]:
+		output = engine.evaluate(
+			self.transform.active_compiled, item, connection=self.connection, variables=variables
+		)
 		if not isinstance(output, dict):
 			raise SyncFailure("not-an-object", _("The rules give {0}, not an object").format(type(output)))
 		return output
@@ -534,9 +552,12 @@ class Run:
 	# export
 
 	def export_shot(self, shot):
-		"""Export the documents changed since Last Export, the oldest first."""
+		"""Export the documents changed since Last Export, the oldest first. With a Follow-up
+		Transform, its request goes for each document that was sent, after every document
+		has been: one that points to another (a parent) finds the other's ID by then."""
 		create = self.step(shot.export_transform, shot, "Export")
 		update = self.step(shot.update_transform, shot, "Export") if shot.update_transform else create
+		follow_up = self.step(shot.follow_up_transform, shot, "Export") if shot.follow_up_transform else None
 		try:
 			imported = self.step(shot.import_transform, shot, "Import") if shot.do_import else None
 		except SyncFailure:
@@ -553,15 +574,54 @@ class Run:
 		# every document, whatever the user that queued the sync may read: Last Export moves past
 		# them all
 		rows = frappe.get_all(doctype, filters=filters, fields=["name", "modified"], order_by="modified asc")
-		results = [(row.modified, self.export_document(create, update, imported, row.name)) for row in rows]
-		watermark = export_watermark(results, last_export)
+		results: list[list[Any]] = []
+		sent: dict[int, Sent] = {}
+		for row in rows:
+			outcome = self.export_document(create, update, imported, row.name, follow_up)
+			if isinstance(outcome, Sent):
+				sent[len(results)] = outcome
+				outcome = True
+			results.append([row.modified, outcome])
+		if follow_up:
+			for index, document in sent.items():
+				results[index][1] = self.export_follow_up(follow_up, document)
+		watermark = export_watermark([(modified, ok) for modified, ok in results], last_export)
 		if watermark != last_export:
 			shot.last_export = watermark
 			frappe.db.set_value(SHOT, shot.name, "last_export", watermark, update_modified=False)
 
-	def export_document(self, create: Step, update: Step, imported: Step | None, name: str) -> bool:
+	def send_document(
+		self,
+		step: Step,
+		item: dict[str, Any],
+		entry: dict[str, Any],
+		variables: Mapping[str, Any] | None = None,
+	) -> tuple[requests.Response, list[dict[str, Any]]]:
+		"""Map `item` by `step` and send it: the response, and what Runtime Validation found.
+		`entry` is given what the Pull Log shows of it (the body, the request, the response).
+		A response that is not a success fails it."""
+		body = step.map(item, variables)
+		entry["object"] = body
+		pointer = step.sides.pointer
+		diagnostics = step.check(
+			lambda: openapi.validate_payload(step.sides.spec, pointer, body, write=True) if pointer else []
+		)
+		url, query = step.transform.request_url(
+			self.connection.server_url, item, self.connection.name, variables
+		)
+		entry.update(url=full_url(url, query), request_type=step.transform.method)
+		response = self.send(step, url, query, body if pointer else None)
+		entry["response"] = response.text
+		if not succeeded(response):
+			raise SyncFailure("http-status", f"HTTP {response.status_code}")
+		return response, diagnostics
+
+	def export_document(
+		self, create: Step, update: Step, imported: Step | None, name: str, follow_up: Step | None = None
+	) -> bool | Sent:
 		"""Export one document; False when it failed (and was logged). One that is Disabled,
-		or whose last change was synced, counts as done."""
+		or whose last change was synced, counts as done. With a `follow_up`, a document that
+		was sent is not synced yet (it is when its follow-up has gone): a Sent is returned."""
 		doctype = create.transform.document_type
 		row = frappe.db.get_value(
 			SYNC_ID,
@@ -581,32 +641,54 @@ class Run:
 			if step.skips(item):
 				# as if it were not there: done, so Last Export moves past it
 				return True
-			body = step.map(item)
-			entry["object"] = body
-			pointer = step.sides.pointer
-			diagnostics = step.check(
-				lambda: (
-					openapi.validate_payload(step.sides.spec, pointer, body, write=True) if pointer else []
-				)
-			)
-			url, query = step.transform.request_url(self.connection.server_url, item, self.connection.name)
-			entry.update(url=full_url(url, query), request_type=step.transform.method)
-			response = self.send(step, url, query, body if pointer else None)
-			entry["response"] = response.text
-			if not succeeded(response):
-				raise SyncFailure("http-status", f"HTTP {response.status_code}")
+			response, diagnostics = self.send_document(step, item, entry)
 			answered = response_json(response)
 			synced = {"last_synced_modified": doc.modified}
 			if (external_modified := api_modified(imported, answered)) is not None:
 				synced["external_modified"] = external_modified
+			# with a follow-up, the document is synced when that has gone too: until then the next
+			# sync sends it again (an update, now that it has its ID)
+			now = {} if follow_up else synced
 			if row and row.external_id:
-				frappe.db.set_value(SYNC_ID, row.name, synced, update_modified=False)
+				if now:
+					frappe.db.set_value(SYNC_ID, row.name, now, update_modified=False)
+				stored = True
 			else:
-				diagnostics.extend(self.record_created(step, doc, row, answered, synced))
+				found = self.record_created(step, doc, row, answered, now)
+				diagnostics.extend(found)
+				stored = not found
 		except Exception as e:
 			self.log(**entry, **failure(e))
 			return False
 		self.log(**entry, sync_status="Success", diagnostics=diagnostics)
+		# a create that left no ID is sent again by the next export: its follow-up is of no use
+		return Sent(name, item, answered, synced) if follow_up and stored else True
+
+	def export_follow_up(self, step: Step, sent: Sent) -> bool:
+		"""Send the follow-up request of a document that was sent; False when it failed (and
+		was logged). The document is synced when it has gone, or when Skip When skips it."""
+		variables = {"response": sent.answered}
+		entry: dict[str, Any] = {**step.context, "sync_doc": sent.name, "document": sent.item}
+		try:
+			if step.skips(sent.item, variables):
+				diagnostics: list[dict[str, Any]] = []
+			else:
+				_response, diagnostics = self.send_document(step, sent.item, entry, variables)
+		except Exception as e:
+			self.log(**entry, **failure(e))
+			return False
+		frappe.db.set_value(
+			SYNC_ID,
+			{
+				"sync_connection": self.connection.name,
+				"parenttype": step.transform.document_type,
+				"parent": sent.name,
+			},
+			sent.synced,
+			update_modified=False,
+		)
+		if "url" in entry:
+			self.log(**entry, sync_status="Success", diagnostics=diagnostics)
 		return True
 
 	def record_created(
