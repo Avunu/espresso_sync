@@ -1,5 +1,12 @@
 # Changelog
 
+## [16.2.0](https://github.com/Avunu/espresso_sync/compare/v16.1.0...v16.2.0) (2026-11-18)
+
+
+### Features
+
+* send a follow-up request for each exported document ([#35](https://github.com/Avunu/espresso_sync/issues/35)) ([46e6749](https://github.com/Avunu/espresso_sync/commit/46e6749d93bdde108c93e289944cfbb65b3d4475))
+
 ## [16.1.0](https://github.com/Avunu/espresso_sync/compare/v16.0.0...v16.1.0) (2026-11-17)
 
 
