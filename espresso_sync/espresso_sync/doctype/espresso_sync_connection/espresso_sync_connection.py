@@ -10,8 +10,9 @@ import frappe
 from croniter import croniter
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import now_datetime
 
-from espresso_sync.scheduler import enqueue_connection_sync, holding_sync_lock
+from espresso_sync.scheduler import cron_next, enqueue_connection_sync, holding_sync_lock
 from espresso_sync.sync import SHOT, Run, ensure_sync_fields
 from espresso_sync.utils.safe_fetch import credentials_apply, host_of, normalize_allowed_host
 
@@ -73,6 +74,8 @@ class EspressoSyncConnection(Document):
 			frappe.throw(_("A Cron Rule is needed when the Sync Frequency is Cron"))
 		if not croniter.is_valid(cron_rule):
 			frappe.throw(_("{0} is not a valid cron rule").format(frappe.bold(cron_rule)))
+		if cron_next(cron_rule, now_datetime()) is None:
+			frappe.throw(_("{0} never fires: there is no such date").format(frappe.bold(cron_rule)))
 
 	def validate_server_url(self):
 		"""The Server URL is http(s), and its host is the one the credentials may go to: the

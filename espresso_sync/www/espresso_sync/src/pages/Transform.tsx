@@ -3,13 +3,11 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-	Breadcrumb,
-	BreadcrumbItem,
 	Button,
 	Checkbox,
 	CodeSnippet,
-	InlineLoading,
 	InlineNotification,
+	Link as TextLink,
 	Select,
 	SelectItem,
 	SkeletonText,
@@ -21,15 +19,7 @@ import {
 	Tabs,
 	Tag,
 } from "@carbon/react";
-import {
-	type CarbonIconType,
-	DataCheck,
-	FunctionMath,
-	Launch,
-	Play,
-	Rocket,
-	Save,
-} from "@carbon/react/icons";
+import { DataCheck, FunctionMath, Launch, Play, Rocket, Save } from "@carbon/react/icons";
 import { useFrappeGetCall, useFrappeGetDoc, useFrappeUpdateDoc } from "frappe-react-sdk";
 import type { FrappeResponse } from "frappe-types";
 import { compileRules, type Rule } from "../../../../public/js/editor/compile.ts";
@@ -69,8 +59,11 @@ import {
 	walkTree,
 } from "../../../../public/js/editor/schemaTree.ts";
 import { inferFromSamples, inferType, toJsonSchema } from "../../../../public/js/editor/typeInfer.ts";
+import { BusyButton } from "../components/BusyButton";
+import { PageHeader } from "../components/PageHeader";
 import { useToasts } from "../portal/Toasts";
 import { getErrorMessage, parseJson, useBackendCall } from "../portal/useBackendCall";
+import { useUnsavedGuard } from "../portal/useUnsavedGuard";
 import { deskFormUrl, hrefFor } from "../route";
 import { useSessionRead } from "../useSessionRead";
 import { DiagnosticsTable } from "./DiagnosticsTable";
@@ -173,23 +166,6 @@ function topGroups(root: Field): Set<string> {
 	return new Set(top.filter(isGroup).map((field) => field.pointer));
 }
 
-/**
- * A button's icon and label, and while its call runs, Carbon's InlineLoading
- * in their place, as a Modal's primary button shows it. The button stays
- * enabled, so the keyboard stays on it; its handler ignores a press while the
- * call runs.
- */
-function busyButton(
-	label: string,
-	icon: CarbonIconType,
-	loading: boolean,
-	doing: string,
-): { renderIcon?: CarbonIconType; children: ReactNode } {
-	return loading
-		? { children: <InlineLoading description={doing} className="cds--inline-loading--btn" /> }
-		: { renderIcon: icon, children: label };
-}
-
 /** `#/transforms/<name>`: the transform editor. */
 export function Transform({ name }: { name: string }) {
 	const doc = useFrappeGetDoc<TransformDoc>(TRANSFORM, name);
@@ -214,21 +190,15 @@ export function Transform({ name }: { name: string }) {
 	useSessionRead(operation.data, operation.error);
 	useSessionRead(doctype.data, doctype.error);
 
-	const breadcrumb = (
-		<Breadcrumb noTrailingSlash>
-			<BreadcrumbItem href={hrefFor("connections")}>Connections</BreadcrumbItem>
-			<BreadcrumbItem href={hrefFor("transforms")}>Transforms</BreadcrumbItem>
-			<BreadcrumbItem isCurrentPage>{name}</BreadcrumbItem>
-		</Breadcrumb>
-	);
+	const breadcrumb: [string, string?][] = [["Transforms", hrefFor("transforms")], [name]];
 	const error = doc.error ?? operation.error ?? doctype.error;
 	// get_operation_schema always returns a schema: a body without one is a failed load, not a pending one.
 	const noSchema = operation.data !== undefined && operation.data.message === undefined;
 	if (error || noSchema) {
 		const missing = doc.error && (doc.error as { httpStatus?: number }).httpStatus === 404;
 		return (
-			<Stack gap={6}>
-				{breadcrumb}
+			<>
+				<PageHeader breadcrumb={breadcrumb} title={name} />
 				<InlineNotification
 					kind="error"
 					lowContrast
@@ -236,40 +206,39 @@ export function Transform({ name }: { name: string }) {
 					title={missing ? `There is no transform ${name}.` : "The transform couldn't be loaded."}
 					subtitle={missing ? "" : getErrorMessage(error, "Reload the page to try again.")}
 				/>
-			</Stack>
+			</>
 		);
 	}
 	if (!transform || !operation.data?.message || !doctype.data) {
 		return (
-			<Stack gap={6}>
-				{breadcrumb}
-				<SkeletonText heading />
+			<>
+				<PageHeader breadcrumb={breadcrumb} title={name} />
 				<SkeletonText paragraph lineCount={8} />
-			</Stack>
+			</>
 		);
 	}
 	return (
-		<Stack gap={6}>
-			{breadcrumb}
-			<Editor
-				transform={transform}
-				operation={operation.data.message}
-				doctype={doctype.data.message}
-				onSaved={() => void doc.mutate()}
-			/>
-		</Stack>
+		<Editor
+			transform={transform}
+			breadcrumb={breadcrumb}
+			operation={operation.data.message}
+			doctype={doctype.data.message}
+			onSaved={() => void doc.mutate()}
+		/>
 	);
 }
 
 interface EditorProps {
 	transform: TransformDoc;
+	/** The page's trail, which the editor's header shows above the transform's name. */
+	breadcrumb: [label: string, href?: string][];
 	operation: OperationSchema;
 	doctype: unknown;
 	/** The transform was saved or activated: what the page holds of it is out of date. */
 	onSaved: () => void;
 }
 
-function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
+function Editor({ transform, breadcrumb, operation, doctype, onSaved }: EditorProps) {
 	const importing = transform.direction === "Import";
 	const showToast = useToasts();
 	const [saved, setSaved] = useState(transform);
@@ -391,23 +360,7 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 			: SETTINGS.map((setting) => settingError(setting, settings[setting])).find(Boolean) &&
 				"A setting has an error (see Settings).";
 
-	useEffect(() => {
-		if (!dirty) return undefined;
-		const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-		// a link to another of the page's views changes only the hash, which beforeunload doesn't see
-		const leave = (event: MouseEvent) => {
-			const link = event.target instanceof Element ? event.target.closest('a[href^="#/"]') : null;
-			if (link && !window.confirm("Leave the transform? Its unsaved changes will be lost.")) {
-				event.preventDefault();
-			}
-		};
-		window.addEventListener("beforeunload", warn);
-		document.addEventListener("click", leave, true);
-		return () => {
-			window.removeEventListener("beforeunload", warn);
-			document.removeEventListener("click", leave, true);
-		};
-	}, [dirty]);
+	useUnsavedGuard(dirty, "Leave the transform? Its unsaved changes will be lost.");
 
 	useEffect(() => {
 		if (reveal.current === undefined) return;
@@ -766,350 +719,365 @@ function Editor({ transform, operation, doctype, onSaved }: EditorProps) {
 	const operationLabel = `${saved.method} ${saved.path}`;
 
 	return (
-		<Stack gap={6}>
-			<div
-				style={{
-					display: "flex",
-					flexWrap: "wrap",
-					gap: "1rem",
-					alignItems: "baseline",
-					justifyContent: "space-between",
-				}}
-			>
-				<div>
-					<h1>
-						{saved.name} <Tag type={saved.status === "Active" ? "green" : "gray"}>{saved.status}</Tag>
-					</h1>
-					<p>
-						{importing
-							? `Imports the items of ${operationLabel} (${saved.api_spec}) as ${saved.document_type} documents.`
-							: `Exports ${saved.document_type} documents as the request body of ${operationLabel} (${saved.api_spec}).`}
-					</p>
-				</div>
-				<div>
-					<Button kind="ghost" href={deskFormUrl(TRANSFORM, saved.name)} renderIcon={Launch}>
-						Open in the desk
-					</Button>
-					<Button
-						kind="tertiary"
-						disabled={dirty}
-						onClick={() => void runValidate()}
-						{...busyButton("Validate", DataCheck, validate.loading, "Validating")}
-					/>
-					<Button
-						kind="tertiary"
-						disabled={dirty}
-						onClick={() => void runDryRun()}
-						{...busyButton("Dry run", Play, dryRunCall.loading, "Running")}
-					/>
-					<Button
-						kind="secondary"
-						disabled={dirty}
-						onClick={() => void runActivate()}
-						{...busyButton("Activate", Rocket, activate.loading, "Activating")}
-					/>
-					{/* as in the desk, Save saves as it is too: that checks it against the schemas again */}
-					<Button
-						kind="primary"
-						disabled={Boolean(blocked)}
-						onClick={() => void save()}
-						{...busyButton("Save", Save, update.loading, "Saving")}
-					/>
-				</div>
-			</div>
-
-			<div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem 1.5rem", alignItems: "center" }}>
-				<output>
-					<strong>{counts.mapped}</strong> of {plural(counts.total, "field", "fields")} mapped
-				</output>
-				{missing.length > 0 && (
-					<Button kind="ghost" size="sm" onClick={() => missing[0] && show(missing[0].pointer)}>
-						<SeverityIcon severity="error" />
-						&nbsp;{plural(missing.length, "required field unmapped", "required fields unmapped")}
-					</Button>
-				)}
-				{errors.length > 0 && (
-					<Button kind="ghost" size="sm" onClick={() => setTab(TABS.indexOf("diagnostics"))}>
-						<SeverityIcon severity="error" />
-						&nbsp;{plural(errors.length, "error", "errors")}
-					</Button>
-				)}
-				{warnings.length > 0 && (
-					<Button kind="ghost" size="sm" onClick={() => setTab(TABS.indexOf("diagnostics"))}>
-						<SeverityIcon severity="warning" />
-						&nbsp;{plural(warnings.length, "warning", "warnings")}
-					</Button>
-				)}
-				{dirty && (
+		<>
+			<PageHeader
+				breadcrumb={breadcrumb}
+				title={saved.name}
+				status={<Tag type={saved.status === "Active" ? "green" : "gray"}>{saved.status}</Tag>}
+				subtitle={
 					<span>
-						Unsaved changes{blocked ? `: ${blocked}` : ""}. Validate, Dry run and Activate check the saved
-						transform.
+						{importing
+							? `Imports the items of ${operationLabel} (`
+							: `Exports ${saved.document_type} documents as the request body of ${operationLabel} (`}
+						<TextLink inline href={hrefFor("specs", saved.api_spec)}>
+							{saved.api_spec}
+						</TextLink>
+						{importing ? `) as ${saved.document_type} documents.` : ")."}
 					</span>
-				)}
-			</div>
-
-			{saved.status === "Active" && (
-				<InlineNotification
-					kind="info"
-					lowContrast
-					hideCloseButton
-					title="This transform is Active."
-					subtitle={`Syncs run its rules as they were when it was activated${
-						saved.compiled_jsonata === saved.active_compiled ? "" : " (the saved rules have changed since)"
-					}: saving changed rules doesn't change what runs until you activate it again. Saving a change to a setting makes it a Draft again, and it stops running until you activate it.`}
-				/>
-			)}
-
-			{pending !== undefined && (
-				<div
-					style={{
-						display: "flex",
-						flexWrap: "wrap",
-						gap: "0.5rem 1rem",
-						alignItems: "center",
-						padding: "0.5rem 1rem",
-						background: "var(--cds-layer-accent)",
-					}}
-				>
-					<output>
-						Mapping from <code>{pending}</code>: choose a target field, or
-					</output>
-					{selected !== undefined && selectedField && ruleKind(selectedField) && (
-						<Button
+				}
+				actions={
+					<>
+						<Button kind="ghost" href={deskFormUrl(TRANSFORM, saved.name)} renderIcon={Launch}>
+							Open in the desk
+						</Button>
+						<BusyButton
 							kind="tertiary"
-							size="sm"
-							onClick={() => {
-								insert({ before: sourceReference(pending, selected, ruleMap), after: "" });
-								setPending(undefined);
-							}}
+							disabled={dirty}
+							renderIcon={DataCheck}
+							busy={validate.loading}
+							busyText="Validating"
+							onClick={() => void runValidate()}
 						>
-							Insert into the {selectedField.key || "body"} rule
+							Validate
+						</BusyButton>
+						<BusyButton
+							kind="tertiary"
+							disabled={dirty}
+							renderIcon={Play}
+							busy={dryRunCall.loading}
+							busyText="Running"
+							onClick={() => void runDryRun()}
+						>
+							Dry run
+						</BusyButton>
+						<BusyButton
+							kind="secondary"
+							disabled={dirty}
+							renderIcon={Rocket}
+							busy={activate.loading}
+							busyText="Activating"
+							onClick={() => void runActivate()}
+						>
+							Activate
+						</BusyButton>
+						{/* as in the desk, Save saves as it is too: that checks it against the schemas again */}
+						<BusyButton
+							kind="primary"
+							disabled={Boolean(blocked)}
+							renderIcon={Save}
+							busy={update.loading}
+							busyText="Saving"
+							onClick={() => void save()}
+						>
+							Save
+						</BusyButton>
+					</>
+				}
+			/>
+			<Stack gap={6}>
+				<div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem 1.5rem", alignItems: "center" }}>
+					<output>
+						<strong>{counts.mapped}</strong> of {plural(counts.total, "field", "fields")} mapped
+					</output>
+					{missing.length > 0 && (
+						<Button kind="ghost" size="sm" onClick={() => missing[0] && show(missing[0].pointer)}>
+							<SeverityIcon severity="error" />
+							&nbsp;{plural(missing.length, "required field unmapped", "required fields unmapped")}
 						</Button>
 					)}
-					<Button kind="ghost" size="sm" onClick={() => setPending(undefined)}>
-						Cancel
-					</Button>
+					{errors.length > 0 && (
+						<Button kind="ghost" size="sm" onClick={() => setTab(TABS.indexOf("diagnostics"))}>
+							<SeverityIcon severity="error" />
+							&nbsp;{plural(errors.length, "error", "errors")}
+						</Button>
+					)}
+					{warnings.length > 0 && (
+						<Button kind="ghost" size="sm" onClick={() => setTab(TABS.indexOf("diagnostics"))}>
+							<SeverityIcon severity="warning" />
+							&nbsp;{plural(warnings.length, "warning", "warnings")}
+						</Button>
+					)}
+					{dirty && (
+						<span>
+							Unsaved changes{blocked ? `: ${blocked}` : ""}. Validate, Dry run and Activate check the saved
+							transform.
+						</span>
+					)}
 				</div>
-			)}
 
-			<div
-				id="transform-editor"
-				aria-busy={preview.busy}
-				style={{
-					display: "grid",
-					gridTemplateColumns: "minmax(0, 1fr) 4rem minmax(0, 1fr) minmax(18rem, 26rem)",
-					alignItems: "start",
-				}}
-			>
-				<FieldTree
-					side="source"
-					heading="Source"
-					description={
-						importing ? `${operationLabel}: an item of the response` : `${saved.document_type} documents`
-					}
-					filter={sourceFilter}
-					onFilter={setSourceFilter}
-					toggles={sourceToggles}
-					root={sourceTree}
-					shown={sourceShown}
-					expanded={sourceOpen}
-					onExpand={setSourceOpen}
-					selected={pending}
-					onSelect={chooseSource}
-					details={sourceDetails}
-				/>
-				<div style={{ alignSelf: "stretch" }}>
-					<MappingLane links={links} selected={selected !== undefined} />
-				</div>
-				<FieldTree
-					side="target"
-					heading="Target"
-					description={
-						importing ? `${saved.document_type}: a new document` : `${operationLabel}: the request body`
-					}
-					filter={targetFilter}
-					onFilter={setTargetFilter}
-					toggles={targetToggles}
-					root={targetTree}
-					shown={targetShown}
-					expanded={targetOpen}
-					onExpand={setTargetOpen}
-					selected={selected}
-					onSelect={chooseTarget}
-					details={targetDetails}
-				/>
-				<aside
-					aria-label="Rule"
+				{saved.status === "Active" && (
+					<InlineNotification
+						kind="info"
+						lowContrast
+						hideCloseButton
+						title="This transform is Active."
+						subtitle={`Syncs run its rules as they were when it was activated${
+							saved.compiled_jsonata === saved.active_compiled ? "" : " (the saved rules have changed since)"
+						}: saving changed rules doesn't change what runs until you activate it again. Saving a change to a setting makes it a Draft again, and it stops running until you activate it.`}
+					/>
+				)}
+
+				{pending !== undefined && (
+					<div
+						style={{
+							display: "flex",
+							flexWrap: "wrap",
+							gap: "0.5rem 1rem",
+							alignItems: "center",
+							padding: "0.5rem 1rem",
+							background: "var(--cds-layer-accent)",
+						}}
+					>
+						<output>
+							Mapping from <code>{pending}</code>: choose a target field, or
+						</output>
+						{selected !== undefined && selectedField && ruleKind(selectedField) && (
+							<Button
+								kind="tertiary"
+								size="sm"
+								onClick={() => {
+									insert({ before: sourceReference(pending, selected, ruleMap), after: "" });
+									setPending(undefined);
+								}}
+							>
+								Insert into the {selectedField.key || "body"} rule
+							</Button>
+						)}
+						<Button kind="ghost" size="sm" onClick={() => setPending(undefined)}>
+							Cancel
+						</Button>
+					</div>
+				)}
+
+				<div
+					id="transform-editor"
+					aria-busy={preview.busy}
 					style={{
-						position: "sticky",
-						top: "4rem",
-						marginInlineStart: "1rem",
-						padding: "1rem",
-						background: "var(--cds-layer)",
-						maxHeight: "calc(100vh - 5rem)",
-						overflowY: "auto",
+						display: "grid",
+						gridTemplateColumns: "minmax(0, 1fr) 4rem minmax(0, 1fr) minmax(18rem, 26rem)",
+						alignItems: "start",
 					}}
 				>
-					{selected === undefined ? (
-						<p>
-							Select a target field to write its rule. To map a source field to it, select the source field
-							first.
-						</p>
-					) : (
-						<RuleInspector
-							pointer={selected}
-							field={selectedField ?? (selected === "" ? targetTree : undefined)}
-							rule={selectedRule}
-							context={sourceContext(selected, ruleMap)}
-							results={preview.results.get(selected)}
-							diagnostics={byRule.get(selected) ?? []}
-							items={previewItems.length}
-							reads={reads.get(selected) ?? []}
-							sources={sourceList}
-							members={(selectedField?.children ?? []).map((field) => ({
-								field,
-								rule: ruleMap.get(field.pointer),
-							}))}
-							isList={(pointer) => targetFields.get(pointer)?.kind === "collection"}
-							expressionRef={expression}
-							onChange={(text) => setRule(selected, kindAt(selected), text)}
-							onInsert={insert}
-							onSelect={show}
-						/>
-					)}
-				</aside>
-			</div>
-
-			<Tabs selectedIndex={tab} onChange={({ selectedIndex }) => setTab(selectedIndex)}>
-				<TabList aria-label="The transform's sample, output and settings">
-					<Tab>Sample</Tab>
-					<Tab>Output</Tab>
-					<Tab>JSONata</Tab>
-					<Tab>{`Diagnostics (${diagnostics.length})`}</Tab>
-					<Tab>Settings</Tab>
-				</TabList>
-				<TabPanels>
-					<TabPanel>
-						<SampleEditor
-							transform={saved.name}
-							importing={importing}
-							text={sampleText}
-							error={sampleError}
-							items={items.length}
-							unsafe={unsafe}
-							onChange={changeSample}
-						/>
-					</TabPanel>
-					<TabPanel>
-						<Stack gap={5}>
-							{previewItems.length === 0 ? (
-								<p>Add a sample to see what the transform maps it to.</p>
-							) : (
-								<Select
-									id="transform-output-item"
-									labelText="Sample item"
-									value={String(shownItem)}
-									onChange={(event) => setShownItem(Number(event.target.value))}
-								>
-									{previewItems
-										.map((_item, index) => String(index))
-										.map((value) => (
-											<SelectItem key={value} value={value} text={`Item ${Number(value) + 1}`} />
-										))}
-								</Select>
-							)}
-							{output && (
-								<div>
-									<h3 className="cds--label">
-										{importing
-											? "The document it maps to (preview)"
-											: "The request body it maps to (preview)"}
-									</h3>
-									{output.ok ? (
-										<CodeSnippet type="multi" feedback="Copied" wrapText>
-											{output.defined ? JSON.stringify(output.value, null, 2) : "(nothing)"}
-										</CodeSnippet>
-									) : (
-										<InlineNotification
-											kind="error"
-											lowContrast
-											hideCloseButton
-											title={output.error.message}
-											subtitle={output.error.code}
-										/>
-									)}
-								</div>
-							)}
-							{dryItem && (
-								<div>
-									<h3 className="cds--label">
-										Dry run on the server
-										{dryItem.name ? `: inserted as ${dryItem.name}, then rolled back` : ""}{" "}
-										{output?.ok && (
-											<Tag
-												size="sm"
-												type={
-													JSON.stringify(output.value) === JSON.stringify(dryItem.output) ? "green" : "red"
-												}
-											>
-												{JSON.stringify(output.value) === JSON.stringify(dryItem.output)
-													? "Same as the preview"
-													: "Differs from the preview"}
-											</Tag>
-										)}
-									</h3>
-									<CodeSnippet type="multi" feedback="Copied" wrapText>
-										{JSON.stringify(dryItem.output, null, 2)}
-									</CodeSnippet>
-									{dryItem.diagnostics.map((found) => (
-										<InlineNotification
-											key={`${found.code} ${found.path}`}
-											kind={found.severity === "info" ? "info" : found.severity}
-											lowContrast
-											hideCloseButton
-											title={found.message}
-											subtitle={`${found.rule || found.path || "(the whole object)"} · ${found.code}`}
-										/>
-									))}
-								</div>
-							)}
-						</Stack>
-					</TabPanel>
-					<TabPanel>
-						<Stack gap={3}>
+					<FieldTree
+						side="source"
+						heading="Source"
+						description={
+							importing ? `${operationLabel}: an item of the response` : `${saved.document_type} documents`
+						}
+						filter={sourceFilter}
+						onFilter={setSourceFilter}
+						toggles={sourceToggles}
+						root={sourceTree}
+						shown={sourceShown}
+						expanded={sourceOpen}
+						onExpand={setSourceOpen}
+						selected={pending}
+						onSelect={chooseSource}
+						details={sourceDetails}
+					/>
+					<div style={{ alignSelf: "stretch" }}>
+						<MappingLane links={links} selected={selected !== undefined} />
+					</div>
+					<FieldTree
+						side="target"
+						heading="Target"
+						description={
+							importing ? `${saved.document_type}: a new document` : `${operationLabel}: the request body`
+						}
+						filter={targetFilter}
+						onFilter={setTargetFilter}
+						toggles={targetToggles}
+						root={targetTree}
+						shown={targetShown}
+						expanded={targetOpen}
+						onExpand={setTargetOpen}
+						selected={selected}
+						onSelect={chooseTarget}
+						details={targetDetails}
+					/>
+					<aside
+						aria-label="Rule"
+						style={{
+							position: "sticky",
+							top: "4rem",
+							marginInlineStart: "1rem",
+							padding: "1rem",
+							background: "var(--cds-layer)",
+							maxHeight: "calc(100vh - 5rem)",
+							overflowY: "auto",
+						}}
+					>
+						{selected === undefined ? (
 							<p>
-								The rules compiled to the one expression a sync runs. The server compiles them to the same
-								text when the transform is saved.
+								Select a target field to write its rule. To map a source field to it, select the source field
+								first.
 							</p>
-							<CodeSnippet type="multi" feedback="Copied" wrapText>
-								{compiled.jsonata}
-							</CodeSnippet>
-						</Stack>
-					</TabPanel>
-					<TabPanel>
-						<DiagnosticsTable
-							diagnostics={diagnostics}
-							current={!dirty}
-							onShow={(found) => {
-								if (found.rule === "" || found.rule.startsWith("/")) {
-									show(found.rule);
-									return;
-								}
-								// a setting's expression
-								setTab(TABS.indexOf("settings"));
-								window.setTimeout(() => document.getElementById(`setting-${found.rule}`)?.focus(), 0);
-							}}
-						/>
-					</TabPanel>
-					<TabPanel>
-						<TransformSettings
-							importing={importing}
-							settings={settings}
-							onChange={(name, value) => setSettings((current) => ({ ...current, [name]: value }))}
-						/>
-					</TabPanel>
-				</TabPanels>
-			</Tabs>
-		</Stack>
+						) : (
+							<RuleInspector
+								pointer={selected}
+								field={selectedField ?? (selected === "" ? targetTree : undefined)}
+								rule={selectedRule}
+								context={sourceContext(selected, ruleMap)}
+								results={preview.results.get(selected)}
+								diagnostics={byRule.get(selected) ?? []}
+								items={previewItems.length}
+								reads={reads.get(selected) ?? []}
+								sources={sourceList}
+								members={(selectedField?.children ?? []).map((field) => ({
+									field,
+									rule: ruleMap.get(field.pointer),
+								}))}
+								isList={(pointer) => targetFields.get(pointer)?.kind === "collection"}
+								expressionRef={expression}
+								onChange={(text) => setRule(selected, kindAt(selected), text)}
+								onInsert={insert}
+								onSelect={show}
+							/>
+						)}
+					</aside>
+				</div>
+
+				<Tabs selectedIndex={tab} onChange={({ selectedIndex }) => setTab(selectedIndex)}>
+					<TabList aria-label="The transform's sample, output and settings">
+						<Tab>Sample</Tab>
+						<Tab>Output</Tab>
+						<Tab>JSONata</Tab>
+						<Tab>{`Diagnostics (${diagnostics.length})`}</Tab>
+						<Tab>Settings</Tab>
+					</TabList>
+					<TabPanels>
+						<TabPanel>
+							<SampleEditor
+								transform={saved.name}
+								importing={importing}
+								text={sampleText}
+								error={sampleError}
+								items={items.length}
+								unsafe={unsafe}
+								onChange={changeSample}
+							/>
+						</TabPanel>
+						<TabPanel>
+							<Stack gap={5}>
+								{previewItems.length === 0 ? (
+									<p>Add a sample to see what the transform maps it to.</p>
+								) : (
+									<Select
+										id="transform-output-item"
+										labelText="Sample item"
+										value={String(shownItem)}
+										onChange={(event) => setShownItem(Number(event.target.value))}
+									>
+										{previewItems
+											.map((_item, index) => String(index))
+											.map((value) => (
+												<SelectItem key={value} value={value} text={`Item ${Number(value) + 1}`} />
+											))}
+									</Select>
+								)}
+								{output && (
+									<div>
+										<h3 className="cds--label">
+											{importing
+												? "The document it maps to (preview)"
+												: "The request body it maps to (preview)"}
+										</h3>
+										{output.ok ? (
+											<CodeSnippet type="multi" feedback="Copied" wrapText>
+												{output.defined ? JSON.stringify(output.value, null, 2) : "(nothing)"}
+											</CodeSnippet>
+										) : (
+											<InlineNotification
+												kind="error"
+												lowContrast
+												hideCloseButton
+												title={output.error.message}
+												subtitle={output.error.code}
+											/>
+										)}
+									</div>
+								)}
+								{dryItem && (
+									<div>
+										<h3 className="cds--label">
+											Dry run on the server
+											{dryItem.name ? `: inserted as ${dryItem.name}, then rolled back` : ""}{" "}
+											{output?.ok && (
+												<Tag
+													size="sm"
+													type={
+														JSON.stringify(output.value) === JSON.stringify(dryItem.output) ? "green" : "red"
+													}
+												>
+													{JSON.stringify(output.value) === JSON.stringify(dryItem.output)
+														? "Same as the preview"
+														: "Differs from the preview"}
+												</Tag>
+											)}
+										</h3>
+										<CodeSnippet type="multi" feedback="Copied" wrapText>
+											{JSON.stringify(dryItem.output, null, 2)}
+										</CodeSnippet>
+										{dryItem.diagnostics.map((found) => (
+											<InlineNotification
+												key={`${found.code} ${found.path}`}
+												kind={found.severity === "info" ? "info" : found.severity}
+												lowContrast
+												hideCloseButton
+												title={found.message}
+												subtitle={`${found.rule || found.path || "(the whole object)"} · ${found.code}`}
+											/>
+										))}
+									</div>
+								)}
+							</Stack>
+						</TabPanel>
+						<TabPanel>
+							<Stack gap={3}>
+								<p>
+									The rules compiled to the one expression a sync runs. The server compiles them to the same
+									text when the transform is saved.
+								</p>
+								<CodeSnippet type="multi" feedback="Copied" wrapText>
+									{compiled.jsonata}
+								</CodeSnippet>
+							</Stack>
+						</TabPanel>
+						<TabPanel>
+							<DiagnosticsTable
+								diagnostics={diagnostics}
+								current={!dirty}
+								onShow={(found) => {
+									if (found.rule === "" || found.rule.startsWith("/")) {
+										show(found.rule);
+										return;
+									}
+									// a setting's expression
+									setTab(TABS.indexOf("settings"));
+									window.setTimeout(() => document.getElementById(`setting-${found.rule}`)?.focus(), 0);
+								}}
+							/>
+						</TabPanel>
+						<TabPanel>
+							<TransformSettings
+								importing={importing}
+								settings={settings}
+								onChange={(name, value) => setSettings((current) => ({ ...current, [name]: value }))}
+							/>
+						</TabPanel>
+					</TabPanels>
+				</Tabs>
+			</Stack>
+		</>
 	);
 }

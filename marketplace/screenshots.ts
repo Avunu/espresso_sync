@@ -5,8 +5,6 @@ import type { ShotSpec } from "./shots.d.ts";
 
 // The demo from espresso_sync/demo.py: one Connection to a made-up shop API, the shop's
 // OpenAPI description, and the Active transform that imports its tasks as ToDos.
-const formReady = (doctype: string, name: string) =>
-	`window.cur_frm && cur_frm.doctype === ${JSON.stringify(doctype)} && cur_frm.doc.name === ${JSON.stringify(name)} && !cur_frm.is_dirty()`;
 
 // The /espresso_sync page has drawn its data: no Carbon skeleton is left on it. The page has
 // one (light) theme, so its shots are taken in that theme alone.
@@ -47,10 +45,20 @@ export default {
 		},
 		{
 			name: "connection",
-			route: "/desk/espresso-sync-connection/Example%20Shop",
-			alt: "An Espresso Sync Connection to the shop API, with a shot that imports its tasks as ToDos through the Active transform",
-			waitForFn: formReady("Espresso Sync Connection", "Example Shop"),
-			mask: [".frappe-timestamp"],
+			route: "/espresso_sync#/connections/Example%20Shop/shots",
+			alt: "The shots of the Connection to the shop API: one imports the shop's tasks as ToDos through the Active transform",
+			// the Connection's one shot is drawn
+			waitForFn: `${NO_SKELETON} && document.querySelectorAll('table[aria-label="Shots"] tbody tr').length > 0`,
+			themes: ["light"],
+			readme: "feature",
+		},
+		{
+			name: "overview",
+			route: "/espresso_sync#/overview",
+			alt: "The overview: how many Connections need attention or are syncing, what the last 24 hours logged, and the health of each Connection",
+			// the demo Connection's row is drawn in the health table
+			waitForFn: `${NO_SKELETON} && document.querySelectorAll('table[aria-label="Connections"] tbody tr').length > 0`,
+			themes: ["light"],
 			readme: "feature",
 		},
 	],

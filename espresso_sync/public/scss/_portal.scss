@@ -1,0 +1,168 @@
+// Copyright (c) 2026, Avunu LLC and contributors
+// For license information, please see license.txt
+
+// The /espresso_sync page's own few classes (src/components). Sizes and colours are
+// Carbon's tokens, read as the custom properties its styles define, so they follow the
+// theme. Everything else on the page is styled inline, with the same tokens.
+
+@use "@carbon/react/scss/spacing";
+
+// Carbon compiles its spacing scale into its own rules and defines no custom properties
+// for it, so the page defines them, under the names Carbon's type and colour tokens use.
+:root {
+	@each $name, $value in spacing.$spacing {
+		--cds-#{$name}: #{$value};
+	}
+}
+
+.es-page-header {
+	display: flex;
+	flex-direction: column;
+	gap: var(--cds-spacing-03);
+	margin-block-end: var(--cds-spacing-06);
+}
+
+.es-page-header-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--cds-spacing-05);
+	align-items: center;
+	justify-content: space-between;
+}
+
+.es-page-header-heading {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--cds-spacing-05);
+	align-items: center;
+	min-inline-size: 0;
+}
+
+.es-page-header-title {
+	margin: 0;
+	font-size: var(--cds-heading-04-font-size);
+	font-weight: var(--cds-heading-04-font-weight);
+	line-height: var(--cds-heading-04-line-height);
+	letter-spacing: var(--cds-heading-04-letter-spacing);
+	overflow-wrap: anywhere;
+}
+
+.es-page-header-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--cds-spacing-03);
+	align-items: center;
+	margin-inline-start: auto;
+}
+
+.es-page-header-subtitle {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--cds-spacing-03) var(--cds-spacing-05);
+	align-items: center;
+	color: var(--cds-text-secondary);
+	font-size: var(--cds-body-compact-01-font-size);
+	line-height: var(--cds-body-compact-01-line-height);
+	letter-spacing: var(--cds-body-compact-01-letter-spacing);
+}
+
+// the Tabs sit on the header's lower edge, with no gap of their own above the page
+.es-page-header-tabs {
+	margin-block-start: var(--cds-spacing-03);
+}
+
+.es-description-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+	gap: var(--cds-spacing-05) var(--cds-spacing-07);
+	margin: 0;
+
+	dt {
+		margin-block-end: var(--cds-spacing-02);
+		color: var(--cds-text-secondary);
+		font-size: var(--cds-label-01-font-size);
+		line-height: var(--cds-label-01-line-height);
+		letter-spacing: var(--cds-label-01-letter-spacing);
+	}
+
+	dd {
+		margin: 0;
+		font-size: var(--cds-body-compact-01-font-size);
+		line-height: var(--cds-body-compact-01-line-height);
+		letter-spacing: var(--cds-body-compact-01-letter-spacing);
+		overflow-wrap: anywhere;
+	}
+}
+
+.es-tile-value {
+	font-size: var(--cds-heading-06-font-size);
+	font-weight: var(--cds-heading-06-font-weight);
+	font-variant-numeric: tabular-nums;
+	line-height: var(--cds-heading-06-line-height);
+	letter-spacing: var(--cds-heading-06-letter-spacing);
+}
+
+// the Overview's figures: as many columns as fit, in line with the tables below
+.es-tile-row {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+	gap: var(--cds-spacing-05);
+	margin-block-end: var(--cds-spacing-06);
+}
+
+// a form section's legend, which Carbon sets as small as a field's label
+.es-form-legend {
+	color: var(--cds-text-primary);
+	font-size: var(--cds-heading-compact-02-font-size);
+	font-weight: var(--cds-heading-compact-02-font-weight);
+	line-height: var(--cds-heading-compact-02-line-height);
+}
+
+.es-empty-state {
+	display: flex;
+	flex-direction: column;
+	gap: var(--cds-spacing-03);
+	align-items: flex-start;
+	max-inline-size: 40rem;
+	padding-block: var(--cds-spacing-09);
+	padding-inline: var(--cds-spacing-05);
+	color: var(--cds-text-secondary);
+	font-size: var(--cds-body-compact-01-font-size);
+	line-height: var(--cds-body-compact-01-line-height);
+}
+
+.es-empty-state-icon {
+	margin-block-end: var(--cds-spacing-03);
+	fill: var(--cds-icon-secondary);
+}
+
+.es-empty-state-title {
+	margin: 0;
+	color: var(--cds-text-primary);
+	font-size: var(--cds-heading-03-font-size);
+	font-weight: var(--cds-heading-03-font-weight);
+	line-height: var(--cds-heading-03-line-height);
+}
+
+.es-empty-state-action {
+	margin-block-start: var(--cds-spacing-05);
+}
+
+// A record's name as a table's link: a long one wraps in its column, even where it has no
+// spaces, but the column stays wide enough to read in a narrow window.
+.es-long-name {
+	min-inline-size: 10rem;
+	overflow-wrap: anywhere;
+}
+
+// In a narrow window a wide table scrolls in its own box, and the page stays the window's
+// width. Carbon's Stack is a grid whose one column is as wide as its widest item, so it
+// is told to keep to its container. What Carbon hides in a cell for screen readers is
+// positioned, so the scrolling box is what it is positioned in, or it would widen the page.
+[class~="cds--stack-vertical"] {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+[class~="cds--data-table-content"] {
+	position: relative;
+}

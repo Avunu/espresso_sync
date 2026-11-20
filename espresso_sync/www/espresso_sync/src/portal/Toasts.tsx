@@ -48,6 +48,10 @@ export function ToastProvider({ children }: PropsWithChildren) {
 						key={toast.id}
 						kind={toast.kind}
 						title={toast.title}
+						{...(toast.subtitle ? { subtitle: toast.subtitle } : {})}
+						{...(toast.caption ? { caption: toast.caption } : {})}
+						// an error interrupts a screen reader; anything else waits its turn
+						role={toast.kind === "error" ? "alert" : "status"}
 						// a server message's line breaks (see getErrorMessage) show as such
 						style={{ whiteSpace: "pre-line" }}
 						// a confirmation goes by itself, as in the desk; a warning or an error stays
