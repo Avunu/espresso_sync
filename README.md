@@ -17,6 +17,10 @@ Two-way REST API sync: JSONata transforms checked against OpenAPI and DocTypes
 [![Frappe v16](https://img.shields.io/badge/Frappe-v16-blue)](https://github.com/frappe/frappe/tree/version-16)
 [![Documentation](https://img.shields.io/badge/docs-docs.avunu.net-blue)](https://docs.avunu.net/espresso-sync/)
 
+<picture>
+  <img src="docs/screenshots/editor-light.webp" alt="The transform editor: the shop API's task fields mapped to a ToDo's with JSONata rules, each previewed on the sample tasks">
+</picture>
+
 </div>
 
 <!-- frappe-nix:end header -->
