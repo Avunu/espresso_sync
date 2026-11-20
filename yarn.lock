@@ -548,39 +548,39 @@
   resolved "https://registry.yarnpkg.com/@scalar/helpers/-/helpers-0.18.0.tgz#defe6016acf9a5337f8af807712cd2f2e439ae1c"
   integrity sha512-uvOhlUbqvnJNjvnsSr2CwZLQgT1qW3ZIBd11Ntg/DHL3nswVAE8f9OppcYWG4LLH0c7nxY+CPvDbmwqlp0rlrA==
 
-"@scalar/json-magic@0.19.1", "@scalar/json-magic@^0.19.1":
-  version "0.19.1"
-  resolved "https://registry.yarnpkg.com/@scalar/json-magic/-/json-magic-0.19.1.tgz#900929f4fdfb97cc062f163e0928aa0c1df8e08a"
-  integrity sha512-k1v1dIjCSSUf3MYFFJbaRfZXtguFqCf1JmDSGT4oE2xVvDDZnTMm/Q+rKP/ipom7wUTUwO86HujkeASwnNQeBQ==
+"@scalar/json-magic@0.20.0", "@scalar/json-magic@^0.20.0":
+  version "0.20.0"
+  resolved "https://registry.yarnpkg.com/@scalar/json-magic/-/json-magic-0.20.0.tgz#60ec182519dfae1962fee838ec09f0b0ef62396f"
+  integrity sha512-CWlpGQneIGzqJgBolRdL2ieTBtkOc136ICNT7XFlJPuLAqYa1fNeJA2pL1VP4NSd90Nfg5D0sQZg3ky0Ktb2cQ==
   dependencies:
     "@scalar/helpers" "0.18.0"
     pathe "^2.0.3"
-    undici "8.12.3"
+    undici "^8.12.4"
     yaml "^2.9.1"
 
-"@scalar/json-schema-validator@0.1.20":
-  version "0.1.20"
-  resolved "https://registry.yarnpkg.com/@scalar/json-schema-validator/-/json-schema-validator-0.1.20.tgz#5000dbd8116f9dc98d6299bf7ff5324a3dc0f7fe"
-  integrity sha512-eNuCxQ56VXNeXqJsV/0RlJ+SyqL0gtCQb8vRtcKFVaIRPWRnrNJ9+jHEMtjFAGIWTS199XiKz+L3Qg+6EV3hSg==
+"@scalar/json-schema-validator@0.1.21":
+  version "0.1.21"
+  resolved "https://registry.yarnpkg.com/@scalar/json-schema-validator/-/json-schema-validator-0.1.21.tgz#569aea8e8510f2d8e195d68effdb9475b72c5616"
+  integrity sha512-d75hOpF0TXsOn3LBDp8bCH2GdqHSkIFv+CV68eGB5wAMWZ2Hjiu902t6hFdgPgNxpoF0P6rNTgE9gn8mYR8sEQ==
   dependencies:
     "@scalar/helpers" "0.18.0"
-    "@scalar/types" "0.28.1"
+    "@scalar/types" "0.29.0"
     ajv "^8.20.0"
     ajv-draft-04 "^1.0.0"
     ajv-formats "^3.0.1"
     yaml "^2.9.1"
 
-"@scalar/openapi-parser@^0.29.22":
-  version "0.29.22"
-  resolved "https://registry.yarnpkg.com/@scalar/openapi-parser/-/openapi-parser-0.29.22.tgz#d818fedbdac24fadcbbc079ef0febeff6449d13e"
-  integrity sha512-EH6PIAOAtlTbhvwrV07IaLsF2zdc3nPmOkbF41NrjomrZ7M3UKSM6l9MhzEPK0GABzkislztK6ILs7/XD6HhUA==
+"@scalar/openapi-parser@^0.29.23":
+  version "0.29.23"
+  resolved "https://registry.yarnpkg.com/@scalar/openapi-parser/-/openapi-parser-0.29.23.tgz#ec08d405639902d14d6b1c86414e69ff99e7a914"
+  integrity sha512-+4N8w/dUx8GltdLM9Mirbi50q9Xr8AsomECNYCqkH66dAlIQWTnI9jOIfn4XiHCemvW9bE9UURMBKTxmiIJxrg==
   dependencies:
     "@scalar/helpers" "0.18.0"
-    "@scalar/json-magic" "0.19.1"
+    "@scalar/json-magic" "0.20.0"
     "@scalar/openapi-types" "0.9.9"
-    "@scalar/openapi-upgrader" "0.4.9"
-    "@scalar/openapi-validator" "0.1.20"
-    "@scalar/types" "0.28.1"
+    "@scalar/openapi-upgrader" "0.4.10"
+    "@scalar/openapi-validator" "0.1.21"
+    "@scalar/types" "0.29.0"
     yaml "^2.9.1"
 
 "@scalar/openapi-types@0.9.9":
@@ -588,28 +588,28 @@
   resolved "https://registry.yarnpkg.com/@scalar/openapi-types/-/openapi-types-0.9.9.tgz#0cc260c1eb50d13ef4c04da518d0387c88163aad"
   integrity sha512-Z2NfKMNhtWJaEiYVU1pzVS+BT53ygotVA6y9reCx0jTcwqml9WPrNPumgjlgoZnBdP9pZU3+u86RNwwVAyArvA==
 
-"@scalar/openapi-upgrader@0.4.9":
-  version "0.4.9"
-  resolved "https://registry.yarnpkg.com/@scalar/openapi-upgrader/-/openapi-upgrader-0.4.9.tgz#1e1492d3b442c9b60b86472c74b134a76aedcf61"
-  integrity sha512-az/XJuOozvwOqu3LQN6fFkepuh+YizCWLHhi3F87CJVogPb/0u6MUl8pY6BE45+vjD4/pZb5BDc1rCXTEthsKQ==
+"@scalar/openapi-upgrader@0.4.10":
+  version "0.4.10"
+  resolved "https://registry.yarnpkg.com/@scalar/openapi-upgrader/-/openapi-upgrader-0.4.10.tgz#4399a64678b684716bc1711e6254feb4d0fe65c5"
+  integrity sha512-8ZYDl0NojHlqBnNPwkYIIggprlX/l+4CLowmL/ZzyvfXbbgdDDybGEn3TRN8emOE1qlCZcltOtSUWU3jp1UVsA==
   dependencies:
     "@scalar/helpers" "0.18.0"
     "@scalar/openapi-types" "0.9.9"
 
-"@scalar/openapi-validator@0.1.20":
-  version "0.1.20"
-  resolved "https://registry.yarnpkg.com/@scalar/openapi-validator/-/openapi-validator-0.1.20.tgz#c86a1e64d83650045667c566fed9bceb6314c2d3"
-  integrity sha512-7NQc+/ZJsqcJBFxExTu/oq1vfcDSaScdBZ2x794wCWVNuGh6zyUTyp1JeMue/QGBWhEt0KVywvspFzI8zQRS4Q==
+"@scalar/openapi-validator@0.1.21":
+  version "0.1.21"
+  resolved "https://registry.yarnpkg.com/@scalar/openapi-validator/-/openapi-validator-0.1.21.tgz#be3d03cca294adec4cfa0398b2e320ca29d0ef67"
+  integrity sha512-GYf89wdHhkmcJa0zwQdiey3ulH8Sc/l0rKn2N/3i/B2GZyX497hZs3Kd3ROtkbeCrogxC6xNwpW03iLsgzVsdw==
   dependencies:
     "@scalar/helpers" "0.18.0"
-    "@scalar/json-schema-validator" "0.1.20"
-    "@scalar/types" "0.28.1"
+    "@scalar/json-schema-validator" "0.1.21"
+    "@scalar/types" "0.29.0"
     yaml "^2.9.1"
 
-"@scalar/types@0.28.1":
-  version "0.28.1"
-  resolved "https://registry.yarnpkg.com/@scalar/types/-/types-0.28.1.tgz#9475a7193b6cc343bcb6edda7f2697e23ec86f63"
-  integrity sha512-HINEN1cHeYBnMjFGoMDrLEn7L4qdd7H6VjgeVUKno538iyJ+1N4oncRhYep41Aa2SlWNZaI44zUbBtPIWCRG2g==
+"@scalar/types@0.29.0":
+  version "0.29.0"
+  resolved "https://registry.yarnpkg.com/@scalar/types/-/types-0.29.0.tgz#196f876114652863088eaf709426ba69369a334d"
+  integrity sha512-6o1I5dplihEaXm6pU4/QBUXebmEbbjDEHx0qYgFWoHHM/QKX4OCv1f2ebeMoT8EVJviZmt03PfnFdkAMup1m5g==
   dependencies:
     "@scalar/helpers" "0.18.0"
     nanoid "^5.1.16"
@@ -2024,10 +2024,10 @@ undici-types@~8.9.0:
   resolved "https://registry.yarnpkg.com/undici-types/-/undici-types-8.9.0.tgz#e240d97c8b5d85e5347ce73d25865c7906c1ec9f"
   integrity sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==
 
-undici@8.12.3:
-  version "8.12.3"
-  resolved "https://registry.yarnpkg.com/undici/-/undici-8.12.3.tgz#e76a91feee9c275ad0f43bfc0eb632b6124d3bb6"
-  integrity sha512-+fdndUTwBP86cVjihTp21hZHo7d6oj1c/47XPA3lL8mM0XHs+C4EkcjmgRsFnFk2f/UONGDy9ItBItmXsLOQHw==
+undici@^8.12.4:
+  version "8.13.0"
+  resolved "https://registry.yarnpkg.com/undici/-/undici-8.13.0.tgz#85e27fdf76a2d38aeab49fb1993523cf3d60e460"
+  integrity sha512-mxbeyRlRhHUTWE1zf/FwDOXTKMhE1vMQRz/o2oOir/5fIWsB79TeZrByMkj019EdDuxPg03jprCjFLxLkmxTCQ==
 
 unicorn-magic@^0.4.0:
   version "0.4.1"

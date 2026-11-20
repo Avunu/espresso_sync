@@ -20,8 +20,8 @@
 	},
 	"dependencies": {
 		"@carbon/react": "^1.120.0",
-		"@scalar/json-magic": "^0.19.1",
-		"@scalar/openapi-parser": "^0.29.22",
+		"@scalar/json-magic": "^0.20.0",
+		"@scalar/openapi-parser": "^0.29.23",
 		"ajv": "^8.20.0",
 		"frappe-react-sdk": "^1.17.1",
 		"jsonata": "^2.2.2",
