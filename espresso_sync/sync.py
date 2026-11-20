@@ -20,7 +20,8 @@ that stops there with pages left fails). For each page:
    DocType (Enforce: one with an error is not saved);
 5. the document imported as that id before is updated (its child tables as the
    transform's Child Tables says), or a new one is inserted. Its Sync ID row records the
-   document's modified, so that the next export knows the change came from the API.
+   document's modified, so that the next export knows the change came from the API (unless
+   the transform's Export What It Saves is set: then the next export sends it).
 
 An export reads the documents changed since Last Export, the oldest first. For each:
 
@@ -542,11 +543,12 @@ class Run:
 			frappe.db.rollback(save_point=IMPORT_SAVEPOINT)
 			# with what Runtime Validation found, which may say why
 			raise SyncFailure(type(e).__name__, validate.error_message(e), diagnostics) from e
-		# the change this sync made: the next export skips it
-		sync_row.last_synced_modified = doc.modified
-		frappe.db.set_value(
-			SYNC_ID, sync_row.name, "last_synced_modified", doc.modified, update_modified=False
-		)
+		# the change this sync made: the next export skips it, unless the import is for the export to follow
+		if not step.transform.export_saved:
+			sync_row.last_synced_modified = doc.modified
+			frappe.db.set_value(
+				SYNC_ID, sync_row.name, "last_synced_modified", doc.modified, update_modified=False
+			)
 		return doc, diagnostics
 
 	# export

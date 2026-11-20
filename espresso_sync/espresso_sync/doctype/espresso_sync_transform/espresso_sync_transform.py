@@ -34,6 +34,7 @@ RUN_FIELDS = (
 	"modified_expr",
 	"skip_expr",
 	"runtime_validation",
+	"export_saved",
 	"child_table_policy",
 	"child_table_keys",
 )
@@ -63,6 +64,7 @@ class EspressoSyncTransform(Document):
 		direction: DF.Literal["Import", "Export"]
 		document_type: DF.Link
 		external_id_expr: DF.Code | None
+		export_saved: DF.Check
 		items_pointer: DF.Data | None
 		max_pages: DF.Int
 		method: DF.Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
