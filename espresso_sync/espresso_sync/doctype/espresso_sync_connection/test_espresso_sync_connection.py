@@ -175,7 +175,13 @@ class TestEspressoSyncConnection(IntegrationTestCase):
 		self.assertEqual(connection.allowed_host, "api.example.invalid")
 
 	def test_a_cron_frequency_needs_a_valid_rule(self):
-		for cron_rule, valid in (("", False), ("every tuesday", False), ("*/15 * * * *", True)):
+		for cron_rule, valid in (
+			("", False),
+			("every tuesday", False),
+			# valid to read, and there is no 30th of February
+			("0 0 30 2 *", False),
+			("*/15 * * * *", True),
+		):
 			connection = esc.get_connection(self.connection.name)
 			connection.sync_frequency = "Cron"
 			connection.cron_rule = cron_rule
@@ -242,7 +248,25 @@ class TestShots(IntegrationTestCase):
 
 		other = make_connection("ES Shot Other")
 		other_spec = make_spec(other.name)
+		follow_up = make_transform("ES Shot Follow-up", self.spec, **EXPORT_TASKS)
+		# a Follow-up Transform is an Active Export transform of the DocType, on this Connection's
+		# spec, like the others
+		self.save_shot(
+			dt="ToDo", do_export=1, export_transform=self.export_transform, follow_up_transform=follow_up
+		)
+		export = {"dt": "ToDo", "do_export": 1, "export_transform": self.export_transform}
 		for shot in (
+			{**export, "follow_up_transform": self.import_transform},
+			{
+				**export,
+				"follow_up_transform": make_transform(
+					"ES Shot Draft 2", self.spec, activate=False, **EXPORT_TASKS
+				),
+			},
+			{
+				**export,
+				"follow_up_transform": make_transform("ES Shot Elsewhere 2", other_spec, **EXPORT_TASKS),
+			},
 			{"dt": "ToDo", "do_import": 1},
 			{"dt": "ToDo", "do_export": 1},
 			{"dt": "ToDo", "do_import": 1, "import_transform": self.export_transform},

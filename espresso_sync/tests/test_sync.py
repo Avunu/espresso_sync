@@ -59,6 +59,17 @@ UPDATE_TASKS: dict[str, Any] = {
 	"path": "/tasks/{id}",
 	"path_params": '{"id": $syncId("ToDo", name)}',
 }
+# a link between two ToDos, made with a request of its own: the document's parent (its
+# reference) gets the id of the ToDo just sent, from the answer to that request
+FOLLOW_UP_TASKS: dict[str, Any] = {
+	"direction": "Export",
+	"document_type": "ToDo",
+	"method": "POST",
+	"path": "/tasks/{id}/links",
+	"path_params": '{"id": $syncId("ToDo", reference_name)}',
+	"skip_expr": "reference_name ? false : true",
+	"rules": [{"ptr": "/task", "kind": "field", "expr": "$response.n"}],
+}
 
 
 def make_connection(name: str, **values) -> str:
@@ -712,6 +723,157 @@ class TestExport(SyncTestCase):
 		# the parent has an id, and no parent of its own: it is skipped, with the other ToDo
 		self.assertEqual(self.external_id(parent), "acme/website")
 		self.assertIsNone(self.external_id(self.todos[1]))
+
+
+class TestFollowUp(SyncTestCase):
+	"""A Follow-up Transform: a second request for a document, after its create or update."""
+
+	def setUp(self):
+		super().setUp()
+		self.follow_up = self.transform("follow-up", FOLLOW_UP_TASKS)
+		add_shot(
+			self.connection,
+			dt="ToDo",
+			do_export=1,
+			export_transform=self.transform("export", EXPORT_TASKS),
+			update_transform=self.transform("update", UPDATE_TASKS),
+			follow_up_transform=self.follow_up,
+		)
+		self.start_exports_now()
+		self.parent: Any = frappe.get_doc(
+			{"doctype": "ToDo", "description": f"es {self._testMethodName} parent"}
+		).insert()
+		self.child: Any = frappe.get_doc(
+			{
+				"doctype": "ToDo",
+				"description": f"es {self._testMethodName} child",
+				"reference_type": "ToDo",
+				"reference_name": self.parent.name,
+			}
+		).insert()
+		# the parent changed after the child did: it is sent after it, without an ID to point to yet
+		frappe.db.set_value("ToDo", self.parent.name, "priority", "High")
+
+	def created(self, number: int):
+		return (responses.POST, f"{SERVER}/tasks", {"status": 201, "json": {"id": f"x{number}", "n": number}})
+
+	def updated(self, number: int):
+		return (responses.PUT, f"{SERVER}/tasks/x{number}", {"json": {"id": f"x{number}", "n": number}})
+
+	def link(self, parent_id: str, status: int = 201):
+		return (responses.POST, f"{SERVER}/tasks/{parent_id}/links", {"status": status, "json": {}})
+
+	def row(self, todo):
+		return frappe.db.get_value(
+			"Espresso Sync ID",
+			{"sync_connection": self.connection, "parenttype": "ToDo", "parent": todo.name},
+			["external_id", "last_synced_modified"],
+			as_dict=True,
+		)
+
+	def test_the_follow_up_goes_after_every_document_with_the_answer_to_its_request(self):
+		calls = self.sync(self.created(1), self.created(2), self.link("x2"))
+		# the child first (it changed first), the parent second, and only then the follow-up: the
+		# parent's ID is known by then
+		self.assertEqual(
+			[(call.request.method, call.request.url) for call in calls],
+			[("POST", f"{SERVER}/tasks")] * 2 + [("POST", f"{SERVER}/tasks/x2/links")],
+		)
+		self.assertEqual(json.loads(calls[2].request.body), {"task": 1})
+		self.assertEqual([self.row(t).external_id for t in (self.child, self.parent)], ["x1", "x2"])
+		logs = pull_logs(self.connection)
+		self.assertEqual(
+			[(log.sync_status, log.transform) for log in logs],
+			[("Success", f"{self.connection} export")] * 2 + [("Success", self.follow_up)],
+		)
+		self.assertEqual(logs[2].sync_doc, self.child.name)
+		# every document is synced now, so nothing is sent again
+		self.assertTrue(all(self.row(t).last_synced_modified for t in (self.child, self.parent)))
+		self.assertEqual(self.sync(), [])
+
+	def test_a_failed_follow_up_is_sent_again_with_its_update(self):
+		calls = self.sync(self.created(1), self.created(2), self.link("x2", status=500))
+		self.assertEqual(len(calls), 3)
+		logs = pull_logs(self.connection)
+		self.assertEqual(
+			[(log.sync_status, codes(log)) for log in logs],
+			[("Success", []), ("Success", []), ("Failure", ["http-status"])],
+		)
+		# the child has its ID, and is not synced: the next export sends it again, as an update
+		self.assertEqual(self.row(self.child).external_id, "x1")
+		self.assertIsNone(self.row(self.child).last_synced_modified)
+		shot = esc.get_connection(self.connection).shots[0]
+		self.assertLess(shot.last_export, frappe.db.get_value("ToDo", self.child.name, "modified"))
+		calls = self.sync(self.updated(1), self.link("x2"))
+		self.assertEqual(
+			[(call.request.method, call.request.url) for call in calls],
+			[("PUT", f"{SERVER}/tasks/x1"), ("POST", f"{SERVER}/tasks/x2/links")],
+		)
+		self.assertTrue(self.row(self.child).last_synced_modified)
+		self.assertEqual(self.sync(), [])
+
+	def test_a_parent_without_an_id_fails_the_follow_up_until_it_has_one(self):
+		frappe.db.set_value("ToDo", self.parent.name, "exclude_from_sync", 1)
+		calls = self.sync(self.created(1))
+		self.assertEqual(len(calls), 1)
+		[created, failed] = pull_logs(self.connection)
+		self.assertEqual(created.sync_status, "Success")
+		self.assertEqual((failed.sync_status, failed.transform), ("Failure", self.follow_up))
+		self.assertIn("Path Parameters gives no id", failed.diagnostics)
+		self.assertEqual(self.row(self.child).external_id, "x1")
+		# the parent is sent after all: the child's follow-up finds its ID, in the same export
+		frappe.db.set_value("ToDo", self.parent.name, "exclude_from_sync", 0)
+		calls = self.sync(self.updated(1), self.created(2), self.link("x2"))
+		self.assertEqual(
+			[(call.request.method, call.request.url) for call in calls],
+			[
+				("PUT", f"{SERVER}/tasks/x1"),
+				("POST", f"{SERVER}/tasks"),
+				("POST", f"{SERVER}/tasks/x2/links"),
+			],
+		)
+		self.assertEqual(json.loads(calls[2].request.body), {"task": 1})
+		self.assertTrue(self.row(self.child).last_synced_modified)
+
+	def test_the_follow_up_reads_the_response_in_skip_when_and_is_skipped_as_done(self):
+		frappe.db.set_value(TRANSFORM, self.follow_up, "skip_expr", "reference_name ? $response.n = 1 : true")
+		calls = self.sync(self.created(1), self.created(2))
+		self.assertEqual(len(calls), 2)
+		# a skipped follow-up is not logged, and the document is synced
+		self.assertEqual(len(pull_logs(self.connection)), 2)
+		self.assertTrue(all(self.row(t).last_synced_modified for t in (self.child, self.parent)))
+		self.assertEqual(self.sync(), [])
+
+	def test_a_document_that_is_not_sent_has_no_follow_up(self):
+		frappe.db.set_value(
+			TRANSFORM, f"{self.connection} export", "skip_expr", "reference_name ? true : false"
+		)
+		calls = self.sync(self.created(1))
+		self.assertEqual([call.request.url for call in calls], [f"{SERVER}/tasks"])
+		self.assertIsNone(self.row(self.child))
+		self.assertEqual({log.sync_status for log in pull_logs(self.connection)}, {"Success"})
+
+	def test_a_create_that_gives_no_id_has_no_follow_up(self):
+		calls = self.sync(
+			(responses.POST, f"{SERVER}/tasks", {"status": 201, "json": {"n": 1}}),
+			(responses.POST, f"{SERVER}/tasks", {"status": 201, "json": {"n": 2}}),
+		)
+		self.assertEqual(len(calls), 2)
+		self.assertEqual(
+			[codes(log) for log in pull_logs(self.connection)], [["no-external-id"], ["no-external-id"]]
+		)
+
+	def test_without_a_follow_up_transform_a_document_is_synced_as_it_is_sent(self):
+		frappe.db.set_value(
+			"Espresso Sync Connection Shot",
+			esc.get_connection(self.connection).shots[0].name,
+			"follow_up_transform",
+			None,
+		)
+		calls = self.sync(self.created(1), self.created(2))
+		self.assertEqual(len(calls), 2)
+		self.assertTrue(all(self.row(t).last_synced_modified for t in (self.child, self.parent)))
+		self.assertEqual(self.sync(), [])
 
 
 class TestResync(SyncTestCase):

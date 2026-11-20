@@ -17,6 +17,7 @@ from urllib.parse import urlencode
 import frappe
 from frappe import _
 from frappe.sessions import get_csrf_token
+from frappe.utils import get_system_timezone
 from frappe.utils.jinja_globals import bundled_asset
 
 #: Who may use the page. The editor writes transforms that run as background
@@ -79,4 +80,6 @@ def set_portal_context(context: frappe._dict) -> None:
 		# The transform editor's JSONata worker, a bundle of its own: a Worker is
 		# started from a URL, which only the build's assets.json knows.
 		"eval_worker": bundled_asset("espresso-sync-eval.bundle.js"),
+		# Every time the page shows is the site's own, as stored: this names the zone.
+		"time_zone": get_system_timezone(),
 	}

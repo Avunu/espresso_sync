@@ -3,7 +3,7 @@ title: API Specs and schemas
 description: Storing an API's OpenAPI description, and the schema endpoints the transform editor reads operations, DocTypes and payload checks from.
 nav_title: API Specs
 order: 2
-updated: 2026-11-08
+updated: 2026-11-19
 ---
 
 The transform editor maps between an external API and a DocType. It learns the API's side from an **Espresso Sync API Spec**, the API's OpenAPI description, and the DocType's side from the DocType itself. Both are turned into JSON Schema, which the editor shows as trees and checks payloads against.
@@ -51,7 +51,7 @@ YAML is read as openapi-spec-validator reads it, dates such as `2026-01-01` stay
 | `http` `bearer`      | Header-based, `Authorization` as API Key, `Bearer <token>` as API Secret |
 | anything else        | none: set the Connection's authentication by hand                        |
 
-A hint is never applied by itself: credentials stay in the Connection form.
+A hint is never applied by itself. When the first of a Connection's API Specs that has a suggestion suggests another Authentication Type or header name than the Connection has, the Connection's **Settings** tab in the `/espresso_sync` page offers it: **Use the spec's suggestion** fills the type and the header name, and nothing is saved until Settings is. A scheme the spec requires is offered before one it only declares. The secret is never filled: type the key, the password or `Bearer <token>` yourself.
 
 ## Where requests go
 

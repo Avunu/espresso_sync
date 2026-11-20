@@ -2,42 +2,13 @@
 // For license information, please see license.txt
 
 import { useEffect, useState } from "react";
+import { hrefFor, parseHash, type Route } from "../../../public/js/portal/routes.ts";
 
-export const SECTIONS = ["connections", "specs", "transforms"] as const;
-export type Section = (typeof SECTIONS)[number];
+// The routes themselves are read and written in public/js/portal/routes.ts, which the
+// unit tests share: this file adds what needs the window.
+export * from "../../../public/js/portal/routes.ts";
 
-/** Where the page is: a section, and for `#/specs/<name>`, one record in it. */
-export interface Route {
-	section: Section;
-	name: string | undefined;
-}
-
-function isSection(value: string | undefined): value is Section {
-	return SECTIONS.some((section) => section === value);
-}
-
-function decode(text: string): string | undefined {
-	try {
-		return decodeURIComponent(text);
-	} catch {
-		return undefined; // a mangled `%` escape
-	}
-}
-
-/** `#/specs/Shop%20API` → specs, Shop API. Anything else lands on the
- * Connections, so an old or mistyped link still opens the page. */
-export function parseHash(hash: string): Route {
-	const [section, ...rest] = hash.replace(/^#\/?/, "").split("/");
-	if (!isSection(section)) return { section: "connections", name: undefined };
-	const name = rest.join("/");
-	return { section, name: name ? decode(name) : undefined };
-}
-
-export function hrefFor(section: Section, name?: string): string {
-	return name ? `#/${section}/${encodeURIComponent(name)}` : `#/${section}`;
-}
-
-/** The desk form of a document, where a Connection's credentials are edited. */
+/** The desk form of a document: where a Connection is renamed, and a synced document opens. */
 export function deskFormUrl(doctype: string, name?: string): string {
 	const slug = doctype.toLowerCase().replaceAll(" ", "-");
 	return `/desk/${slug}/${name === undefined ? "new" : encodeURIComponent(name)}`;
@@ -53,4 +24,32 @@ export function useRoute(): Route {
 		return () => window.removeEventListener("hashchange", onChange);
 	}, []);
 	return route;
+}
+
+/**
+ * Put `query` in place of the current route's: a page's filters, its page number. The
+ * section, the record and the tab stay, and so does the history entry, so Back leaves
+ * the page instead of undoing one filter at a time. A key with no value is dropped.
+ */
+export function replaceQuery(query: Record<string, string | undefined>): void {
+	const { section, name, tab } = parseHash(window.location.hash);
+	const href = hrefFor(section, name, { tab, query });
+	if (href === window.location.hash) return;
+	window.history.replaceState(window.history.state, "", href);
+	// replaceState fires no event of its own, and useRoute() listens for this one
+	window.dispatchEvent(new HashChangeEvent("hashchange"));
+}
+
+/**
+ * Go to one of the page's own `#/` links from a control that cannot be an anchor (a
+ * header action, a menu item). It goes as a click on a link, so whatever guards the
+ * page's links (see useUnsavedGuard) guards this too.
+ */
+export function navigate(href: string): void {
+	const link = document.createElement("a");
+	link.href = href;
+	link.hidden = true;
+	document.body.append(link);
+	link.click();
+	link.remove();
 }

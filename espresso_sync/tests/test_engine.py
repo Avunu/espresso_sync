@@ -9,6 +9,7 @@ import frappe
 import jsonata
 import jsonata.timebox
 import re2
+from frappe.core.doctype.system_settings.system_settings import clear_system_settings_cache
 from frappe.tests import IntegrationTestCase
 
 from espresso_sync.sync import ensure_sync_fields
@@ -17,6 +18,13 @@ from espresso_sync.transform import engine
 
 CONNECTION = "ES Engine Test"
 MANAGER_USER = "es-engine-manager@example.com"
+
+
+def set_time_zone(time_zone: str | None) -> None:
+	"""Set the site's time zone for the code that reads it next. The System Settings are
+	also held in the process's cache, which hears of a change only a moment later."""
+	frappe.db.set_single_value("System Settings", "time_zone", time_zone)
+	clear_system_settings_cache()
 
 
 def make_connection() -> str:
@@ -67,6 +75,22 @@ class TestEngine(IntegrationTestCase):
 		with self.assertRaises(jsonata.JException):
 			engine.evaluate("lines[", {})
 
+	def test_variables_are_bound_by_name(self):
+		variables = {"response": {"id": 7, "tags": ["a", "b"], "parent": None}}
+		self.assertEqual(engine.evaluate("$response.id + 1", {}, variables=variables), 8)
+		self.assertEqual(engine.evaluate("$count($response.tags)", {}, variables=variables), 2)
+		# JSON null is null, and what is not there is undefined, as in the data
+		self.assertIsNone(engine.evaluate("$response.parent", {}, variables=variables, default="none"))
+		self.assertEqual(
+			engine.evaluate("$response.missing", {}, variables=variables, default="none"), "none"
+		)
+		# the document is still what the expression reads, and a variable is not bound without one
+		self.assertEqual(engine.evaluate("name & $response.id", {"name": "x"}, variables=variables), "x7")
+		self.assertEqual(engine.evaluate("$response.id", {}, default="none"), "none")
+		self.assertEqual(
+			engine.evaluate("$response.id", {}, variables={"response": None}, default="none"), "none"
+		)
+
 	def test_expressions_are_compiled_once(self):
 		engine.compile_expression.cache_clear()
 		for n in range(3):
@@ -113,7 +137,9 @@ class TestEngine(IntegrationTestCase):
 				engine.compile_expression(expression)
 
 	def test_dates_checks_and_values(self):
-		frappe.db.set_single_value("System Settings", "time_zone", "America/New_York")
+		# the tests after this one read the site's own zone again
+		self.addCleanup(set_time_zone, frappe.db.get_single_value("System Settings", "time_zone"))
+		set_time_zone("America/New_York")
 		self.assertEqual(engine.evaluate('$frappeDate("2026-01-15")', {}), "2026-01-15")
 		self.assertEqual(
 			engine.evaluate('$frappeDatetime("2026-01-15T02:30:00Z")', {}), "2026-01-14 21:30:00.000000"

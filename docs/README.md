@@ -3,7 +3,7 @@ title: Espresso Sync
 description: Two-way sync between Frappe documents and external REST APIs, mapped with JSONata transforms built on the APIs' OpenAPI descriptions.
 nav_title: Overview
 order: 0
-updated: 2026-11-08
+updated: 2026-11-19
 ---
 
 Espresso Sync moves documents between a Frappe site and external REST APIs, in either direction. It runs on Frappe v16 and needs no other Frappe app.
@@ -15,7 +15,7 @@ Espresso Sync moves documents between a Frappe site and external REST APIs, in e
 - An **Espresso Sync Transform** maps one operation of an API Spec to a DocType (an import), or a DocType to one operation (an export), with [JSONata](https://docs.jsonata.org/) rules keyed by the target field's JSON Pointer. It is checked against both schemas, dry-run on a sample, and activated before it runs. See [Transforms](transforms.md).
 - A **shot** of a Connection syncs one DocType: it imports with an Active import transform, exports with an Active export transform, or both.
 - Imported objects are matched to documents through the **Espresso Sync IDs** table the app adds, on a **Sync** tab, to each DocType a shot names. A document's **Exclude from Sync** box keeps it out of exports.
-- Every request, object and document a sync handles is recorded in an **Espresso Sync Pull Log**, with its diagnostics and the hash of the JSONata that ran. Credentials are redacted before the log is saved. Log Settings deletes entries older than 30 days; change the period there.
+- Every request, object and document a sync handles is recorded in an **Espresso Sync Pull Log**, with its diagnostics and the hash of the JSONata that ran. Credentials are redacted before the log is saved. Log Settings deletes entries older than 30 days; change the period there, or with **Log retention** in the page's Sync log.
 
 The ERP is always one side: a transform maps between a DocType and an API operation, never between two APIs.
 
@@ -30,7 +30,8 @@ The ERP is always one side: a transform maps between a DocType and an API operat
 ## Security
 
 - **System Managers only.** Connections, API Specs, Transforms and the Pull Log are for System Managers, and so are every endpoint and the `/espresso_sync` page. A share can let someone else read one, but nothing more: saving a Connection, an API Spec or a Transform, and Sync Now, check the role, not just the document's permission.
-- **Credentials stay in the desk.** The API Secret is a Password field, read only to send a request. It is never put in a page, an endpoint's answer or the Pull Log.
+- **Credentials are write-only.** The API Secret is a Password field, read only to send a request. The `/espresso_sync` page can set, replace or remove it, and never shows it: the secret box is always empty, and the page is told only whether a secret is stored. It makes and saves a Connection through the app's own endpoints, which answer with the same. No endpoint of the app returns the secret, its mask or a credential header, and none is written to the Pull Log. **Test connection** sends the saved credentials to the Allowed Host only, and answers with the status and the time taken, never with the response.
+- **Frappe's own REST API masks the secret.** A System Manager who reads a Connection through `/api/resource/Espresso Sync Connection/<name>`, as the desk form does, gets `api_secret` as a run of `*` as long as the secret, not the secret. The page neither reads nor saves a Connection that way.
 - **Credentials go to one host.** The Server URL's host must be the Allowed Host, and a request carries the credentials only to that host and port, redirects included; an https request redirected to http drops them.
 - **Requests go to public addresses only**, through Frappe's guarded session, with caps on redirects, size and time. See [Where requests go](api-specs.md#where-requests-go).
 - **Expressions are sandboxed.** JSONata cannot reach the server. The functions the app adds read the site as the user the transform runs as, through Frappe's permission checks, and every evaluation stops after 5 seconds.
@@ -38,4 +39,14 @@ The ERP is always one side: a transform maps between a DocType and an API operat
 
 ## The /espresso_sync page
 
-The portal page at `/espresso_sync`, which the **Espresso Sync** tile on the apps screen opens, lists the Connections, the API Specs and the transforms, imports specs, starts a Draft transform on an operation, and edits a transform's rules in the [transform editor](transforms.md#the-editor). The tile and the page are for System Managers only. The app is not published to the Frappe marketplace yet.
+The portal page at `/espresso_sync`, which the **Espresso Sync** tile on the apps screen opens, has five sections, named in its header:
+
+| Section     | Shows                                                                                                                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Overview    | How many Connections need attention or are syncing, what failed and what synced in the last 24 hours, the [health](syncs.md#health) of each Connection, what is failing, and the last 7 days.                             |
+| Connections | Every Connection, to create, enable, pause, sync or delete. One Connection has its activity, its [shots](syncs.md#shots), its [linked documents](syncs.md#linked-documents) and its settings, the credentials among them. |
+| Sync log    | The [Pull Log](syncs.md#the-pull-log), filtered by Connection, status, direction, DocType, period or document, with each entry's diagnostics, object, document and response. It also sets how long entries are kept.      |
+| Transforms  | Every transform, and the [transform editor](transforms.md#the-editor) for its rules.                                                                                                                                      |
+| API specs   | Every API Spec and its operations. It [imports a spec](api-specs.md#importing-a-spec) and starts a Draft transform on an operation.                                                                                       |
+
+A warning in the header says how many Connections need attention, on every section. The desk forms still work, and are where a Connection is renamed and a document's **Exclude from Sync** box is. The tile and the page are for System Managers only. The app is not published to the Frappe marketplace yet.

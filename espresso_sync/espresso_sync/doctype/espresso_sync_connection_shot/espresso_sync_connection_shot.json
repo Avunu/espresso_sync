@@ -15,6 +15,7 @@
   "do_export",
   "export_transform",
   "update_transform",
+  "follow_up_transform",
   "column_break_export",
   "last_export"
  ],
@@ -94,6 +95,15 @@
    "options": "Espresso Sync Transform"
   },
   {
+   "depends_on": "eval:doc.do_export",
+   "description": "An Active Export transform of this DocType, sent for each document right after its create or update succeeded: for what the API sets with a request of its own (POST /tasks/{id}/tags). Its expressions read the document and $response, the answer to the request just sent. A document counts as exported when this has gone too, and all of them go after every document has its external ID.",
+   "fieldname": "follow_up_transform",
+   "fieldtype": "Link",
+   "label": "Follow-up Transform",
+   "link_filters": "[[\"Espresso Sync Transform\", \"status\", \"=\", \"Active\"], [\"Espresso Sync Transform\", \"direction\", \"=\", \"Export\"], [\"Espresso Sync Transform\", \"document_type\", \"=\", \"eval: doc.dt\"]]",
+   "options": "Espresso Sync Transform"
+  },
+  {
    "fieldname": "column_break_export",
    "fieldtype": "Column Break"
   },
@@ -108,7 +118,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-11-08 12:00:00.000000",
+ "modified": "2026-11-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Espresso Sync",
  "name": "Espresso Sync Connection Shot",

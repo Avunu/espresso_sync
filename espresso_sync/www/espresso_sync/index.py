@@ -1,7 +1,8 @@
 # Copyright (c) 2026, Avunu LLC and contributors
 # For license information, please see license.txt
 
-"""/espresso_sync: the transform editor's page (see espresso_sync/portal.py)."""
+"""/espresso_sync: the portal's page, for the Connections, the sync log, the transforms and
+the API specs (see espresso_sync/portal.py)."""
 
 import frappe
 

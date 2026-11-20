@@ -4,6 +4,7 @@
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import quote
 
@@ -163,20 +164,24 @@ class EspressoSyncTransform(Document):
 		ran = [self.active_compiled, *(self.get(fieldname) for fieldname in RUN_FIELDS)]
 		return hashlib.sha256(frappe.as_json(ran, indent=None).encode()).hexdigest()
 
-	def evaluate_object(self, fieldname: str, data: Any, connection: str | None) -> dict[str, Any]:
+	def evaluate_object(
+		self, fieldname: str, data: Any, connection: str | None, variables: Mapping[str, Any] | None = None
+	) -> dict[str, Any]:
 		"""The object an expression field gives on `data` ({} when it is empty or undefined)."""
 		expression = self.get(fieldname)
 		if not expression:
 			return {}
-		value = engine.evaluate(expression, data, default={}, connection=connection)
+		value = engine.evaluate(expression, data, default={}, connection=connection, variables=variables)
 		if not isinstance(value, dict):
 			frappe.throw(_("{0} must give an object").format(_(self.meta.get_label(fieldname))))
 		return value
 
-	def request_url(self, server_url: str, data: Any, connection: str | None) -> tuple[str, dict[str, Any]]:
+	def request_url(
+		self, server_url: str, data: Any, connection: str | None, variables: Mapping[str, Any] | None = None
+	) -> tuple[str, dict[str, Any]]:
 		"""The operation's URL on the server, its path parameters filled in from Path
-		Parameters, and the query parameters, both evaluated on `data`."""
-		parameters = self.evaluate_object("path_params", data, connection)
+		Parameters, and the query parameters, both evaluated on `data` (with `variables`)."""
+		parameters = self.evaluate_object("path_params", data, connection, variables)
 
 		def fill(match: re.Match) -> str:
 			value = parameters.get(match.group(1))
@@ -185,7 +190,9 @@ class EspressoSyncTransform(Document):
 			return quote(engine.as_text(value), safe="")
 
 		path = PATH_PARAMETER.sub(fill, self.path)
-		return server_url.rstrip("/") + path, self.evaluate_object("query_params", data, connection)
+		return server_url.rstrip("/") + path, self.evaluate_object(
+			"query_params", data, connection, variables
+		)
 
 	def read_items(self, body: Any) -> list[Any]:
 		"""The items at the Items Pointer in a response body: a list there, or the one item."""
