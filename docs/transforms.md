@@ -3,7 +3,7 @@ title: Transforms
 description: An Espresso Sync Transform maps an API operation's objects to a DocType's documents, or documents to an operation's request body, with JSONata rules.
 nav_title: Transforms
 order: 3
-updated: 2026-11-18
+updated: 2026-11-20
 ---
 
 An **Espresso Sync Transform** maps one way between a DocType and one operation of an [API Spec](api-specs.md): an **Import** maps the objects of the operation's response to documents of the DocType, an **Export** maps documents of the DocType to the operation's request body. The DocType is always one side.
@@ -78,6 +78,8 @@ Besides JSONata's own, an expression can call:
 | `$frappeDate(value)`                  | a date as Frappe stores it, `2026-01-15`                                                 |
 | `$frappeDatetime(value)`              | a datetime as Frappe stores it, converted to the system time zone when the value has one |
 | `$frappeCheck(value)`                 | 0 or 1, from a boolean, a number or `"true"`, `"false"`, `"1"`, `"0"`                    |
+
+`$syncId` and `$localName` take a last argument, the name of another Connection, to read the ids in that Connection's API: `$syncId("Task", name, "Tracker")` is the id the Connection called Tracker gave the task. It is how an API that is synced as a Connection of its own can refer to what another one knows, for example a roadmap that lists the issues of a tracker. The document must still be one the user may read.
 
 A transform that is a shot's [Follow-up Transform](syncs.md#shots) can also read `$response`, in its Skip When, Path and Query Parameters and rules: the answer to the request just sent for the document, as JSON (null when it was not JSON). In the editor's checks and dry run there is no request, so it is undefined.
 

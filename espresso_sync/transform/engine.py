@@ -16,7 +16,9 @@ The functions read the database as the session user, through frappe.get_list and
 frappe.has_permission: an expression sees what its user may read, and nothing else.
 
 - ``$syncId(doctype, name)``: the document's id in the Connection's API;
-- ``$localName(doctype, id)``: the name of the document with that id in the Connection's API;
+- ``$localName(doctype, id)``: the name of the document with that id in the Connection's API.
+  Either can take a last argument, the name of another Connection, to read the ids in that
+  one's API instead: ``$syncId("Task", name, "Other API")``;
 - ``$getValue(doctype, name, fieldname)``: a field of a document (of a Single: name it as
   its DocType). JSONata's own ``$single`` is not shadowed;
 - ``$frappeDate(value)``, ``$frappeDatetime(value)``: a date or a datetime as Frappe
@@ -92,7 +94,10 @@ def readable(doctype: str, name: Any) -> bool:
 	return bool(frappe.get_list(doctype, filters={"name": as_text(name)}, pluck="name", limit=1))
 
 
-def sync_id(connection: str | None, doctype: str | None = None, name: Any = None) -> str | None:
+def sync_id(
+	connection: str | None, doctype: str | None = None, name: Any = None, other: str | None = None
+) -> str | None:
+	connection = other or connection
 	if not (connection and doctype and name is not None) or not readable(doctype, name):
 		return None
 	return frappe.db.get_value(
@@ -102,7 +107,10 @@ def sync_id(connection: str | None, doctype: str | None = None, name: Any = None
 	)
 
 
-def local_name(connection: str | None, doctype: str | None = None, external_id: Any = None) -> str | None:
+def local_name(
+	connection: str | None, doctype: str | None = None, external_id: Any = None, other: str | None = None
+) -> str | None:
+	connection = other or connection
 	if not (connection and doctype and external_id is not None):
 		return None
 	if not frappe.get_meta(doctype).has_field(SYNC_IDS_FIELD):
