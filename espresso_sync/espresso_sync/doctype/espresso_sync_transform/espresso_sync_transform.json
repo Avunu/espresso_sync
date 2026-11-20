@@ -28,6 +28,7 @@
   "skip_expr",
   "column_break_sync",
   "runtime_validation",
+  "export_saved",
   "child_table_policy",
   "child_table_keys",
   "section_break_rules",
@@ -191,6 +192,14 @@
    "fieldtype": "Select",
    "label": "Runtime Validation",
    "options": "Enforce\nWarn\nOff"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.direction==\"Import\"",
+   "description": "Leave the documents this import saves to be exported too, as if they had been changed here, instead of taking them for what the API has. For an import that only links documents to items (an id, kept by the import) and has no data of the API to give them yet.",
+   "fieldname": "export_saved",
+   "fieldtype": "Check",
+   "label": "Export What It Saves"
   },
   {
    "default": "Replace",

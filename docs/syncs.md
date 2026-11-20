@@ -3,7 +3,7 @@ title: Connections and syncs
 description: An Espresso Sync Connection's server and credentials, its shots, and what a sync does with their Active transforms.
 nav_title: Connections and syncs
 order: 1
-updated: 2026-11-19
+updated: 2026-11-20
 ---
 
 An **Espresso Sync Connection** is one external API: where it is, how to authenticate, and what to sync with it. Only a System Manager can create, change or run one, in the **Connections** section of the `/espresso_sync` page or on the desk form.
@@ -126,7 +126,7 @@ For each shot that imports, the import transform's operation is read from the Se
 3. **The response.** A status other than 2XX, or a body that is not JSON, fails the request. Unless Runtime Validation is Off, the body is checked against the operation's response schema, and what that finds is logged as warnings: the items are still imported.
 4. **The items**, at the **Items Pointer**. For each, **Skip When**, if the transform has one, is evaluated first: an item it gives true for is skipped. Then **External ID** gives its id and **Modified**, if set, when it last changed. An item no newer than when it was last imported or exported is skipped, and so is one whose Espresso Sync IDs row is **Disabled**. When the shot also exports, a document changed here since it was last synced is not overwritten: the export sends the change. When the item is newer in the API too, the import of it fails as a `conflict`, and the export overwrites the API's change.
 5. **The mapping.** The transform's **Active JSONata** maps the item. Runtime Validation checks the result against the DocType: Enforce does not save it when there is an error, Warn saves it and logs the findings.
-6. **The document.** The one this Connection imported as that id before is updated, or else the document the mapped `name` names, or else a new one is inserted. On an update, each mapped child table is replaced by the mapped rows, or, with **Merge by Key**, rows with the same key are updated, the other mapped rows added, and the rows already there kept. A document that fails to save leaves nothing behind.
+6. **The document.** The one this Connection imported as that id before is updated, or else the document the mapped `name` names, or else a new one is inserted. On an update, each mapped child table is replaced by the mapped rows, or, with **Merge by Key**, rows with the same key are updated, the other mapped rows added, and the rows already there kept. A document that fails to save leaves nothing behind. What the import saved is not sent back by the next export: its Sync ID row records the document as synced. With **Export What It Saves** set on the import transform, the next export sends it: for an import that only links documents to the API's items (mapping `name` to the document the item belongs to, found with `$localName` on another Connection, say), and has none of the API's data to give them.
 
 ## An export
 

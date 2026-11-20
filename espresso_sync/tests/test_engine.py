@@ -193,6 +193,31 @@ class TestEngine(IntegrationTestCase):
 		# a DocType without sync ids has none
 		self.assertIsNone(engine.evaluate('$localName("Note", "ext-42")', {}, connection=CONNECTION))
 
+	def test_sync_ids_can_be_read_for_another_connection(self):
+		ensure_sync_fields("ToDo")
+		first = make_connection()
+		todo = frappe.get_doc(
+			{
+				"doctype": "ToDo",
+				"description": "synced twice",
+				"espresso_sync_ids": [{"sync_connection": first, "external_id": "ext-42"}],
+			}
+		).insert()
+		# a transform of another Connection reads this one's ids by naming it
+		self.assertEqual(
+			engine.evaluate(f'$syncId("ToDo", $, "{first}")', todo.name, connection="Other"), "ext-42"
+		)
+		self.assertEqual(
+			engine.evaluate(f'$localName("ToDo", "ext-42", "{first}")', {}, connection="Other"), todo.name
+		)
+		# without the name it reads its own, which has none here
+		self.assertIsNone(engine.evaluate('$syncId("ToDo", $)', todo.name, connection="Other"))
+		# a Connection that has no id for the document gives none
+		self.assertIsNone(engine.evaluate('$syncId("ToDo", $, "Nobody")', todo.name, connection=first))
+		self.assertIsNone(engine.evaluate('$localName("ToDo", "ext-42", "Nobody")', {}, connection=first))
+		# the last argument is not needed for a transform without a Connection
+		self.assertEqual(engine.evaluate(f'$syncId("ToDo", $, "{first}")', todo.name), "ext-42")
+
 	def test_functions_read_as_the_session_user(self):
 		frappe.set_user(make_user(MANAGER_USER, ["System Manager"]))
 		# Server Script is for Script Managers
