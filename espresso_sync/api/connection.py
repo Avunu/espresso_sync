@@ -402,7 +402,8 @@ def check_url(server_url: str, path: str | None) -> str:
 	# split by hand: a first segment with a colon (`items:search`) is no scheme here
 	added, _mark, query = path.partition("#")[0].partition("?")
 	joined = f"{base.path.rstrip('/')}/{added.lstrip('/')}"
-	return urlunsplit((base.scheme, base.netloc, joined, "&".join(filter(None, (base.query, query))), ""))
+	queries = "&".join(part for part in (base.query, query) if part)
+	return urlunsplit((base.scheme, base.netloc, joined, queries, ""))
 
 
 def verdict_of(status: int) -> str:
