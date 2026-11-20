@@ -1099,3 +1099,69 @@ class TestExportWatermark(IntegrationTestCase):
 		self.assertEqual(sync.export_watermark([(t[1], False), (t[3], True)], t[2]), just_below)
 		self.assertEqual(sync.export_watermark([(t[0], True), (t[1], False)], t[1]), just_below)
 		self.assertEqual(sync.export_watermark([(t[1], False)], None), None)
+
+
+class TestExportSaved(SyncTestCase):
+	"""An import that only links a document to an item is not the API's version of the document."""
+
+	def link_transform(self, **changes) -> str:
+		# the item is the ToDo of the same name here: the import maps nothing but its name (and the
+		# description a ToDo needs, as it is)
+		return self.transform(
+			"link",
+			{
+				**IMPORT_TASKS,
+				"rules": [
+					{"ptr": "/name", "kind": "field", "expr": "reference"},
+					{"ptr": "/description", "kind": "field", "expr": "title"},
+				],
+			},
+			**changes,
+		)
+
+	def setup_shot(self, **changes):
+		add_shot(
+			self.connection,
+			dt="ToDo",
+			do_import=1,
+			import_transform=self.link_transform(**changes),
+			do_export=1,
+			export_transform=self.transform("export", EXPORT_TASKS),
+			update_transform=self.transform("update", UPDATE_TASKS),
+		)
+		self.start_exports_now()
+
+	def linked_todo(self) -> Any:
+		return frappe.get_doc({"doctype": "ToDo", "description": "es linked"}).insert()
+
+	def link_replies(self, todo) -> tuple:
+		item = task("link-1", "es linked", reference=todo.name)
+		return (
+			page(1, item),
+			page(2),
+			(responses.PUT, f"{SERVER}/tasks/link-1", {"json": task("link-1", "es linked")}),
+		)
+
+	def test_what_an_import_only_links_is_sent_by_the_next_export_when_it_says_so(self):
+		self.setup_shot(export_saved=1)
+		todo = self.linked_todo()
+		calls = self.sync(*self.link_replies(todo))
+		# the item is the document's, and the document is sent to it as an update of that item
+		self.assertEqual([c.request.method for c in calls], ["GET", "GET", "PUT"])
+		self.assertEqual(json.loads(calls[2].request.body)["title"], "es linked")
+		self.assertEqual(self.todo("link-1").name, todo.name)
+		# sent once: the next sync reads the items and sends nothing
+		self.assertEqual(
+			[
+				c.request.method
+				for c in self.sync(page(1, task("link-1", "es linked", reference=todo.name)), page(2))
+			],
+			["GET", "GET"],
+		)
+
+	def test_what_an_import_saves_is_not_sent_back_otherwise(self):
+		self.setup_shot()
+		todo = self.linked_todo()
+		calls = self.sync(page(1, task("link-1", "es linked", reference=todo.name)), page(2))
+		self.assertEqual([c.request.method for c in calls], ["GET", "GET"])
+		self.assertEqual(self.todo("link-1").name, todo.name)
