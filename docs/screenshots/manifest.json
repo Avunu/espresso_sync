@@ -1,0 +1,42 @@
+[
+	{
+		"name": "connection",
+		"theme": "dark",
+		"alt": "An Espresso Sync Connection to the shop API, with a shot that imports its tasks as ToDos through the Active transform",
+		"featured": false,
+		"readme": "feature",
+		"width": 2880,
+		"height": 1800,
+		"sha256": "f22c471ba7210a168b9b303bdbe72d48d96f0e52ab72824b0295bf6a16021577"
+	},
+	{
+		"name": "connection",
+		"theme": "light",
+		"alt": "An Espresso Sync Connection to the shop API, with a shot that imports its tasks as ToDos through the Active transform",
+		"featured": false,
+		"readme": "feature",
+		"width": 2880,
+		"height": 1800,
+		"sha256": "82b4e3c67e8a530197f6a722815e441365fa0281defa1de1988bf5f2a62c9112"
+	},
+	{
+		"name": "editor",
+		"theme": "light",
+		"alt": "The transform editor: the shop API's task fields mapped to a ToDo's with JSONata rules, each previewed on the sample tasks",
+		"featured": true,
+		"readme": "hero",
+		"width": 2880,
+		"height": 2160,
+		"sha256": "68270ff2726864ec9a4d0a3d8939066eb9cfcdaf0ae10923ca1adc2ca0a5a169"
+	},
+	{
+		"name": "spec",
+		"theme": "light",
+		"alt": "The shop API's OpenAPI operations, imported as an API Spec, each with a button that starts a transform on it",
+		"featured": true,
+		"readme": "feature",
+		"width": 2880,
+		"height": 2160,
+		"sha256": "eabf67d2109fc7f307f268e0a23e27278fab3ed425b349b7759bcc49cf2acbc1"
+	}
+]
