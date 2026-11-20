@@ -6,6 +6,12 @@
 // $css--font-face: false - Carbon's default @font-face rules use webpack-style
 // `url("~@ibm/plex/...")` paths that Frappe's esbuild cannot resolve, so the
 // page uses Carbon's fallback fonts unless IBM Plex is installed.
+// $css--emit-type-custom-props: true - the type tokens as custom properties on :root
+// (--cds-heading-04-font-size), which the page's own styles read.
 @use "@carbon/react" with (
-	$css--font-face: false
+	$css--font-face: false,
+	$css--emit-type-custom-props: true
 );
+
+// The page's own classes, after Carbon's, so they win at equal specificity.
+@use "portal";

@@ -145,11 +145,13 @@ class TestPortalPage(IntegrationTestCase):
 
 		self.assertFalse(context.forbidden)
 		boot = context["boot"]
-		self.assertEqual(set(boot), {"user", "session_expiry", "eval_worker"})
+		self.assertEqual(set(boot), {"user", "session_expiry", "eval_worker", "time_zone"})
 		self.assertEqual(boot["user"], self.manager)
 		self.assertEqual(boot["session_expiry"], frappe.get_system_settings("session_expiry"))
 		# the worker is started from the URL the build gave its bundle
 		self.assertEqual(boot["eval_worker"], ASSETS["espresso-sync-eval.bundle.js"])
+		# the zone the site's times are in, for the page to name beside them
+		self.assertEqual(boot["time_zone"], frappe.utils.get_system_timezone())
 		self.assertTrue(context.csrf_token)
 		self.assertEqual(context.sitename, frappe.local.site)
 

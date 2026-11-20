@@ -115,6 +115,13 @@ class TestScheduler(IntegrationTestCase):
 		self.assertFalse(scheduler.cron_is_due("*/15 * * * *", since, datetime.datetime(2026, 1, 15, 12, 14)))
 		self.assertFalse(scheduler.cron_is_due("not a rule", since, self.now))
 		self.assertFalse(scheduler.cron_is_due(None, since, self.now))
+		# a rule that reads as one and never fires is not due, and does not stop the tick
+		for never in ("0 0 30 2 *", "0 0 31 4 *"):
+			with self.subTest(rule=never):
+				self.assertIsNone(scheduler.cron_next(never, since))
+				self.assertFalse(scheduler.cron_is_due(never, since, self.now))
+		frappe.db.set_value(scheduler.CONNECTION, self.cron_not_due, "cron_rule", "0 0 30 2 *")
+		self.assertEqual(scheduler.connections_due("cron", self.now), [self.cron_due])
 
 	def test_a_running_sync_is_not_started_again(self):
 		name = self.names["Hourly"]

@@ -20,10 +20,10 @@ import {
 import { useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
 import type { FrappeResponse } from "frappe-types";
 import { MAX_SOURCE_BYTES, prepareSpec, SpecImportError } from "../../../../public/js/editor/specImport.ts";
+import { CONNECTION } from "../data/api";
 import { getErrorMessage } from "../portal/useBackendCall";
 import { useSessionRead } from "../useSessionRead";
 
-const CONNECTION = "Espresso Sync Connection";
 const SOURCES = ["URL", "File", "Paste"] as const;
 const MAX_SOURCE_MB = MAX_SOURCE_BYTES / (1024 * 1024);
 
