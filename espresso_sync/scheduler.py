@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import cast
 
 import frappe
-from croniter import croniter
+from croniter import CroniterBadDateError, croniter
 from frappe.utils import get_datetime, now_datetime
 from frappe.utils.redis_wrapper import RedisWrapper
 from redis.exceptions import LockError
@@ -40,11 +40,21 @@ JOB_TIMEOUT = 60 * 60
 LOCK_TIMEOUT = JOB_TIMEOUT
 
 
+def cron_next(cron_rule: str | None, since) -> datetime | None:
+	"""When `cron_rule` first fires after `since`. None for a rule that is not valid, and for
+	one that is and never fires (the 30th of February)."""
+	if not cron_rule or not croniter.is_valid(cron_rule):
+		return None
+	try:
+		return croniter(cron_rule, get_datetime(since)).get_next(datetime)
+	except CroniterBadDateError:
+		return None
+
+
 def cron_is_due(cron_rule: str | None, since, now: datetime) -> bool:
 	"""Whether `cron_rule` fires after `since` and by `now` (as frappe's own cron jobs are read)."""
-	if not cron_rule or not croniter.is_valid(cron_rule):
-		return False
-	return croniter(cron_rule, get_datetime(since)).get_next(datetime) <= now
+	fires = cron_next(cron_rule, since)
+	return fires is not None and fires <= now
 
 
 def last_run(row) -> datetime | None:

@@ -9,6 +9,7 @@ import frappe
 import jsonata
 import jsonata.timebox
 import re2
+from frappe.core.doctype.system_settings.system_settings import clear_system_settings_cache
 from frappe.tests import IntegrationTestCase
 
 from espresso_sync.sync import ensure_sync_fields
@@ -17,6 +18,13 @@ from espresso_sync.transform import engine
 
 CONNECTION = "ES Engine Test"
 MANAGER_USER = "es-engine-manager@example.com"
+
+
+def set_time_zone(time_zone: str | None) -> None:
+	"""Set the site's time zone for the code that reads it next. The System Settings are
+	also held in the process's cache, which hears of a change only a moment later."""
+	frappe.db.set_single_value("System Settings", "time_zone", time_zone)
+	clear_system_settings_cache()
 
 
 def make_connection() -> str:
@@ -129,7 +137,9 @@ class TestEngine(IntegrationTestCase):
 				engine.compile_expression(expression)
 
 	def test_dates_checks_and_values(self):
-		frappe.db.set_single_value("System Settings", "time_zone", "America/New_York")
+		# the tests after this one read the site's own zone again
+		self.addCleanup(set_time_zone, frappe.db.get_single_value("System Settings", "time_zone"))
+		set_time_zone("America/New_York")
 		self.assertEqual(engine.evaluate('$frappeDate("2026-01-15")', {}), "2026-01-15")
 		self.assertEqual(
 			engine.evaluate('$frappeDatetime("2026-01-15T02:30:00Z")', {}), "2026-01-14 21:30:00.000000"

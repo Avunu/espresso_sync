@@ -7,6 +7,10 @@ export interface ToastState {
 	id: number;
 	kind: ToastKind;
 	title: string;
+	/** What happened, under the title. */
+	subtitle?: string;
+	/** A last, quieter line: what to do next. */
+	caption?: string;
 }
 
 export type ShowToast = (toast: Omit<ToastState, "id">) => void;
@@ -17,6 +21,8 @@ export interface PortalBoot {
 	session_expiry?: string;
 	/** The transform editor's JSONata worker script (public/js/espresso-sync-eval.bundle.js). */
 	eval_worker: string;
+	/** The site's time zone (System Settings), which every datetime the server answers with is in. */
+	time_zone: string;
 }
 
 declare global {

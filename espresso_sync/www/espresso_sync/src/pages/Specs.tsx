@@ -3,14 +3,11 @@
 
 import { useRef, useState } from "react";
 import {
-	Breadcrumb,
-	BreadcrumbItem,
 	Button,
 	DataTable,
 	DataTableSkeleton,
 	InlineNotification,
 	Link,
-	Stack,
 	Table,
 	TableBody,
 	TableCell,
@@ -21,8 +18,11 @@ import {
 	TableToolbar,
 	TableToolbarContent,
 } from "@carbon/react";
-import { Upload } from "@carbon/react/icons";
+import { DocumentImport, Upload } from "@carbon/react/icons";
 import { useFrappeGetDocList } from "frappe-react-sdk";
+import { DateTime } from "../components/DateTime";
+import { EmptyState } from "../components/EmptyState";
+import { PageHeader } from "../components/PageHeader";
 import { useToasts } from "../portal/Toasts";
 import { getErrorMessage } from "../portal/useBackendCall";
 import { hrefFor } from "../route";
@@ -38,6 +38,7 @@ interface SpecRow {
 	original_version: string | null;
 	/** JSON text: the operations' summaries. */
 	operations: string | null;
+	modified: string;
 }
 
 const HEADERS = [
@@ -45,6 +46,7 @@ const HEADERS = [
 	{ key: "connection", header: "Connection" },
 	{ key: "original_version", header: "Version" },
 	{ key: "operations", header: "Operations" },
+	{ key: "modified", header: "Last imported" },
 ];
 
 const DESCRIPTION =
@@ -64,11 +66,19 @@ function SpecCell({ row, column }: { row: SpecRow; column: string }) {
 		case "title":
 			return <Link href={hrefFor("specs", row.name)}>{row.title}</Link>;
 		case "connection":
-			return <>{row.connection || "—"}</>;
+			return row.connection ? (
+				<Link href={hrefFor("connections", row.connection)} className="es-long-name">
+					{row.connection}
+				</Link>
+			) : (
+				<>—</>
+			);
 		case "original_version":
 			return <>{row.original_version || "—"}</>;
 		case "operations":
 			return <>{countOperations(row.operations)}</>;
+		case "modified":
+			return <DateTime value={row.modified} />;
 		default:
 			return null;
 	}
@@ -77,7 +87,7 @@ function SpecCell({ row, column }: { row: SpecRow; column: string }) {
 /** `#/specs`: the API Specs, and importing a new one. */
 export function Specs() {
 	const { data, error, isLoading } = useFrappeGetDocList<SpecRow>(SPEC, {
-		fields: ["name", "title", "connection", "original_version", "operations"],
+		fields: ["name", "title", "connection", "original_version", "operations", "modified"],
 		orderBy: { field: "modified", order: "desc" },
 		limit: 500,
 	});
@@ -119,11 +129,12 @@ export function Specs() {
 			connection: row.connection,
 			original_version: row.original_version,
 			operations: countOperations(row.operations),
+			modified: row.modified,
 		}));
 		table = (
 			<DataTable rows={rows} headers={HEADERS}>
 				{({ rows: tableRows, headers, getTableProps, getTableContainerProps }) => (
-					<TableContainer title="API specs" description={DESCRIPTION} {...getTableContainerProps()}>
+					<TableContainer {...getTableContainerProps()}>
 						<TableToolbar aria-label="API specs">
 							<TableToolbarContent>
 								<Button
@@ -150,7 +161,12 @@ export function Specs() {
 							<TableBody>
 								{tableRows.length === 0 && (
 									<TableRow>
-										<TableCell colSpan={headers.length}>No API specs yet: import one.</TableCell>
+										<TableCell colSpan={headers.length}>
+											<EmptyState icon={DocumentImport} title="No API specs yet.">
+												Import the OpenAPI description of an API: its operations are what transforms are made
+												on.
+											</EmptyState>
+										</TableCell>
 									</TableRow>
 								)}
 								{tableRows.map((tableRow) => {
@@ -174,11 +190,8 @@ export function Specs() {
 	}
 
 	return (
-		<Stack gap={6}>
-			<Breadcrumb noTrailingSlash>
-				<BreadcrumbItem href={hrefFor("connections")}>Connections</BreadcrumbItem>
-				<BreadcrumbItem isCurrentPage>API specs</BreadcrumbItem>
-			</Breadcrumb>
+		<>
+			<PageHeader breadcrumb={[]} title="API specs" subtitle={DESCRIPTION} />
 			{table}
 			<ImportSpec
 				key={importKey}
@@ -187,6 +200,6 @@ export function Specs() {
 				onClose={() => setImporting(false)}
 				onImported={imported}
 			/>
-		</Stack>
+		</>
 	);
 }

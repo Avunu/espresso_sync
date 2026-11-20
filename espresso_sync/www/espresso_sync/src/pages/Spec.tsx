@@ -3,14 +3,12 @@
 
 import { useRef, useState } from "react";
 import {
-	Breadcrumb,
-	BreadcrumbItem,
 	Button,
 	DataTable,
 	DataTableSkeleton,
 	InlineNotification,
+	Link,
 	Pagination,
-	SkeletonText,
 	Stack,
 	Table,
 	TableBody,
@@ -27,13 +25,15 @@ import {
 import { Add, Launch, Renew } from "@carbon/react/icons";
 import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk";
 import type { FrappeResponse } from "frappe-types";
+import { DateTime } from "../components/DateTime";
+import { PageHeader } from "../components/PageHeader";
 import { useToasts } from "../portal/Toasts";
 import { getErrorMessage } from "../portal/useBackendCall";
 import { deskFormUrl, hrefFor } from "../route";
 import { useSessionRead } from "../useSessionRead";
 import { Details } from "./Details";
 import { ImportSpec, type SavedSpec } from "./ImportSpec";
-import { NewTransform, TRANSFORM_METHODS, type Operation } from "./NewTransform";
+import { NewTransform, TRANSFORM, TRANSFORM_METHODS, type Operation } from "./NewTransform";
 import { SPEC } from "./Specs";
 
 interface SpecDoc {
@@ -45,6 +45,19 @@ interface SpecDoc {
 	original_version: string | null;
 	spec_hash: string | null;
 	modified: string;
+}
+
+/** A transform made from one of the spec's operations. */
+interface TransformRow {
+	name: string;
+	method: string;
+	path: string;
+	status: string;
+}
+
+/** How an operation is told from the others, and a transform matched to its own. */
+function operationKey(method: string, path: string): string {
+	return `${method.toUpperCase()} ${path}`;
 }
 
 const HEADERS = [
@@ -101,6 +114,13 @@ export function Spec({ name }: { name: string }) {
 			spec: name,
 		},
 	);
+	const transforms = useFrappeGetDocList<TransformRow>(TRANSFORM, {
+		fields: ["name", "method", "path", "status"],
+		filters: [["api_spec", "=", name]],
+		orderBy: { field: "name", order: "asc" },
+		limit: 500,
+	});
+	useSessionRead(transforms.data, transforms.error);
 	useSessionRead(specs.data, specs.error);
 	useSessionRead(operations.data, operations.error);
 	const showToast = useToasts();
@@ -117,27 +137,21 @@ export function Spec({ name }: { name: string }) {
 	const transformLauncher = useRef<HTMLButtonElement>(null);
 
 	const spec = specs.data?.[0];
-	const breadcrumb = (
-		<Breadcrumb noTrailingSlash>
-			<BreadcrumbItem href={hrefFor("connections")}>Connections</BreadcrumbItem>
-			<BreadcrumbItem href={hrefFor("specs")}>API specs</BreadcrumbItem>
-			<BreadcrumbItem isCurrentPage>{spec?.title ?? name}</BreadcrumbItem>
-		</Breadcrumb>
-	);
+	const title = spec?.title ?? name;
+	const breadcrumb: [string, string?][] = [["API specs", hrefFor("specs")], [title]];
 
 	if (specs.isLoading) {
 		return (
-			<Stack gap={6}>
-				{breadcrumb}
-				<SkeletonText heading />
+			<>
+				<PageHeader breadcrumb={breadcrumb} title={title} />
 				<DataTableSkeleton headers={HEADERS} columnCount={HEADERS.length} rowCount={5} />
-			</Stack>
+			</>
 		);
 	}
 	if (specs.error || !spec) {
 		return (
-			<Stack gap={6}>
-				{breadcrumb}
+			<>
+				<PageHeader breadcrumb={breadcrumb} title={title} />
 				<InlineNotification
 					kind="error"
 					lowContrast
@@ -145,7 +159,7 @@ export function Spec({ name }: { name: string }) {
 					title={specs.error ? "The API spec couldn't be loaded." : `There is no API spec ${name}.`}
 					subtitle={specs.error ? getErrorMessage(specs.error, "Reload the page to try again.") : ""}
 				/>
-			</Stack>
+			</>
 		);
 	}
 
@@ -168,6 +182,12 @@ export function Spec({ name }: { name: string }) {
 	const found = (operations.data?.message ?? []).filter((op) => matches(op, words));
 	const shown = found.slice((page - 1) * pageSize, page * pageSize);
 	const byId = new Map(shown.map((op) => [`${op.method} ${op.path}`, op]));
+	// the transforms already made from each operation; none while they load, or if they can't be read
+	const made = new Map<string, TransformRow[]>();
+	for (const row of transforms.data ?? []) {
+		const key = operationKey(row.method, row.path);
+		made.set(key, [...(made.get(key) ?? []), row]);
+	}
 	const rows = shown.map((op) => ({
 		id: `${op.method} ${op.path}`,
 		method: op.method,
@@ -206,22 +226,37 @@ export function Spec({ name }: { name: string }) {
 				));
 			case "transform":
 				return (
-					TRANSFORM_METHODS.includes(op.method) && (
-						<Button
-							kind="ghost"
-							size="sm"
-							renderIcon={Add}
-							aria-label={`New transform for ${op.method} ${op.path}`}
-							onClick={(event) => {
-								transformLauncher.current = event.currentTarget;
-								setTransformKey((key) => key + 1);
-								setOperation(op);
-								setCreating(true);
-							}}
-						>
-							New transform
-						</Button>
-					)
+					<div
+						style={{
+							display: "flex",
+							flexWrap: "wrap",
+							gap: "var(--cds-spacing-02) var(--cds-spacing-05)",
+							alignItems: "center",
+						}}
+					>
+						{(made.get(operationKey(op.method, op.path)) ?? []).map((row) => (
+							<Link key={row.name} href={hrefFor("transforms", row.name)}>
+								{row.name}
+								{row.status === "Active" ? "" : ` (${row.status})`}
+							</Link>
+						))}
+						{TRANSFORM_METHODS.includes(op.method) && (
+							<Button
+								kind="ghost"
+								size="sm"
+								renderIcon={Add}
+								aria-label={`New transform for ${op.method} ${op.path}`}
+								onClick={(event) => {
+									transformLauncher.current = event.currentTarget;
+									setTransformKey((key) => key + 1);
+									setOperation(op);
+									setCreating(true);
+								}}
+							>
+								New transform
+							</Button>
+						)}
+					</div>
 				);
 			default:
 				return null;
@@ -313,55 +348,70 @@ export function Spec({ name }: { name: string }) {
 	}
 
 	return (
-		<Stack gap={6}>
-			{breadcrumb}
-			<h1>{spec.title}</h1>
-			<Details
-				label="About the spec"
-				fields={[
-					["Connection", spec.connection || "None"],
-					[
-						"Imported from",
-						`${spec.source_format}${spec.original_version ? ` (${spec.original_version})` : ""}`,
-					],
-					["Source URL", spec.source_url ? <code key="url">{spec.source_url}</code> : "Pasted or uploaded"],
-					["Spec hash", <code key="hash">{spec.spec_hash?.slice(0, 12)}</code>],
-					["Last imported", spec.modified.slice(0, 16)],
-				]}
+		<>
+			<PageHeader
+				breadcrumb={breadcrumb}
+				title={spec.title}
+				actions={
+					<>
+						<Button kind="ghost" href={deskFormUrl(SPEC, spec.name)} renderIcon={Launch}>
+							Open in the desk
+						</Button>
+						<Button
+							ref={reimportLauncher}
+							kind="tertiary"
+							renderIcon={Renew}
+							onClick={() => {
+								setReimportKey((key) => key + 1);
+								setReimporting(true);
+							}}
+						>
+							Re-import
+						</Button>
+					</>
+				}
 			/>
-			<div>
-				<Button
-					ref={reimportLauncher}
-					kind="tertiary"
-					renderIcon={Renew}
-					onClick={() => {
-						setReimportKey((key) => key + 1);
-						setReimporting(true);
-					}}
-				>
-					Re-import
-				</Button>
-				<Button kind="ghost" href={deskFormUrl(SPEC, spec.name)} renderIcon={Launch}>
-					Open in the desk
-				</Button>
-			</div>
-			{table}
-			<ImportSpec
-				key={`reimport-${reimportKey}`}
-				open={reimporting}
-				spec={spec}
-				launcherButtonRef={reimportLauncher}
-				onClose={() => setReimporting(false)}
-				onImported={reimported}
-			/>
-			<NewTransform
-				key={`transform-${transformKey}`}
-				open={creating}
-				spec={spec.name}
-				operation={operation}
-				launcherButtonRef={transformLauncher}
-				onClose={() => setCreating(false)}
-			/>
-		</Stack>
+			<Stack gap={6}>
+				<Details
+					label="About the spec"
+					fields={[
+						[
+							"Connection",
+							spec.connection ? (
+								<Link key="connection" href={hrefFor("connections", spec.connection)}>
+									{spec.connection}
+								</Link>
+							) : (
+								"None"
+							),
+						],
+						[
+							"Imported from",
+							`${spec.source_format}${spec.original_version ? ` (${spec.original_version})` : ""}`,
+						],
+						["Source URL", spec.source_url ? <code key="url">{spec.source_url}</code> : "Pasted or uploaded"],
+						["Spec hash", <code key="hash">{spec.spec_hash?.slice(0, 12)}</code>],
+						["Last imported", <DateTime key="modified" value={spec.modified} />],
+					]}
+				/>
+				{table}
+				<ImportSpec
+					key={`reimport-${reimportKey}`}
+					open={reimporting}
+					spec={spec}
+					launcherButtonRef={reimportLauncher}
+					onClose={() => setReimporting(false)}
+					onImported={reimported}
+				/>
+				<NewTransform
+					key={`transform-${transformKey}`}
+					open={creating}
+					spec={spec.name}
+					operation={operation}
+					launcherButtonRef={transformLauncher}
+					onClose={() => setCreating(false)}
+				/>
+			</Stack>
+		</>
 	);
 }
