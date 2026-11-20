@@ -1,5 +1,12 @@
 # Changelog
 
+## [16.3.0](https://github.com/Avunu/espresso_sync/compare/v16.2.0...v16.3.0) (2026-11-20)
+
+
+### Features
+
+* manage connections, shots, links and sync logs in the portal ([#38](https://github.com/Avunu/espresso_sync/issues/38)) ([f1ed2c5](https://github.com/Avunu/espresso_sync/commit/f1ed2c54e4308dd5b12ef17facff51cedf24b7c0))
+
 ## [16.2.0](https://github.com/Avunu/espresso_sync/compare/v16.1.0...v16.2.0) (2026-11-18)
 
 
