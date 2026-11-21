@@ -12,7 +12,7 @@
 	{
 		"name": "connection",
 		"theme": "light",
-		"alt": "An Espresso Sync Connection to the shop API, with a shot that imports its tasks as ToDos through the Active transform",
+		"alt": "The shots of the Connection to the shop API: one imports the shop's tasks as ToDos through the Active transform",
 		"featured": false,
 		"readme": "feature",
 		"width": 2880,
@@ -28,6 +28,16 @@
 		"width": 2880,
 		"height": 2160,
 		"sha256": "68270ff2726864ec9a4d0a3d8939066eb9cfcdaf0ae10923ca1adc2ca0a5a169"
+	},
+	{
+		"name": "overview",
+		"theme": "light",
+		"alt": "The overview: how many Connections need attention or are syncing, what the last 24 hours logged, and the health of each Connection",
+		"featured": false,
+		"readme": "feature",
+		"width": 2880,
+		"height": 1800,
+		"sha256": "2a1c70fbd2d2b3ddeedd22b8f943e4f4b232e7c1f471ec76dbef5d8048568435"
 	},
 	{
 		"name": "spec",
