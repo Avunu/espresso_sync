@@ -1,5 +1,12 @@
 # Changelog
 
+## [16.4.0](https://github.com/Avunu/espresso_sync/compare/v16.3.0...v16.4.0) (2026-11-21)
+
+
+### Features
+
+* let one Connection link to another's documents ($syncId for another Connection, Export What It Saves) ([#43](https://github.com/Avunu/espresso_sync/issues/43)) ([7fc84fe](https://github.com/Avunu/espresso_sync/commit/7fc84fe0b607a4790f49a6bf91d9bc35aa89c9b3))
+
 ## [16.3.0](https://github.com/Avunu/espresso_sync/compare/v16.2.0...v16.3.0) (2026-11-20)
 
 
