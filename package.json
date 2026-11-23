@@ -19,9 +19,9 @@
 		"check": "yarn -s format:check && yarn -s lint && yarn -s lint:css && yarn -s typecheck && yarn -s test:unit"
 	},
 	"dependencies": {
-		"@carbon/react": "^1.120.0",
-		"@scalar/json-magic": "^0.20.0",
-		"@scalar/openapi-parser": "^0.29.23",
+		"@carbon/react": "^1.121.0",
+		"@scalar/json-magic": "^0.21.1",
+		"@scalar/openapi-parser": "^0.29.26",
 		"ajv": "^8.20.0",
 		"frappe-react-sdk": "^1.17.1",
 		"jsonata": "^2.2.2",
